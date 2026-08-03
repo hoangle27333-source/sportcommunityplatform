@@ -103,7 +103,7 @@ export interface RemixOptions {
   subBorderStyle?: number;
   /** Vị trí phụ đề. 
    * - 'top' | 'bottom': vị trí cố định
-   * - 'auto': AI tự phát hiện vùng phụ đề gốc và chèn ngay bên trên. Default: bottom
+   * - 'auto': AI tự phát hiện vùng phụ đề gốc và chèn trong vùng blur. Default: bottom
    */
   subPosition?: "top" | "bottom" | "auto";
   // --- Regenerate-only mode (dùng editedScript, bỏ qua ASR) ---
@@ -118,7 +118,7 @@ export interface RemixOptions {
   blurRegion?: { x: number; y: number; w: number; h: number };
   /**
    * Dùng Gemini Vision để tự động phát hiện vùng phụ đề gốc trong video.
-   * - Nếu phát hiện thành công: làm mờ đúng vùng đó và đặt phụ đề mới lên trên.
+   * - Nếu phát hiện thành công: làm mờ đúng vùng đó và đặt phụ đề mới trong vùng blur.
    * - Nếu không phát hiện (video sạch, confidence thấp): bỏ qua bước làm mờ.
    * - Ưu tiên thấp hơn blurRegion thủ công: nếu user đã set blurRegion thì dùng luôn.
    */

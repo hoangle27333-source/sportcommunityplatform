@@ -291,6 +291,23 @@ export interface ApplyOpsInput {
   blurRegion?: { x: number; y: number; w: number; h: number };
 }
 
+export function subtitlePlacementForBlurRegion(
+  region: { y: number; h: number } | undefined,
+  targetHeight: number,
+): { alignment: number; marginV: number } {
+  const blurY = clamp(region?.y ?? 0.82, 0, 1);
+  const blurH = clamp(region?.h ?? 0.18, 0.01, 1);
+  const blurBottom = clamp(blurY + blurH, 0, 1);
+  const blurHeightPx = Math.max(1, Math.round(blurH * targetHeight));
+
+  // ASS bottom alignment measures MarginV from the frame bottom to the
+  // subtitle's bottom edge. Put that edge inside the blurred band, slightly
+  // above the band's lower boundary.
+  const marginFromFrameBottom = Math.round((1 - blurBottom) * targetHeight);
+  const inset = clamp(Math.round(blurHeightPx * 0.18), 12, 72);
+  return { alignment: 2, marginV: Math.max(12, marginFromFrameBottom + inset) };
+}
+
 /**
  * Ghép danh sách op thành MỘT lệnh ffmpeg và chạy. Trả về đường dẫn file ra.
  *
@@ -314,6 +331,17 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   const encode = byOp("encode");
 
   const args: string[] = ["-y"];
+  const info = await probeVideo(inputPath).catch(() => ({
+    width: 1080,
+    height: 1920,
+    durationSec: 0,
+  }));
+  const effectiveDurationSec =
+    trim?.duration && trim.duration > 0
+      ? trim.duration
+      : info.durationSec && info.durationSec > 0
+        ? info.durationSec
+        : undefined;
 
   // Trim bằng -ss/-t trước -i để seek nhanh và chính xác khi re-encode.
   if (trim) {
@@ -352,8 +380,6 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       );
     }
   }
-
-  const info = await probeVideo(inputPath).catch(() => ({ width: 1080, height: 1920 }));
 
   if (input.blurRegion) {
     const { x, y, w, h } = input.blurRegion;
@@ -484,6 +510,12 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   } else {
     const fps = clamp(encode?.fps ?? 30, 15, 60);
     const crf = clamp(encode?.crf ?? 18, 15, 32);
+    if (hasReplaceAudio) {
+      args.push("-filter:a", "apad");
+      if (effectiveDurationSec) {
+        args.push("-t", String(effectiveDurationSec));
+      }
+    }
     args.push(
       "-r", String(fps),
       "-c:v", "libx264",

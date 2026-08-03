@@ -34,3 +34,4 @@ test-results/
 # ─── Media render scratch (Remotion / worker temp) ───
 tmp/
 .render-cache/
+.vercel

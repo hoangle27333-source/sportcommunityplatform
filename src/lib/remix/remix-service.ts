@@ -24,6 +24,7 @@ import {
   separateVoiceBgm,
   scriptToCues,
   buildSrt,
+  subtitlePlacementForBlurRegion,
   writeTemp,
   type VideoInfo,
 } from "./video-ops";
@@ -211,7 +212,7 @@ export async function runRemixJob(
               warnings.push(
                 `AI phát hiện phụ đề gốc tại y=${(detected.y * 100).toFixed(0)}% ` +
                 `(h=${(detected.h * 100).toFixed(0)}%), confidence=${(detected.confidence * 100).toFixed(0)}%. ` +
-                `Sẽ làm mờ vùng này và đặt phụ đề mới lên trên.`,
+                `Sẽ làm mờ vùng này và đặt phụ đề mới trong vùng blur.`,
               );
             } else {
               // Không tìm thấy phụ đề gốc → không blur, không ép blurOriginalSub
@@ -329,6 +330,7 @@ export async function runRemixJob(
           sourcePath,
           plan,
           options: effectiveOptions,
+          videoInfo,
           createdBy: job.created_by ?? undefined,
         });
       } else {
@@ -543,6 +545,14 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
           if (pos === 'top') {
             alignment = 8;
             marginV = 40;
+          } else if (pos === 'auto' && options.blurOriginalSub !== false) {
+            const reframeOp = ops.find((o) => o.op === "reframe") as
+              | Extract<VideoOp, { op: "reframe" }>
+              | undefined;
+            const targetHeight = reframeOp?.height ?? videoInfo?.height ?? 1920;
+            const placement = subtitlePlacementForBlurRegion(options.blurRegion, targetHeight);
+            alignment = placement.alignment;
+            marginV = placement.marginV;
           }
 
           const subStyle = {

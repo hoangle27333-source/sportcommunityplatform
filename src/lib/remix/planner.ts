@@ -1,6 +1,6 @@
 import { getAIProvider } from "@/lib/ai";
 import type { VideoInfo } from "./video-ops";
-import { scriptToCues, buildSrt } from "./video-ops";
+import { scriptToCues, buildSrt, subtitlePlacementForBlurRegion } from "./video-ops";
 import {
   KNOWN_VIDEO_OPS,
   type RemixOptions,
@@ -208,13 +208,10 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
           marginV = 40;
         } else if (pos === 'auto') {
           if (o.blurOriginalSub) {
-            // Có phụ đề gốc (bật làm mờ): đặt sub mới đè chính xác lên vùng blur
-            const blurY = o.blurRegion?.y ?? 0.82;
-            const blurH = o.blurRegion?.h ?? 0.18;
-            // Tâm của vùng blur tính từ dưới lên: 1.0 - (blurY + blurH / 2)
-            const centerFromBottom = 1.0 - (blurY + blurH / 2);
-            marginV = Math.round(targetHeight * centerFromBottom);
-            alignment = 2;
+            // Có phụ đề gốc (bật làm mờ): đặt sub mới bên trong vùng blur.
+            const placement = subtitlePlacementForBlurRegion(o.blurRegion, targetHeight);
+            marginV = placement.marginV;
+            alignment = placement.alignment;
           } else {
             // Không làm mờ phụ đề gốc: chèn ở vị trí dưới cùng tiêu chuẩn
             marginV = 60;
@@ -404,7 +401,7 @@ function buildPlanPrompt(input: PlanRemixInput): string {
     o.colorGrade && '- colorGrade: chỉnh màu nhẹ',
     o.muteOriginal && '- muteOriginal: bỏ audio gốc',
     o.blurOriginalSub && '- blurOriginalSub: làm mờ vùng phụ đề gốc',
-    (o.subtitleConfig?.position === 'auto' || o.subPosition === 'auto') && '- subPosition=auto: đặt phụ đề ngay trên vùng phụ đề gốc',
+    (o.subtitleConfig?.position === 'auto' || o.subPosition === 'auto') && '- subPosition=auto: đặt phụ đề trong vùng blur phụ đề gốc',
   ]
     .filter(Boolean)
     .join('\n');

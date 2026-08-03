@@ -166,7 +166,7 @@ export function SubtitleConfig({ value, onChange }: { value: SubtitleSettings, o
         </div>
         {value.position === 'auto' && (
           <p className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2 border border-border/50 leading-relaxed">
-            AI tự phát hiện vị trí phụ đề gốc (thường bottom 18%) và chèn phụ đề mới ngay bên trên. Nếu không phát hiện được, mặc định đặt ở dưới cùng.
+            AI tự phát hiện vị trí phụ đề gốc (thường bottom 18%) và chèn phụ đề mới trong vùng đã làm mờ. Nếu không phát hiện được, mặc định đặt ở dưới cùng.
           </p>
         )}
       </div>
