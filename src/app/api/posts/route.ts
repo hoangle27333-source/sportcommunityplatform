@@ -80,7 +80,10 @@ export async function POST(req: NextRequest) {
         media_id,
         position,
       }));
-      await db.from("post_media").insert(rows);
+      const { error: mediaErr } = await db.from("post_media").insert(rows);
+      if (mediaErr) {
+        return NextResponse.json({ error: `attach media failed: ${mediaErr.message}` }, { status: 500 });
+      }
     }
 
     if (body.targetAccountIds?.length) {
@@ -89,7 +92,10 @@ export async function POST(req: NextRequest) {
         social_account_id,
         status: "pending" as const,
       }));
-      await db.from("post_targets").insert(rows);
+      const { error: targetErr } = await db.from("post_targets").insert(rows);
+      if (targetErr) {
+        return NextResponse.json({ error: `attach targets failed: ${targetErr.message}` }, { status: 500 });
+      }
     }
 
     return NextResponse.json({ id: post.id }, { status: 201 });

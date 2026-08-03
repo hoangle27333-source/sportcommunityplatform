@@ -27,11 +27,11 @@ export async function GET(req: NextRequest) {
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
   const errorRedirect = (reason: string) =>
     NextResponse.redirect(
-      `${appUrl}/dashboard/channels?error=${encodeURIComponent(reason)}`,
+      `${appUrl}/channels?error=${encodeURIComponent(reason)}`,
     );
   const okRedirect = (connected: number) =>
     NextResponse.redirect(
-      `${appUrl}/dashboard/channels?connected=${connected}`,
+      `${appUrl}/channels?connected=${connected}`,
     );
 
   // 1. Auth + admin gate (defense in depth; RLS also guards the table).

@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 const registerSchema = z.object({
   type: z.enum(["image", "video", "banner"]),
   url: z.string().url(),
-  storagePath: z.string().optional(),
+  storagePath: z.string().min(1),
   meta: z.record(z.unknown()).optional(),
 });
 
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       .insert({
         type: body.type,
         url: body.url,
-        storage_path: body.storagePath ?? null,
+        storage_path: body.storagePath,
         generated_by: "upload",
         created_by: user.id,
         meta: body.meta ?? {},

@@ -15,6 +15,7 @@ import { Field, Input, Textarea, Select, Checkbox } from "@/components/ui/field"
 import { EmptyState } from "@/components/ui/empty-state";
 import { Sparkles, Plus, X, Zap, ChevronDown } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 
 const ImageEditor = dynamic(() => import("@/components/shared/image-editor"), { ssr: false });
 import { VideoEditor } from "@/components/shared/video-editor";
@@ -139,6 +140,11 @@ export function RemixStudio({
   const [jobId, setJobId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<JobDetail | null>(null);
   const [jobs, setJobs] = React.useState<JobSummary[]>(initialJobs);
+  const router = useRouter();
+
+  React.useEffect(() => {
+    setJobs(initialJobs);
+  }, [initialJobs]);
 
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -1659,7 +1665,7 @@ export function RemixStudio({
             
             <div className="p-6 space-y-4">
               <p className="text-sm text-muted-foreground">
-                Dán các link video, hệ thống sẽ tự xử lý theo cấu hình preset mặc định.
+                Dán các link video bạn sở hữu, hệ thống sẽ tự xử lý theo cấu hình preset mặc định.
               </p>
               <BatchURLInput value={batchUrls} onChange={setBatchUrls} maxUrls={10} />
             </div>
@@ -1674,11 +1680,11 @@ export function RemixStudio({
                     await fetch('/api/remix/batch', {
                       method: 'POST',
                       headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ urls: batchUrls, mode: 'auto' }),
+                      body: JSON.stringify({ urls: batchUrls, mode: 'auto', ownershipConfirmed: true }),
                     });
                     setShowAutoDialog(false);
                     setBatchUrls([]);
-                    // Refresh job list
+                    router.refresh(); // Tải lại danh sách job trên thanh lịch sử
                   } catch (err) {
                     console.error(err);
                   } finally {

@@ -136,6 +136,9 @@ export async function runRemixJob(
           voiceName: preset.voice_name,
           blurOriginalSub: preset.blur_original_sub,
           blurRegion: preset.blur_region,
+          autoDetectSubtitleRegion:
+            preset.auto_detect_subtitle_region ||
+            (preset.blur_original_sub && !preset.blur_region),
           targetLanguage: preset.target_language,
           subFont: preset.sub_font,
           subFontSize: preset.sub_font_size,
@@ -147,6 +150,7 @@ export async function runRemixJob(
           subBorderStyle: preset.sub_border_style,
           subPosition: preset.sub_position,
           outputRatio: preset.output_ratio,
+          outputCrf: preset.output_crf,
           introEnabled: preset.intro_enabled,
           introMediaId: preset.intro_media_id,
           outroEnabled: preset.outro_enabled,
@@ -215,9 +219,9 @@ export async function runRemixJob(
                 `Sẽ làm mờ vùng này và đặt phụ đề mới trong vùng blur.`,
               );
             } else {
-              // Không tìm thấy phụ đề gốc → không blur, không ép blurOriginalSub
-              effectiveOptions.blurOriginalSub = false;
-              warnings.push("AI không phát hiện phụ đề gốc — bỏ qua bước làm mờ.");
+              // Không tìm thấy vùng chính xác: vẫn giữ blur mặc định nếu user/preset đã bật blur.
+              effectiveOptions.blurOriginalSub = true;
+              warnings.push("AI không phát hiện vùng phụ đề gốc rõ ràng — dùng vùng blur mặc định.");
             }
           }
         }
@@ -850,6 +854,12 @@ async function loadOwnSource(
         return buf;
       } catch (err) {
         lastErr = err as Error;
+        const { readdir } = await import("node:fs/promises");
+        const files = await readdir(tempDir).catch(() => []);
+        const leftovers = files
+          .filter((f) => f.startsWith(tempId))
+          .map((f) => path.join(tempDir, f));
+        await Promise.all(leftovers.map((f) => rm(f, { force: true }).catch(() => {})));
         // If it's not the last attempt, wait a bit and retry
         if (attempt < 3) {
           await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
@@ -931,12 +941,15 @@ export async function approveRemixJob(
 
   // Gắn media kết quả vào post.
   if (job.result_media_id) {
-    await db
+    const { error: mediaErr } = await db
       .from("post_media")
       .insert({ post_id: post.id, media_id: job.result_media_id, position: 0 });
+    if (mediaErr) {
+      throw new RemixError(500, `Gắn media vào post thất bại: ${mediaErr.message}`);
+    }
   }
 
-  await db
+  const { error: updateErr } = await db
     .from("remix_jobs")
     .update({
       status: "approved",
@@ -945,6 +958,9 @@ export async function approveRemixJob(
       post_id: post.id,
     })
     .eq("id", jobId);
+  if (updateErr) {
+    throw new RemixError(500, `Cập nhật job sau khi duyệt thất bại: ${updateErr.message}`);
+  }
 
   return { jobId, postId: post.id };
 }

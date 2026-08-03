@@ -30,8 +30,12 @@ export function LoginForm({ next }: { next: string }) {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    let loginEmail = email.trim();
+    if (loginEmail.toLowerCase() === "admin") {
+      loginEmail = "admin@sportcommunityplatform.com";
+    }
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: loginEmail,
       password,
     });
     setLoading(false);
@@ -58,14 +62,14 @@ export function LoginForm({ next }: { next: string }) {
   return (
     <div className="mt-6 space-y-4">
       <form onSubmit={handlePasswordLogin} className="space-y-3">
-        <Field label="Email" required>
+        <Field label="Email / Tài khoản" required>
           {(props) => (
             <Input
               {...props}
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               spellCheck={false}
-              placeholder="ten@congty.vn…"
+              placeholder="admin hoặc email…"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />

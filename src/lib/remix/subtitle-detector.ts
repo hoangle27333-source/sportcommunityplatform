@@ -2,13 +2,13 @@
  * AI-powered subtitle region detector (SPEC §7.4 — auto-detect original subs).
  *
  * Cơ chế:
- *  1. Trích 3 frame từ video tại 10%, 50%, 90% độ dài → JPEG.
- *  2. Gửi 3 frame lên Gemini Vision (inline_data / base64).
+ *  1. Trích nhiều frame rải đều theo video → JPEG.
+ *  2. Gửi frame lên Gemini Vision (inline_data / base64).
  *  3. AI trả về { hasSubtitle, region: {x,y,w,h}, confidence } (normalized 0–1).
  *  4. Nếu confidence < 0.5 hoặc hasSubtitle=false → trả về null (không làm mờ).
  *
  * Chi phí:
- *  - Gemini Flash: ~3 frame × ~50KB JPEG × giá ảnh ≈ $0.0001/lần (rất rẻ).
+ *  - Gemini Flash: vài frame × ~50KB JPEG × giá ảnh ≈ rất rẻ/lần.
  *  - Không gọi API nếu user đã set blurRegion thủ công.
  */
 
@@ -89,8 +89,8 @@ export async function detectSubtitleRegion(
 
   const workDir = await mkdtemp(path.join(tmpdir(), "subdetect-"));
   try {
-    // 1. Trích 3 frame tại 10%, 50%, 90% thời lượng video
-    const timestamps = [0.1, 0.5, 0.9].map((pct) =>
+    // 1. Trích nhiều frame để bắt cả caption ngắn chỉ xuất hiện một đoạn.
+    const timestamps = [0.12, 0.28, 0.5, 0.72, 0.9].map((pct) =>
       Math.max(0.5, Math.round(durationSec * pct * 10) / 10),
     );
 
@@ -129,12 +129,13 @@ export async function detectSubtitleRegion(
       generationConfig: { responseMimeType: "application/json" },
     });
 
-    const prompt = `You are a subtitle detection expert. Analyze these ${imageParts.length} video frames and detect if there are HARDCODED (burned-in) subtitles or captions visible.
+    const prompt = `You are a subtitle/caption detection expert. Analyze these ${imageParts.length} video frames and detect if there are HARDCODED (burned-in) subtitles, translated captions, meme captions, or on-screen dialogue text visible.
 
-IMPORTANT: Only detect subtitles that are PERMANENTLY rendered into the video (not YouTube-style overlay captions). These are typically:
-- Lines of text at the bottom or top of the frame
-- Text that appears consistently across multiple frames
+IMPORTANT: Only detect text that is PERMANENTLY rendered into the video frames (not YouTube-style player captions or UI controls). These are typically:
+- Lines or words near the lower third, center-lower, bottom, or top of the frame
+- Meme captions or translated words like large outlined text over the picture
 - Styled captions with backgrounds, shadows, or outlined text
+- Text may change across frames; it does NOT need to be identical in every frame
 
 Return a JSON object with this exact structure:
 {
@@ -153,6 +154,8 @@ Region coordinates are NORMALIZED (0.0 to 1.0) relative to frame width/height:
 - x, y: top-left corner of the subtitle region
 - w, h: width and height of the region
 - Typical bottom subtitles: y=0.80-0.87, h=0.12-0.18
+- Center-lower meme captions can be around y=0.55-0.75
+- If text appears in different nearby positions across frames, return one region that covers all of it with a small margin
 
 If no hardcoded subtitles are found, return hasSubtitle=false with confidence.
 Return ONLY the JSON object, no other text.`;
