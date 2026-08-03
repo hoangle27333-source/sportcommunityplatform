@@ -1,0 +1,10 @@
+﻿Stage,Hạng mục,Tính năng,Mô tả chi tiết,Nền tảng ưu tiên,Mức độ ưu tiên
+Stage 1: Auto-posting & Seeding,Auto-posting,Tự động đăng bài,"Hệ thống lên lịch và tự động đăng bài viết, reels, video. Hỗ trợ cross-post sang Instagram.","Facebook (Chính), Instagram",Cao
+Stage 1: Auto-posting & Seeding,Analytics & Insights,Phân tích dữ liệu & Đề xuất AI,"Đọc các chỉ số (metrics) của bài đăng, rút ra bài học (learning) và dùng AI đề xuất cách cải thiện nội dung.",Facebook,Cao
+Stage 1: Auto-posting & Seeding,Seeding System,Hệ thống Seeding tự động,"Thêm và quản lý hàng loạt tài khoản Facebook. Tạo luồng tự động tương tác (React, Comment, Share) cho các bài đăng.",Facebook,Cao
+Stage 1: Auto-posting & Seeding,Seeding System,Thiết lập Tone of Voice,Cấu hình 'giọng văn' (tone of voice) đặc trưng cho từng tài khoản seeding để comment tự nhiên và phù hợp ngữ cảnh.,Facebook,Cao
+Stage 2: Content Generation,AI Generation,Tự động tạo Video (Remotion),"Sử dụng Remotion để tự động tạo video ngắn, video highlight từ dữ liệu đầu vào.",N/A,Trung bình
+Stage 2: Content Generation,AI Generation,Tự động tạo Ảnh/Banner,"Tự động tạo banner, social card và hình ảnh minh họa bằng công cụ tự động.",N/A,Trung bình
+Stage 2: Content Generation,AI Generation,Tạo Caption & Content,Tự động viết nội dung bài đăng dựa trên các learning và đề xuất từ Stage 1.,N/A,Trung bình
+Stage 3: Data Scraping,Scraping,Thu thập nội dung (Cào data),"Cào dữ liệu các bài đăng thịnh hành, trending content từ các page, group, hashtag trên Facebook.",Facebook,Thấp
+Stage 3: Data Scraping,Data Management,Phân loại & Quản lý dữ liệu,"Lọc, lưu trữ và tổng hợp dữ liệu cào được để làm nguyên liệu đầu vào cho quy trình tạo nội dung (Stage 2).",N/A,Thấp

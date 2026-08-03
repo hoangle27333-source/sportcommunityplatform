@@ -1,0 +1,193 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Design tokens — Content Automation Hub
+ *
+ * Source: ui-ux-pro-max "Data-Dense Dashboard" style, density 8/10, motion 3/10.
+ * Reference: Haulix logistics dashboard (dark navy rail + light dense content,
+ * KPI cards, status pills, tabular data).
+ *
+ * Token architecture is two-tier: primitives (--nav-*, --brand-*, raw scales)
+ * feed semantic tokens (--background, --card, --primary…). Components only ever
+ * consume semantic tokens so a re-theme touches this file alone.
+ *
+ * All values are HSL channel triplets (no hsl() wrapper) so Tailwind can apply
+ * opacity modifiers, e.g. bg-primary/10.
+ */
+
+@layer base {
+  :root {
+    /* ---- Surfaces ---- */
+    --background: 210 40% 98%;        /* #F8FAFC page canvas */
+    --foreground: 222 47% 11%;        /* near-slate-900 body text: 15.9:1 */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --muted: 214 32% 93%;             /* table headers, inert chips */
+    --muted-foreground: 215 20% 41%;  /* secondary text: 5.1:1 on card */
+    --border: 214 32% 91%;
+    --input: 214 32% 88%;
+
+    /* ---- Brand ---- */
+    --primary: 224 71% 40%;           /* #1E40AF — 8.6:1 with white */
+    --primary-foreground: 0 0% 100%;
+    --primary-muted: 224 71% 96%;     /* tinted fill for active nav/chips */
+    --secondary: 217 91% 60%;         /* #3B82F6 — charts, links */
+    --secondary-foreground: 0 0% 100%;
+    --accent: 32 95% 44%;             /* #D97706 amber — CTA/highlight, 3:1+ */
+    --accent-foreground: 0 0% 100%;
+    --ring: 224 71% 40%;
+
+    /* ---- Status (semantic; each paired fg hits 4.5:1 on its tint) ---- */
+    --success: 142 71% 29%;
+    --success-foreground: 0 0% 100%;
+    --success-muted: 141 79% 95%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 0 0% 100%;
+    --warning-muted: 48 96% 93%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 0 86% 97%;
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 100%;
+    --info-muted: 214 95% 96%;
+
+    /* ---- Sidebar rail (dark navy, Haulix-style) ---- */
+    --nav: 224 64% 15%;
+    --nav-foreground: 213 31% 82%;
+    --nav-muted: 215 20% 60%;
+    --nav-active: 224 71% 40%;
+    --nav-active-foreground: 0 0% 100%;
+    --nav-border: 223 47% 23%;
+
+    /* ---- Charts: categorical ramp, distinguishable in both modes ---- */
+    --chart-1: 224 71% 45%;
+    --chart-2: 32 95% 44%;
+    --chart-3: 173 71% 36%;
+    --chart-4: 262 70% 56%;
+    --chart-5: 340 75% 50%;
+    --chart-grid: 214 32% 91%;
+
+    /* ---- Radii ---- */
+    --radius-sm: 0.25rem;
+    --radius: 0.5rem;
+    --radius-lg: 0.75rem;
+
+    /* ---- Elevation ---- */
+    --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+    --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.09), 0 4px 6px -4px rgb(15 23 42 / 0.06);
+  }
+
+  /**
+   * Dark mode. Opt-in via .dark on <html> (class strategy) so the toggle can
+   * override the OS preference; the media query below wires the OS default for
+   * users who never touch the toggle.
+   */
+  .dark {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 96%;
+    --card: 222 44% 13%;
+    --card-foreground: 210 40% 96%;
+    --muted: 217 33% 19%;
+    --muted-foreground: 215 20% 68%;   /* 5.6:1 on --card */
+    --border: 217 33% 22%;
+    --input: 217 33% 26%;
+
+    --primary: 217 91% 62%;            /* lifted for contrast on dark */
+    --primary-foreground: 222 47% 11%;
+    --primary-muted: 224 60% 20%;
+    --secondary: 213 94% 72%;
+    --secondary-foreground: 222 47% 11%;
+    --accent: 38 92% 55%;
+    --accent-foreground: 222 47% 11%;
+    --ring: 217 91% 62%;
+
+    --success: 142 69% 48%;
+    --success-foreground: 222 47% 11%;
+    --success-muted: 143 60% 16%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 222 47% 11%;
+    --warning-muted: 33 70% 17%;
+    --destructive: 0 84% 65%;
+    --destructive-foreground: 222 47% 11%;
+    --destructive-muted: 0 60% 18%;
+    --info: 213 94% 72%;
+    --info-foreground: 222 47% 11%;
+    --info-muted: 215 60% 20%;
+
+    --nav: 222 50% 7%;
+    --nav-foreground: 213 31% 80%;
+    --nav-muted: 215 20% 58%;
+    --nav-active: 217 91% 62%;
+    --nav-active-foreground: 222 47% 11%;
+    --nav-border: 217 33% 18%;
+
+    --chart-1: 217 91% 65%;
+    --chart-2: 38 92% 58%;
+    --chart-3: 172 66% 50%;
+    --chart-4: 258 90% 70%;
+    --chart-5: 339 90% 67%;
+    --chart-grid: 217 33% 22%;
+
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.45), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    /* NFR5: never suppress zoom; 16px base keeps mobile Safari from auto-zooming inputs. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible focus for keyboard nav (NFR5). Never remove the ring. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Numeric columns should align; applied via .tabular in tables. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* Scrollbar that doesn't fight the dark rail. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+  }
+}
+
+/* Motion 3/10 — subtle, and fully disabled when the user asks for less. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

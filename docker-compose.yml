@@ -1,0 +1,105 @@
+# =============================================================================
+# Content Automation Hub — VPS deployment (SPEC §3)
+# Services: postgres, redis, web (Next.js), worker (BullMQ), comfyui (GPU image gen)
+#
+# Prod DB is Supabase; this postgres service is for self-hosted/local parity.
+# Point the app at Supabase by overriding NEXT_PUBLIC_SUPABASE_* in .env instead.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cah}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-content_hub}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cah}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  # NOTE — Playwright / Chromium:
+  # The worker now includes the Playwright Chromium browser (unofficial seeding module).
+  # On Linux VPS, the Dockerfile worker stage must run: npx playwright install --with-deps chromium
+  # Add `cap_add: [SYS_ADMIN]` if running headless in Docker.
+  # For the connect-flow (visible browser), run PLAYWRIGHT_HEADLESS=false on the HOST, not in Docker.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REDIS_URL: redis://redis:6379
+      COMFYUI_URL: http://comfyui:8188
+      PLAYWRIGHT_HEADLESS: "true"   # headless=true in Docker; connect flow runs on host
+    cap_add:
+      - SYS_ADMIN  # required by Chromium sandbox in Docker
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ComfyUI — self-hosted image generation (SPEC §7.2).
+  # GPU access requires the NVIDIA Container Toolkit on the host; uncomment the
+  # deploy block below on a GPU VPS. Without a GPU it runs (slowly) on CPU.
+  comfyui:
+    image: ${COMFYUI_IMAGE:-yanwk/comfyui-boot:latest}
+    restart: unless-stopped
+    ports:
+      - "${COMFYUI_PORT:-8188}:8188"
+    volumes:
+      - comfyui_models:/root/ComfyUI/models
+      - comfyui_output:/root/ComfyUI/output
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  pgdata:
+  redisdata:
+  comfyui_models:
+  comfyui_output:
