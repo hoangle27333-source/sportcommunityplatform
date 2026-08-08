@@ -574,8 +574,10 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
     }
   }
 
-  // --- Logo thương hiệu cũ ---
-  if (o.brandLogo && !wm?.enabled) {
+  // --- Logo thương hiệu cũ (fallback khi chưa có watermarkConfig từ editor) ---
+  // Chỉ chạy khi user CHƯA cấu hình watermark trong editor.
+  // Nếu user đã gửi watermarkConfig (dù enabled=false) → tôn trọng quyết định đó.
+  if (o.brandLogo && !o.watermarkConfig) {
     if (hasLogo) {
       ops.push({
         op: "overlayLogo",

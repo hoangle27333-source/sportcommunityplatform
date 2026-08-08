@@ -207,6 +207,24 @@ export interface RemixOptions {
   // --- Regenerate-only mode (dùng editedScript, bỏ qua ASR) ---
   regenerateOnly?: boolean;
   editedScript?: string;
+  /**
+   * Script AI tạo ra sau lần generate đầu (từ ASR hoặc manualScript).
+   * Được lưu lại để video editor có thể hiển thị và cho user chỉnh sửa.
+   */
+  generatedScript?: string;
+  /** Các text overlay đã được AI thêm vào video (translateOnScreenText + overlayText ops). */
+  textOnScreenOverlays?: Array<{
+    id: string;
+    start: number;
+    end: number;
+    text: string;
+    position: { x: number; y: number };
+    fontFamily: string;
+    fontSize: number;
+    fontColor: string;
+    bgColor: string;
+    animation: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
+  }>;
   /** Ngôn ngữ đầu ra cho dịch phụ đề và lồng tiếng.
    * - 'vi': Tiếng Việt (mặc định)
    * - 'en': Tiếng Anh

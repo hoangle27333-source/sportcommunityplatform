@@ -900,22 +900,9 @@ export function RemixStudio({
   const needsOcrService = serviceHealth
     ? requiresOcrServiceForRemix(currentRemixIntent, serviceHealth.ocr.engine)
     : false;
-  const voicePipelineBlocked = Boolean(
-    serviceHealth?.voicePipeline.requireV2ForLocalization &&
-    needsVoicePipeline &&
-    !serviceHealth?.voicePipeline.reachable,
-  );
-  const ocrServiceBlocked = Boolean(
-    needsOcrService &&
-    serviceHealth?.ocr.engine === "paddleocr" &&
-    !serviceHealth?.ocr.reachable,
-  );
-  const createBlockedReason = voicePipelineBlocked
-    ? `Voice Pipeline V2 chưa chạy tại ${serviceHealth?.voicePipeline.url ?? "VOICE_PIPELINE_URL"}.`
-    : ocrServiceBlocked
-      ? `PaddleOCR chưa chạy tại ${serviceHealth?.ocr.url ?? "PADDLEOCR_SERVICE_URL"}.`
-      : null;
-
+  const voicePipelineBlocked = false; // UI should not check worker's local services
+  const ocrServiceBlocked = false;
+  const createBlockedReason = null; // Do not block UI creation, let the worker handle it
   return (
     <div className="space-y-4">
       {/* ---------------- Header Toolbar ---------------- */}
