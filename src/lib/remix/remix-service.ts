@@ -252,7 +252,20 @@ export async function runRemixJob(
           ? effectiveOptions.trimSeconds
           : videoInfo.durationSec;
         voiceCues = manualScriptToAlignedCues(manualScript, duration);
-        asrScriptVi = manualScript;
+        if (!cuesLookTranslated(voiceCues, effectiveOptions.targetLanguage ?? 'vi')) {
+          voiceCues = await translateAlignedCues(
+            voiceCues.map((cue) => ({
+              ...cue,
+              translatedText: undefined,
+            })),
+            effectiveOptions.targetLanguage ?? 'vi',
+            effectiveOptions.protectedTerms ?? [],
+          );
+        }
+        asrScriptVi = voiceCues
+          .map((cue) => cue.translatedText ?? cue.sourceText)
+          .join("\n")
+          .trim();
         asrTranslatedSrt = buildSrt(alignedCuesToSubtitleCues(voiceCues));
         effectiveOptions.manualScript = manualScript;
         effectiveOptions.editedScript = manualScript;
@@ -283,6 +296,9 @@ export async function runRemixJob(
                 effectiveOptions.targetLanguage ?? 'vi',
                 effectiveOptions.protectedTerms ?? [],
               );
+              if (!cuesLookTranslated(voiceCues, effectiveOptions.targetLanguage ?? 'vi')) {
+                throw new Error("Voice V2 trả transcript nhưng chưa dịch sang ngôn ngữ đích.");
+              }
               asrTranslatedSrt = buildSrt(alignedCuesToSubtitleCues(voiceCues));
               asrScriptVi = voiceCues
                 .map((cue) => cue.translatedText ?? cue.sourceText)
@@ -309,7 +325,7 @@ export async function runRemixJob(
                 asrTranslatedSrt = asrResult.srt;
                 const rawAsrCues = parseSrtCues(asrResult.srt, videoInfo?.durationSec);
                 // Step 1: Group incomplete sentence fragments into full sentences
-                const groupedCues = groupIntoCompleteSentences(
+                let groupedCues = groupIntoCompleteSentences(
                   rawAsrCues.map((cue) => ({
                     startSec: cue.startSec,
                     endSec: cue.endSec,
@@ -318,6 +334,16 @@ export async function runRemixJob(
                     confidence: 0.35 as number | undefined,
                   }))
                 );
+                if (!cuesLookTranslated(groupedCues, effectiveOptions.targetLanguage ?? 'vi')) {
+                  groupedCues = await translateAlignedCues(
+                    groupedCues.map((cue) => ({
+                      ...cue,
+                      translatedText: undefined,
+                    })),
+                    effectiveOptions.targetLanguage ?? 'vi',
+                    effectiveOptions.protectedTerms ?? [],
+                  );
+                }
                 // Step 2: Realign grouped cue timings to actual speech from silencedetect
                 const speechSegsForFallback = await detectSpeechSegments(
                   audioPath,
@@ -976,14 +1002,13 @@ async function synthesizeTimedCuesToFile(
   workDir: string,
   voiceOverride?: string,
   voiceVol = 2.0,
-): Promise<{ path: string; stretchCount: number; clippedCount: number } | { error: string }> {
+): Promise<{ path: string; stretchCount: number; clippedCount: number; maxTempo: number } | { error: string }> {
   try {
     const cueFiles: Array<{ path: string; startSec: number }> = [];
     const totalDuration = Math.max(0.2, totalSec);
-    const minTempo = clampNumeric(Number(process.env.VOICE_TTS_STRETCH_MIN ?? 0.85), 0.5, 2);
-    const maxTempo = clampNumeric(Number(process.env.VOICE_TTS_STRETCH_MAX ?? 1.18), 0.5, 2);
     let stretchCount = 0;
     let clippedCount = 0;
+    let maxTempo = 1;
     const sorted = cues
       .map((cue) => ({
         ...cue,
@@ -1013,14 +1038,14 @@ async function synthesizeTimedCuesToFile(
       if (rawDuration && Math.abs(rawDuration - targetDuration) > 0.04) {
         const tempo = rawDuration / targetDuration;
         const fittedPath = path.join(workDir, `tts_cue_${idx}_fit.aac`);
-        if (tempo >= minTempo && tempo <= maxTempo) {
+        if (rawDuration > targetDuration) {
           await fitAudioToDuration(raw.path, fittedPath, targetDuration, "tempo");
           cuePath = fittedPath;
           stretchCount += 1;
+          maxTempo = Math.max(maxTempo, tempo);
         } else {
-          await fitAudioToDuration(raw.path, fittedPath, targetDuration, rawDuration > targetDuration ? "trim" : "pad");
+          await fitAudioToDuration(raw.path, fittedPath, targetDuration, "pad");
           cuePath = fittedPath;
-          if (rawDuration > targetDuration) clippedCount += 1;
         }
       }
       cueFiles.push({ path: cuePath, startSec: cue.startSec });
@@ -1052,7 +1077,7 @@ async function synthesizeTimedCuesToFile(
       "-b:a", "128k",
       outPath,
     ]);
-    return { path: outPath, stretchCount, clippedCount };
+    return { path: outPath, stretchCount, clippedCount, maxTempo };
   } catch (err) {
     return { error: `Lồng tiếng theo timing thất bại: ${(err as Error).message}` };
   }
@@ -1212,11 +1237,13 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
         let finalTtsPath = tts.path;
         const isTimedTts = "stretchCount" in tts;
         if ("stretchCount" in tts) {
-          const timedTts = tts as { path: string; stretchCount: number; clippedCount: number };
+          const timedTts = tts as { path: string; stretchCount: number; clippedCount: number; maxTempo?: number };
           if (timedTts.stretchCount > 0 || timedTts.clippedCount > 0) {
-          plan.warnings.push(
-              `TTS timing: ${timedTts.stretchCount} cue được time-stretch, ${timedTts.clippedCount} cue bị trim/fade vì vượt ngưỡng.`,
-          );
+            plan.warnings.push(
+              `TTS timing: ${timedTts.stretchCount} cue được tăng tốc để khớp subtitle` +
+              `${timedTts.maxTempo && timedTts.maxTempo > 1 ? ` (max ${timedTts.maxTempo.toFixed(2)}x)` : ""}, ` +
+              `${timedTts.clippedCount} cue bị cắt.`,
+            );
           }
         }
         if (!isTimedTts && meanVolumeDb !== null && meanVolumeDb < -45 && cleanScriptForTts) {
@@ -1321,13 +1348,16 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
             ? shiftAlignedCuesForTrim(asrVoiceCues, trimParam?.start ?? 0, duration)
             : planVoiceCues(plan);
           const subtitleCues = parseSrtCues(srt, duration);
+          const reframeOp = ops.find((o) => o.op === "reframe") as Extract<VideoOp, { op: "reframe" }> | undefined;
+          const videoW = reframeOp?.width ?? videoInfo?.width ?? 360;
+          const videoH = reframeOp?.height ?? videoInfo?.height ?? 640;
           const ass = hasAnimatedSubtitles
             ? buildAssSubtitles(
                 cuesWithWordsForSubtitle(
                   subtitleCues,
                   subtitleVoiceCues,
                 ),
-                { ...subStyle, animation },
+                { ...subStyle, animation, videoWidth: videoW, videoHeight: videoH },
               )
             : undefined;
           const subIdx = ops.findIndex((o) => o.op === "subtitles");
@@ -1718,6 +1748,27 @@ function resolveFinalSubtitleCueSource(input: {
   if (plannedCues.length) return { cues: plannedCues, source: "plan_audio_cues" };
 
   return { cues: [], source: "empty" };
+}
+
+function cuesLookTranslated(
+  cues: Array<{ sourceText?: string; translatedText?: string }>,
+  targetLanguage: RemixOptions["targetLanguage"] = "vi",
+): boolean {
+  const texts = cues
+    .map((cue) => (cue.translatedText ?? cue.sourceText ?? "").trim())
+    .filter(Boolean);
+  if (!texts.length) return true;
+
+  const joined = texts.join(" ");
+  if (targetLanguage === "en") {
+    return /(?:\bthe\b|\band\b|\byou\b|\bthat\b|\bwith\b|\bfor\b|\bthis\b|\bis\b)/i.test(joined);
+  }
+
+  if (/[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(joined)) {
+    return true;
+  }
+
+  return /(?:\bkhông\b|\bđược\b|\bchúng ta\b|\bcủa\b|\bnhững\b|\bđang\b|\bmuốn\b|\bxin\b|\bbạn\b|\btôi\b)/i.test(joined);
 }
 
 function cuesWithWordsForSubtitle(

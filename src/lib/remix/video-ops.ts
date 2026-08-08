@@ -323,6 +323,8 @@ export interface AssSubtitleStyle {
   marginV?: number;
   alignment?: number;
   animation?: "word_highlight" | "reveal_words";
+  videoWidth?: number;
+  videoHeight?: number;
 }
 
 /** Build ASS subtitles with active-word highlight or progressive word reveal. */
@@ -375,12 +377,17 @@ export function buildAssSubtitles(
     }
   }
 
+  const playResX = style.videoWidth ?? 384;
+  const playResY = style.videoHeight ?? 288;
+
   return [
     "[Script Info]",
     "ScriptType: v4.00+",
     "WrapStyle: 2",
     "ScaledBorderAndShadow: yes",
     "YCbCr Matrix: TV.709",
+    `PlayResX: ${playResX}`,
+    `PlayResY: ${playResY}`,
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
@@ -732,30 +739,65 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   }
 
   if (subs) {
+    const vw = reframe ? reframe.width : info.width;
+    const vh = reframe ? reframe.height : info.height;
     const fontSize = clamp(subs.fontSize ?? 24, 12, 72);
     if (subs.ass) {
+      // Already-built ASS (animated) – but patch PlayRes into it if missing
+      let assContent = subs.ass;
+      if (!assContent.includes('PlayResX')) {
+        assContent = assContent.replace(
+          '[Script Info]',
+          `[Script Info]\nPlayResX: ${vw}\nPlayResY: ${vh}`,
+        );
+      }
       const assPath = path.join(workDir, "sub.ass");
-      await writeFile(assPath, subs.ass, "utf8");
+      await writeFile(assPath, assContent, "utf8");
       chain.push(`ass='${escapeFilterPath(assPath)}'`);
     } else {
-      const srtPath = path.join(workDir, "sub.srt");
-      await writeFile(srtPath, subs.srt, "utf8");
-    
-      const style = [
-        `FontSize=${fontSize}`,
-        `PrimaryColour=${assColor(subs.primaryColor, '&H00FFFFFF')}`,
-        `OutlineColour=${assColor(subs.outlineColor, '&H00000000')}`,
-        `BorderStyle=${subs.borderStyle ?? 1}`,
-        `Outline=${subs.outline ?? 2}`,
-        'Shadow=0',
-        `Alignment=${subs.alignment ?? 2}`,
-        `MarginV=${subs.marginV ?? 60}`,
-        subs.bold ? 'Bold=1' : null,
-        subs.italic ? 'Italic=1' : null,
-      ].filter(Boolean).join(',');
-      chain.push(
-        `subtitles='${escapeFilterPath(srtPath)}':force_style='${style}'`,
-      );
+      // Static subtitles: build a real ASS file with correct PlayRes
+      // so FontSize and MarginV are in actual video pixels, not script units
+      const primary = assColor(subs.primaryColor, '\u0026H00FFFFFF');
+      const outline = assColor(subs.outlineColor, '\u0026H00000000');
+      const bold = subs.bold ? 1 : 0;
+      const italic = subs.italic ? 1 : 0;
+      const outlineWidth = clamp(Math.round(subs.outline ?? 2), 0, 8);
+      const borderStyle = clamp(Math.round(subs.borderStyle ?? 1), 0, 4);
+      const alignment = subs.alignment ?? 2;
+      const marginV = clamp(Math.round(subs.marginV ?? 60), 0, vh);
+      const fontName = (subs.font?.trim()) || 'Arial';
+
+      // Parse SRT cues and write a minimal static ASS file
+      const srtCues = (subs.srt ?? '').split(/\n\n+/).map(block => {
+        const lines = block.trim().split('\n');
+        const timeMatch = lines[1]?.match(/(\d+:\d+:\d+[,.]\d+)\s*-->\s*(\d+:\d+:\d+[,.]\d+)/);
+        if (!timeMatch) return null;
+        const toAss = (t: string) => t.replace(',', '.');
+        const text = lines.slice(2).join('\\N').trim();
+        return `Dialogue: 0,${toAss(timeMatch[1])},${toAss(timeMatch[2])},Default,,0,0,0,,${text}`;
+      }).filter(Boolean);
+
+      const assContent = [
+        '[Script Info]',
+        'ScriptType: v4.00+',
+        'WrapStyle: 2',
+        'ScaledBorderAndShadow: yes',
+        `PlayResX: ${vw}`,
+        `PlayResY: ${vh}`,
+        '',
+        '[V4+ Styles]',
+        'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+        `Style: Default,${fontName},${fontSize},${primary},${primary},${outline},\u0026H80000000,${bold},${italic},0,0,100,100,0,0,${borderStyle},${outlineWidth},1,${alignment},60,60,${marginV},1`,
+        '',
+        '[Events]',
+        'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+        ...srtCues,
+        '',
+      ].join('\n');
+
+      const assPath = path.join(workDir, "sub.ass");
+      await writeFile(assPath, assContent, "utf8");
+      chain.push(`ass='${escapeFilterPath(assPath)}'`);
     }
   }
 
