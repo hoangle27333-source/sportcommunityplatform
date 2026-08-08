@@ -103,9 +103,20 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
     // Ưu tiên: scriptSegments đã lưu → generatedScript (ASR result) → editedScript → manualScript
     const saved = initialOptions.scriptSegments as ScriptSegment[] | undefined;
     if (saved && saved.length > 0 && saved.some((s: ScriptSegment) => s.text?.trim())) return saved;
-    const raw = initialOptions.generatedScript || initialOptions.editedScript || initialOptions.manualScript || '';
-    if (raw.trim()) return [{ id: genId(), start: 0, end: 0, text: raw.trim() }];
-    return [];
+    const raw = (initialOptions.generatedScript || initialOptions.editedScript || initialOptions.manualScript || '').trim();
+    if (!raw) return [];
+    // Parse multiline script → nhiều segments (mỗi câu/dòng là 1 segment)
+    // Timestamps sẽ được gán proportionally khi video load xong
+    const lines = raw.split(/\n+/).map((l: string) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return [];
+    if (lines.length === 1) return [{ id: genId(), start: 0, end: 0, text: lines[0] }];
+    return lines.map((line: string, i: number) => ({
+      id: genId(),
+      start: 0, // sẽ được phân bổ khi video load
+      end: 0,
+      text: line,
+      _lineIndex: i, // dùng nội bộ để phân bổ timestamps
+    } as ScriptSegment));
   });
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number>(-1);
   const [vietsub, setVietsub] = useState<boolean>(Boolean(initialOptions.vietsub));
@@ -188,14 +199,24 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
         const d = videoRef.current!.duration;
         setDuration(d);
         if (!initialOptions.trimSeconds) setTrimEnd(Math.floor(d));
-        // Nếu đang ở manual mode và chưa có segments → auto split
-        if (scriptInputMode === 'manual_script' && (scriptSegments.length === 0 || (scriptSegments.length === 1 && !scriptSegments[0].text))) {
-          setScriptSegments(autoSplitSegments(d));
-        }
-        // Nếu đang ở from_video_audio và có 1 segment không có timestamps → gán timestamps từ duration
-        if (scriptInputMode === 'from_video_audio' && scriptSegments.length === 1 && scriptSegments[0].start === 0 && scriptSegments[0].end === 0 && scriptSegments[0].text) {
-          setScriptSegments([{ ...scriptSegments[0], end: Math.floor(d) }]);
-        }
+
+        setScriptSegments(prev => {
+          // Nếu tất cả segments đều chưa có timestamps (start=0, end=0) → phân bổ đều theo duration
+          const allUninitialized = prev.length > 0 && prev.every(s => s.start === 0 && s.end === 0);
+          if (allUninitialized && prev.length > 0) {
+            const segDur = d / prev.length;
+            return prev.map((s, i) => ({
+              ...s,
+              start: Math.round(i * segDur * 10) / 10,
+              end: Math.round((i + 1) * segDur * 10) / 10,
+            }));
+          }
+          // Manual mode: chưa có segments → auto split
+          if (scriptInputMode === 'manual_script' && prev.length === 0) {
+            return autoSplitSegments(d);
+          }
+          return prev;
+        });
       };
     }
   }, [initialOptions.trimSeconds]);
@@ -573,6 +594,11 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                           <p className="text-[11px] text-muted-foreground/60">Chưa có script từ lần generate trước — chuyển sang "Script nhập tay" để nhập thủ công</p>
                         </div>
                       )}
+                      {scriptSegments.length > 0 && scriptInputMode === 'from_video_audio' && (
+                        <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-xs text-blue-400">
+                          ℹ️ Script được lấy từ lần generate trước. Bạn có thể chỉnh sửa nội dung từng đoạn, sau đó Lưu &amp; Áp dụng để generate lại với script đã sửa.
+                        </div>
+                      )}
                       {scriptSegments.map((seg, i) => (
                         <div key={seg.id} className="space-y-1">
                           <div
@@ -800,15 +826,16 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                 </div>
               )}
               {activeTab === 'text_overlay' && (
-                <>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center border-b pb-2">
                     <h4 className="font-semibold text-base">Text on Screen</h4>
                     <Button size="sm" variant="outline" onClick={addTextOverlay}>+ Thêm Text</Button>
                   </div>
+
                   <p className="text-xs text-muted-foreground">
                     💡 Drag text trên video preview để đặt vị trí. Click text để chọn và chỉnh sửa.
                   </p>
+
                   {textOverlays.length === 0 && (
                     <div className="text-center py-8 border border-dashed border-input rounded-lg">
                       <p className="text-muted-foreground text-sm">Chưa có text overlay nào</p>
@@ -821,6 +848,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                       </button>
                     </div>
                   )}
+
                   <div className="space-y-2">
                     {textOverlays.map((overlay) => (
                       <div
@@ -857,6 +885,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                             🗑
                           </button>
                         </div>
+
                         {editingOverlayId === overlay.id && (
                           <div className="border-t border-border/50 p-3 space-y-3" onClick={e => e.stopPropagation()}>
                             <div className="space-y-1">
@@ -872,10 +901,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                               <div className="space-y-1">
                                 <label className="text-xs text-muted-foreground">Bắt đầu (giây)</label>
                                 <input
-                                  type="number"
-                                  min="0"
-                                  max={duration || 999}
-                                  step="0.5"
+                                  type="number" min="0" max={duration || 999} step="0.5"
                                   value={overlay.start}
                                   onChange={(e) => updateOverlay(overlay.id, { start: Number(e.target.value) })}
                                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -884,10 +910,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                               <div className="space-y-1">
                                 <label className="text-xs text-muted-foreground">Kết thúc (giây)</label>
                                 <input
-                                  type="number"
-                                  min="0"
-                                  max={duration || 999}
-                                  step="0.5"
+                                  type="number" min="0" max={duration || 999} step="0.5"
                                   value={overlay.end}
                                   onChange={(e) => updateOverlay(overlay.id, { end: Number(e.target.value) })}
                                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -973,6 +996,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                       </div>
                     ))}
                   </div>
+
                   {scriptSegments.some(s => s.text.trim()) && (
                     <div className="border-t border-border pt-4">
                       <button
@@ -990,113 +1014,112 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                       </button>
                     </div>
                   )}
-                </div>
-                {/* ── Dịch chữ AI (merged from Translate tab) ── */}
-                <div className="border-t border-border/60 pt-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h5 className="text-sm font-semibold">🌐 Dịch chữ trên video (AI)</h5>
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={translateOnScreenText}
-                        onChange={(e) => setTranslateOnScreenText(e.target.checked)}
-                        className="rounded"
-                      />
-                      Bật tính năng
-                    </label>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    AI phát hiện chữ burn-in/on-screen trong video gốc, dịch tự nhiên rồi chèn đè lên. Kết quả sẽ xuất hiện như các overlay ở trên.
-                  </p>
-                  {translateOnScreenText && (
-                    <div className="space-y-3">
-                      <input
-                        type="text"
-                        placeholder="Hint ngữ cảnh/thuật ngữ cần giữ nguyên..."
-                        value={textOverlay}
-                        onChange={(e) => setTextOverlay(e.target.value)}
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        {(Object.entries(ON_SCREEN_TEXT_PRESETS) as Array<[OnScreenTextPreset, typeof ON_SCREEN_TEXT_PRESETS[OnScreenTextPreset]]>).map(([key, style]) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => applyOnScreenTextPreset(key)}
-                            className={`rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
-                              onScreenTextPreset === key
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-input bg-background hover:bg-muted"
-                            }`}
-                          >
-                            {style.label}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <label className="text-xs text-muted-foreground">Font</label>
-                          <select
-                            value={textFont}
-                            onChange={(e) => setTextFont(e.target.value)}
-                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
-                          >
-                            <option value="Anton">Anton (Meme)</option>
-                            <option value="Oswald">Oswald (Condensed)</option>
-                            <option value="Be Vietnam Pro">Be Vietnam Pro</option>
-                            <option value="Montserrat">Montserrat</option>
-                            <option value="Nunito">Nunito</option>
-                            <option value="Baloo 2">Baloo 2 (Sticker)</option>
-                            <option value="Inter">Inter</option>
-                            <option value="Noto Sans">Noto Sans</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs text-muted-foreground">Cỡ {textFontSize}px</label>
-                          <input type="range" min="16" max="72" value={textFontSize}
-                            onChange={(e) => setTextFontSize(Number(e.target.value))}
-                            className="w-full mt-2 accent-primary"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { label: "Chữ", value: textColor, setter: setTextColor },
-                          { label: "Nền", value: textBgColor, setter: setTextBgColor },
-                          { label: "Viền", value: textOutlineColor, setter: setTextOutlineColor },
-                        ].map(({ label, value, setter }) => (
-                          <label key={label} className="space-y-1">
-                            <span className="block text-xs text-muted-foreground">{label}</span>
-                            <input type="color" value={value}
-                              onChange={(e) => setter(e.target.value)}
-                              className="h-8 w-full rounded border border-input bg-background p-0.5"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                      <label className="flex items-center gap-2 text-xs">
-                        <input type="checkbox" checked={textBold} onChange={(e) => setTextBold(e.target.checked)} />
-                        Đậm (Bold)
+
+                  <div className="border-t border-border/60 pt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-sm font-semibold">🌐 Dịch chữ trên video (AI)</h5>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={translateOnScreenText}
+                          onChange={(e) => setTranslateOnScreenText(e.target.checked)}
+                          className="rounded"
+                        />
+                        Bật tính năng
                       </label>
-                      <div className="rounded-md bg-zinc-950 p-3 text-center">
-                        <span
-                          className="inline-block rounded px-2 py-0.5"
-                          style={{
-                            fontFamily: textFont,
-                            fontSize: `${Math.min(textFontSize, 36)}px`,
-                            color: textColor,
-                            backgroundColor: textBgColor,
-                            WebkitTextStroke: `1px ${textOutlineColor}`,
-                            fontWeight: textBold ? 800 : 500,
-                          }}
-                        >
-                          Preview text dịch
-                        </span>
-                      </div>
                     </div>
-                  )}
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      AI phát hiện chữ burn-in/on-screen trong video gốc, dịch tự nhiên rồi chèn đè lên. Kết quả sẽ xuất hiện như các overlay ở trên.
+                    </p>
+                    {translateOnScreenText && (
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          placeholder="Hint ngữ cảnh/thuật ngữ cần giữ nguyên..."
+                          value={textOverlay}
+                          onChange={(e) => setTextOverlay(e.target.value)}
+                          className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          {(Object.entries(ON_SCREEN_TEXT_PRESETS) as Array<[OnScreenTextPreset, typeof ON_SCREEN_TEXT_PRESETS[OnScreenTextPreset]]>).map(([key, style]) => (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => applyOnScreenTextPreset(key)}
+                              className={`rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
+                                onScreenTextPreset === key
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-input bg-background hover:bg-muted"
+                              }`}
+                            >
+                              {style.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Font</label>
+                            <select
+                              value={textFont}
+                              onChange={(e) => setTextFont(e.target.value)}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            >
+                              <option value="Anton">Anton (Meme)</option>
+                              <option value="Oswald">Oswald (Condensed)</option>
+                              <option value="Be Vietnam Pro">Be Vietnam Pro</option>
+                              <option value="Montserrat">Montserrat</option>
+                              <option value="Nunito">Nunito</option>
+                              <option value="Baloo 2">Baloo 2 (Sticker)</option>
+                              <option value="Inter">Inter</option>
+                              <option value="Noto Sans">Noto Sans</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Cỡ {textFontSize}px</label>
+                            <input type="range" min="16" max="72" value={textFontSize}
+                              onChange={(e) => setTextFontSize(Number(e.target.value))}
+                              className="w-full mt-2 accent-primary"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { label: "Chữ", value: textColor, setter: setTextColor },
+                            { label: "Nền", value: textBgColor, setter: setTextBgColor },
+                            { label: "Viền", value: textOutlineColor, setter: setTextOutlineColor },
+                          ].map(({ label, value, setter }) => (
+                            <label key={label} className="space-y-1">
+                              <span className="block text-xs text-muted-foreground">{label}</span>
+                              <input type="color" value={value}
+                                onChange={(e) => setter(e.target.value)}
+                                className="h-8 w-full rounded border border-input bg-background p-0.5"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={textBold} onChange={(e) => setTextBold(e.target.checked)} />
+                          Đậm (Bold)
+                        </label>
+                        <div className="rounded-md bg-zinc-950 p-3 text-center">
+                          <span
+                            className="inline-block rounded px-2 py-0.5"
+                            style={{
+                              fontFamily: textFont,
+                              fontSize: `${Math.min(textFontSize, 36)}px`,
+                              color: textColor,
+                              backgroundColor: textBgColor,
+                              WebkitTextStroke: `1px ${textOutlineColor}`,
+                              fontWeight: textBold ? 800 : 500,
+                            }}
+                          >
+                            Preview text dịch
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                </>
               )}
 
             </div>

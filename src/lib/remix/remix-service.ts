@@ -622,6 +622,7 @@ export async function runRemixJob(
         .update({
           status: "review",
           plan,
+          options: effectiveOptions, // Lưu lại options với generatedScript + textOnScreenOverlays đã set
           result_media_id: asset?.id ?? null,
           result_caption: plan.caption ?? null,
           result_hashtags: hashtags,

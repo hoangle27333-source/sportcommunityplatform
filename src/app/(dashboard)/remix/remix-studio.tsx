@@ -2386,11 +2386,43 @@ export function RemixStudio({
       {isEditingVideo && detail?.resultUrl && detail?.options && (
         <VideoEditor
           source={detail.resultUrl}
-          initialOptions={detail.options as Record<string, any>}
+          initialOptions={{
+            ...detail.options as Record<string, any>,
+            // Pre-populate script from the generated ASR/AI script in plan
+            generatedScript:
+              (detail.options as Record<string, any>).generatedScript ||
+              (detail.options as Record<string, any>).editedScript ||
+              (detail.options as Record<string, any>).manualScript ||
+              detail.plan?.realScriptVi ||
+              detail.plan?.scriptVi ||
+              undefined,
+            // Pre-populate text overlays from plan.editDecisions.overlays
+            // kind='text' is what upsertTextOverlayDecision stores
+            textOnScreenOverlays:
+              (detail.options as Record<string, any>).textOnScreenOverlays ||
+              (detail.plan?.editDecisions?.overlays
+                ?.filter((o: any) => o.kind === 'text' && (o.translatedText || o.sourceText))
+                .map((o: any, idx: number) => ({
+                  id: o.id || `plan_${idx}`,
+                  start: o.startSec ?? 0,
+                  end: o.endSec ?? 5,
+                  text: o.translatedText || o.sourceText || '',
+                  position: {
+                    x: (o.region?.x ?? 0.5) + (o.region?.w ?? 0) / 2,
+                    y: o.region?.y ?? 0.1,
+                  },
+                  fontFamily: 'Be Vietnam Pro',
+                  fontSize: 32,
+                  fontColor: '#FFFFFF',
+                  bgColor: '#000000CC',
+                  animation: 'fade_in' as const,
+                })) ?? undefined),
+          }}
           onSave={handleSaveVideo}
           onCancel={() => setIsEditingVideo(false)}
         />
       )}
+
     </div>
   );
 }
