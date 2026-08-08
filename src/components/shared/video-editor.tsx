@@ -800,6 +800,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                 </div>
               )}
               {activeTab === 'text_overlay' && (
+                <>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center border-b pb-2">
                     <h4 className="font-semibold text-base">Text on Screen</h4>
@@ -1095,6 +1096,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                     </div>
                   )}
                 </div>
+                </>
               )}
 
             </div>

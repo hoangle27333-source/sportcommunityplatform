@@ -269,6 +269,8 @@ export async function runRemixJob(
         asrTranslatedSrt = buildSrt(alignedCuesToSubtitleCues(voiceCues));
         effectiveOptions.manualScript = manualScript;
         effectiveOptions.editedScript = manualScript;
+        // Lưu generatedScript để video editor hiển thị cho user chỉnh sửa lần sau.
+        effectiveOptions.generatedScript = manualScript;
         warnings.push(`Dùng script nhập tay: ${voiceCues.length} cue được phân bổ theo thời lượng video, bỏ qua ASR audio gốc.`);
       }
       const needsTranscription =
@@ -442,6 +444,10 @@ export async function runRemixJob(
       console.log(`[remix:plan-debug] asrScriptVi (100): ${(asrScriptVi ?? "(undefined)").slice(0, 100)}`);
       console.log(`[remix:plan-debug] plan.scriptVi (100): ${(plan.scriptVi ?? "(undefined)").slice(0, 100)}`);
       console.log(`[remix:plan-debug] voiceCues.length: ${voiceCues.length}`);
+      // Lưu script ASR vào options để video editor hiển thị cho lần chỉnh sửa tiếp theo
+      if (asrScriptVi && !effectiveOptions.generatedScript) {
+        effectiveOptions.generatedScript = asrScriptVi;
+      }
       console.log(`[remix:plan-debug] plan.editDecisions.audio.cues?.length: ${plan.editDecisions?.audio.cues?.length ?? 0}`);
       if (plan.editDecisions?.audio.cues?.length) {
         const c0 = plan.editDecisions.audio.cues[0];
@@ -1477,6 +1483,25 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
           region: replacementRegions.base,
           confidence: translation.confidence,
         });
+      }
+      // Lưu kết quả overlays vào options để video editor hiển thị cho user chỉnh sửa lần sau
+      if (filteredTranslations.length) {
+        const textStyle = resolveOnScreenTextStyle(options.onScreenTextStyle);
+        options.textOnScreenOverlays = filteredTranslations.map((translation, idx) => ({
+          id: `ai_${idx}_${Date.now()}`,
+          start: Math.max(0, translation.startSec),
+          end: translation.endSec,
+          text: translation.translatedText,
+          position: {
+            x: translation.region?.x ?? 0.5,
+            y: translation.region?.y ?? 0.1,
+          },
+          fontFamily: textStyle.font ?? 'Be Vietnam Pro',
+          fontSize: textStyle.size ?? 32,
+          fontColor: textStyle.color ?? '#FFFFFF',
+          bgColor: textStyle.bgColor ?? '#000000CC',
+          animation: 'fade_in' as const,
+        }));
       }
       plan.warnings.push(
         `Đã dịch ${filteredTranslations.length} text on-screen theo tone/mood: ${filteredTranslations[0]?.toneMood || "không rõ"}. ` +
