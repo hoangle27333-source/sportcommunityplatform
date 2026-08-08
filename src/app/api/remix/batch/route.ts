@@ -65,20 +65,20 @@ export async function POST(req: NextRequest) {
           ...defaultBatchOptions,
         });
 
-    if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
-      const health = await getRemixServiceHealth();
-      if (!health.voicePipeline.reachable) {
-        return NextResponse.json(
-          {
-            error:
-              "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
-              `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi batch generate.`,
-            preflight: health,
-          },
-          { status: 503 },
-        );
-      }
-    }
+    // if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
+    //   const health = await getRemixServiceHealth();
+    //   if (!health.voicePipeline.reachable) {
+    //     return NextResponse.json(
+    //       {
+    //         error:
+    //           "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
+    //           `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi batch generate.`,
+    //         preflight: health,
+    //       },
+    //       { status: 503 },
+    //     );
+    //   }
+    // }
 
     for (let i = 0; i < body.urls.length; i++) {
       const url = body.urls[i];

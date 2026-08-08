@@ -244,20 +244,20 @@ export async function POST(req: NextRequest) {
       ...effectiveOptions,
     });
 
-    if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
-      const health = await getRemixServiceHealth();
-      if (!health.voicePipeline.reachable) {
-        return NextResponse.json(
-          {
-            error:
-              "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
-              `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi tạo job.`,
-            preflight: health,
-          },
-          { status: 503 },
-        );
-      }
-    }
+    // if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
+    //   const health = await getRemixServiceHealth();
+    //   if (!health.voicePipeline.reachable) {
+    //     return NextResponse.json(
+    //       {
+    //         error:
+    //           "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
+    //           `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi tạo job.`,
+    //         preflight: health,
+    //       },
+    //       { status: 503 },
+    //     );
+    //   }
+    // }
 
     const { data: job, error } = await db
       .from("remix_jobs")
