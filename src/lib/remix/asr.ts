@@ -72,13 +72,23 @@ export async function extractAudio(input: ExtractAudioInput): Promise<string | n
 }
 
 /**
- * Gọi Gemini API để chuyển giọng nói thành phụ đề (SRT) và dịch sang tiếng Việt.
+ * Gọi Gemini API để chuyển giọng nói thành phụ đề (SRT) và dịch sang ngôn ngữ đích.
+ * @param targetLanguage ISO code, mặc định 'vi' (tiếng Việt)
  */
-export async function transcribeToSrt(audioPath: string): Promise<{ srt?: string; error?: string }> {
+export async function transcribeToSrt(
+  audioPath: string,
+  targetLanguage = 'vi',
+): Promise<{ srt?: string; error?: string }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return { error: "Không có GEMINI_API_KEY, tính năng nhận dạng giọng nói bị vô hiệu hoá." };
   }
+
+  const langLabel = targetLanguage === 'en' ? 'ENGLISH' : 'VIETNAMESE (TIẾNG VIỆT)';
+  const langInstruction =
+    targetLanguage === 'en'
+      ? 'TRANSLATE EVERYTHING TO ENGLISH. If audio is already in English, keep it as-is.'
+      : 'DỊCH TOÀN BỘ SANG TIẾNG VIỆT (Vietnamese). Nếu audio đã là tiếng Việt thì giữ nguyên.';
 
   try {
     const audioBuffer = await readFile(audioPath);
@@ -91,17 +101,17 @@ export async function transcribeToSrt(audioPath: string): Promise<{ srt?: string
     const model = genAI.getGenerativeModel({ model: modelName });
 
     const prompt = `
-[BẮT BUỘC / MANDATORY] TOÀN BỘ KẾT QUẢ CUỐI CÙNG PHẢI LÀ TIẾNG VIỆT. KHÔNG ĐƯỢC GIỮ LẠI BẤT KỲ CÂU NÀO BẰNG TIẾNG ANH HAY NGÔN NGỮ KHÁC.
+[MANDATORY] ALL OUTPUT MUST BE IN ${langLabel}. DO NOT output any other language.
 
-Bạn là một chuyên gia dịch thuật và tạo phụ đề chuyên nghiệp.
-Nhiệm vụ:
-1. Nghe đoạn audio này.
-2. Nhận diện toàn bộ lời thoại.
-3. DỊCH TOÀN BỘ SANG TIẾNG VIỆT (dịch nghĩa đen hoặc chuyển ngữ tự nhiên). Nếu audio đã là tiếng Việt thì giữ nguyên.
-4. Trả về kết quả ở ĐỊNH DẠNG SRT CHUẨN (SubRip Subtitle), với timing chính xác.
+You are a professional subtitle creator and translator.
+Task:
+1. Listen to this audio.
+2. Transcribe all speech.
+3. ${langInstruction}
+4. Return the result in standard SRT format (SubRip Subtitle) with accurate timestamps.
 
-Nhắc lại: BẤT KỂ AUDIO GỐC LÀ NGÔN NGỮ GÌ, FILE SRT ĐẦU RA PHẢI LÀ TIẾNG VIỆT 100%.
-Tuyệt đối CHỈ TRẢ VỀ nội dung file SRT, không giải thích, không bọc trong markdown code block.
+Reminder: REGARDLESS OF WHAT LANGUAGE THE AUDIO IS IN, the output SRT MUST be 100% in ${langLabel}.
+ONLY return the SRT file content, no explanations, no markdown code blocks.
 `;
 
     const result = await model.generateContent([

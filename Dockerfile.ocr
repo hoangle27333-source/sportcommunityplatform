@@ -1,0 +1,25 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1
+ENV PADDLEOCR_LANG=en
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ffmpeg \
+      libgomp1 \
+      libglib2.0-0 \
+      libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+      paddlepaddle==3.2.0 \
+      -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+
+COPY ocr_service/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ocr_service ./ocr_service
+
+EXPOSE 8080
+CMD ["uvicorn", "ocr_service.app:app", "--host", "0.0.0.0", "--port", "8080"]

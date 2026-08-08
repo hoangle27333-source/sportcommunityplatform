@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm, stat, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-import type { VideoOp, RemixOptions } from "./types";
+import type { RemixFinalReview, VideoOp, RemixOptions } from "./types";
+export { sanitizeTranscriptText } from "./utils";
+import { sanitizeTranscriptText } from "./utils";
 
 // Use createRequire to bypass ESM/CJS interop issues with binary packages.
 // tsx ESM import of CJS packages can return null/undefined in some contexts.
@@ -82,6 +85,8 @@ export interface VideoInfo {
   height: number;
   fps: number;
   hasAudio: boolean;
+  codec?: string;
+  fileSizeBytes?: number;
 }
 
 /** Đọc metadata video bằng ffprobe. */
@@ -125,12 +130,145 @@ export async function probeVideo(filePath: string): Promise<VideoInfo> {
     height = tmp;
   }
 
+  const fileStat = await stat(filePath).catch(() => null);
+
   return {
     durationSec: Number(json.format?.duration ?? 0),
     width,
     height,
     fps: Math.round(fps * 100) / 100,
     hasAudio,
+    codec: video?.codec_name,
+    fileSizeBytes: fileStat?.size,
+  };
+}
+
+export interface ReviewRenderedVideoInput {
+  outputPath: string;
+  expected?: {
+    durationSec?: number;
+    width?: number;
+    height?: number;
+    hasAudio?: boolean;
+    subtitlesExpected?: boolean;
+    subtitlesPlanned?: boolean;
+  };
+}
+
+/**
+ * Post-render QA gate inspired by production pipelines: validate the actual
+ * rendered file before presenting it as a usable remix result.
+ */
+export async function reviewRenderedVideo(
+  input: ReviewRenderedVideoInput,
+): Promise<RemixFinalReview> {
+  const technicalIssues: string[] = [];
+  const visualIssues: string[] = [];
+  const audioIssues: string[] = [];
+  const subtitleIssues: string[] = [];
+
+  const fileStat = await stat(input.outputPath).catch(() => null);
+  let info: VideoInfo | null = null;
+  try {
+    info = await probeVideo(input.outputPath);
+  } catch (err) {
+    technicalIssues.push(`Không đọc được file render bằng ffprobe: ${(err as Error).message}`);
+  }
+
+  if (!fileStat || fileStat.size === 0) {
+    technicalIssues.push("File render không tồn tại hoặc rỗng.");
+  }
+  if (info && (!info.width || !info.height || info.durationSec <= 0)) {
+    technicalIssues.push("Container video thiếu stream hình hoặc duration không hợp lệ.");
+  }
+
+  const expectedResolution =
+    input.expected?.width && input.expected?.height
+      ? `${input.expected.width}x${input.expected.height}`
+      : undefined;
+  const actualResolution = info ? `${info.width}x${info.height}` : undefined;
+  const resolutionMatches =
+    !expectedResolution || expectedResolution === actualResolution;
+  if (!resolutionMatches) {
+    visualIssues.push(
+      `Resolution lệch kế hoạch: mong đợi ${expectedResolution}, thực tế ${actualResolution ?? "không rõ"}.`,
+    );
+  }
+
+  if (
+    info &&
+    input.expected?.durationSec &&
+    input.expected.durationSec > 0 &&
+    Math.abs(info.durationSec - input.expected.durationSec) > Math.max(1.5, input.expected.durationSec * 0.12)
+  ) {
+    technicalIssues.push(
+      `Duration lệch kế hoạch: mong đợi khoảng ${input.expected.durationSec.toFixed(1)}s, thực tế ${info.durationSec.toFixed(1)}s.`,
+    );
+  }
+
+  const audioExpected = input.expected?.hasAudio ?? false;
+  const audioPresent = info?.hasAudio ?? false;
+  if (audioExpected && !audioPresent) {
+    audioIssues.push("Kế hoạch cần audio nhưng file render không có audio track.");
+  }
+
+  const subtitlesExpected = input.expected?.subtitlesExpected ?? false;
+  const subtitlesPlanned = input.expected?.subtitlesPlanned ?? false;
+  if (subtitlesExpected && !subtitlesPlanned) {
+    subtitleIssues.push("Người dùng bật phụ đề nhưng kế hoạch render không có subtitle op.");
+  }
+
+  const issuesFound = [
+    ...technicalIssues,
+    ...visualIssues,
+    ...audioIssues,
+    ...subtitleIssues,
+  ];
+  const critical = !fileStat || fileStat.size === 0 || !info || !info.width || !info.height || info.durationSec <= 0;
+  const status: RemixFinalReview["status"] = critical
+    ? "fail"
+    : issuesFound.length
+      ? "revise"
+      : "pass";
+
+  return {
+    version: "1.0",
+    outputPath: input.outputPath,
+    status,
+    checks: {
+      technicalProbe: {
+        validContainer: Boolean(info && info.width && info.height && info.durationSec > 0),
+        durationSec: info?.durationSec,
+        resolution: actualResolution,
+        fps: info?.fps,
+        hasAudio: info?.hasAudio,
+        codec: info?.codec,
+        fileSizeBytes: fileStat?.size ?? info?.fileSizeBytes,
+        issues: technicalIssues,
+      },
+      visualSpotcheck: {
+        expectedResolution,
+        resolutionMatches,
+        issues: visualIssues,
+      },
+      audioSpotcheck: {
+        audioExpected,
+        audioPresent,
+        issues: audioIssues,
+      },
+      subtitleCheck: {
+        subtitlesExpected,
+        subtitlesPlanned,
+        issues: subtitleIssues,
+      },
+    },
+    issuesFound,
+    recommendedAction:
+      status === "fail"
+        ? "block"
+        : status === "revise"
+          ? "review_warning"
+          : "present_to_user",
   };
 }
 
@@ -142,6 +280,10 @@ export interface SubtitleCue {
   startSec: number;
   endSec: number;
   text: string;
+}
+
+export interface WordHighlightCue extends SubtitleCue {
+  words?: Array<{ word: string; startSec: number; endSec: number }>;
 }
 
 function srtTimestamp(sec: number): string {
@@ -168,6 +310,177 @@ export function buildSrt(cues: SubtitleCue[]): string {
     .join("\n");
 }
 
+export interface AssSubtitleStyle {
+  font?: string;
+  fontSize?: number;
+  primaryColor?: string;
+  outlineColor?: string;
+  highlightColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  outline?: number;
+  borderStyle?: number;
+  marginV?: number;
+  alignment?: number;
+  animation?: "word_highlight" | "reveal_words";
+}
+
+/** Build ASS subtitles with active-word highlight or progressive word reveal. */
+export function buildAssSubtitles(
+  cues: WordHighlightCue[],
+  style: AssSubtitleStyle = {},
+): string {
+  const fontName = style.font?.trim() || "Montserrat";
+  const fontSize = clamp(Math.round(style.fontSize ?? 32), 10, 96);
+  const primary = assColor(style.primaryColor, "&H00FFFFFF");
+  const outline = assColor(style.outlineColor, "&H00000000");
+  const highlight = assColor(style.highlightColor, "&H0000F2FF");
+  const bold = style.bold === false ? 0 : 1;
+  const italic = style.italic ? 1 : 0;
+  const outlineWidth = clamp(Math.round(style.outline ?? 3), 0, 8);
+  const borderStyle = clamp(Math.round(style.borderStyle ?? 1), 0, 4);
+  const alignment = style.alignment ?? 2;
+  const marginV = clamp(Math.round(style.marginV ?? 80), 0, 400);
+  const animation = style.animation ?? "word_highlight";
+  const events: string[] = [];
+
+  for (const cue of cues) {
+    const words = normalizeCueWords(cue);
+    if (!words.length) {
+      events.push(assDialogue(cue.startSec, cue.endSec, escapeAssText(cue.text)));
+      continue;
+    }
+    for (let i = 0; i < words.length; i += 1) {
+      const active = words[i];
+      const visibleWords = animation === "reveal_words" ? words.slice(0, i + 1) : words;
+      const activeIndex = animation === "reveal_words" ? visibleWords.length - 1 : i;
+      const rendered = visibleWords
+        .map((item, idx) => {
+          const text = escapeAssText(item.word);
+          return idx === activeIndex
+            ? `{\\c${highlight}\\b1}${text}{\\c${primary}\\b${bold}}`
+            : text;
+        })
+        .join(" ");
+      const next = words[i + 1];
+      events.push(
+        assDialogue(
+          Math.max(cue.startSec, active.startSec),
+          animation === "reveal_words"
+            ? Math.min(cue.endSec, Math.max(active.startSec + 0.05, next?.startSec ?? cue.endSec))
+            : Math.min(cue.endSec, Math.max(active.startSec + 0.05, active.endSec)),
+          rendered,
+        ),
+      );
+    }
+  }
+
+  return [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    "WrapStyle: 2",
+    "ScaledBorderAndShadow: yes",
+    "YCbCr Matrix: TV.709",
+    "",
+    "[V4+ Styles]",
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    `Style: Default,${fontName},${fontSize},${primary},${highlight},${outline},&H80000000,${bold},${italic},0,0,100,100,0,0,${borderStyle},${outlineWidth},1,${alignment},60,60,${marginV},1`,
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ...events,
+    "",
+  ].join("\n");
+}
+
+function normalizeCueWords(cue: WordHighlightCue): Array<{ word: string; startSec: number; endSec: number }> {
+  const valid = (cue.words ?? [])
+    .map((word) => ({
+      word: String(word.word ?? "").trim(),
+      startSec: clamp(Number(word.startSec), cue.startSec, cue.endSec),
+      endSec: clamp(Number(word.endSec), cue.startSec, cue.endSec),
+    }))
+    .filter((word) => word.word && word.endSec > word.startSec);
+  if (valid.length) return valid;
+
+  const parts = cue.text.split(/\s+/).map((word) => word.trim()).filter(Boolean);
+  if (!parts.length || cue.endSec <= cue.startSec) return [];
+  const slice = (cue.endSec - cue.startSec) / parts.length;
+  return parts.map((word, idx) => ({
+    word,
+    startSec: cue.startSec + slice * idx,
+    endSec: idx === parts.length - 1 ? cue.endSec : cue.startSec + slice * (idx + 1),
+  }));
+}
+
+function assDialogue(startSec: number, endSec: number, text: string): string {
+  return `Dialogue: 0,${assTimestamp(startSec)},${assTimestamp(endSec)},Default,,0,0,0,,${text}`;
+}
+
+function assTimestamp(sec: number): string {
+  const centis = Math.max(0, Math.round(sec * 100));
+  const h = Math.floor(centis / 360000);
+  const m = Math.floor((centis % 360000) / 6000);
+  const s = Math.floor((centis % 6000) / 100);
+  const c = centis % 100;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
+}
+
+function assColor(hex?: string, def = "&H00FFFFFF"): string {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return def;
+  const r = hex.slice(1, 3);
+  const g = hex.slice(3, 5);
+  const b = hex.slice(5, 7);
+  return `&H00${b}${g}${r}`;
+}
+
+function escapeAssText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\{/g, "\\{")
+    .replace(/\}/g, "\\}")
+    .replace(/\n/g, "\\N");
+}
+
+export function parseSrtCues(srt: string, totalSec?: number): SubtitleCue[] {
+  const maxDuration = totalSec && totalSec > 0 ? totalSec : Number.POSITIVE_INFINITY;
+  const normalized = srt.replace(/\r/g, "").trim();
+  if (!normalized) return [];
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((block) => {
+      const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+      const timeIndex = lines.findIndex((line) => line.includes("-->"));
+      if (timeIndex < 0) return null;
+      const [startRaw, endRaw] = lines[timeIndex].split("-->").map((part) => part.trim());
+      const startSec = parseSrtTimestamp(startRaw);
+      const endSec = parseSrtTimestamp(endRaw);
+      const text = lines.slice(timeIndex + 1).join(" ").trim();
+      if (!text || startSec === null || endSec === null || endSec <= startSec) return null;
+      return {
+        startSec: clamp(startSec, 0, Math.max(0, maxDuration - 0.05)),
+        endSec: clamp(endSec, 0.05, maxDuration),
+        text,
+      };
+    })
+    .filter((cue): cue is SubtitleCue => Boolean(cue))
+    .filter((cue) => cue.endSec > cue.startSec)
+    .sort((a, b) => a.startSec - b.startSec);
+}
+
+function parseSrtTimestamp(value: string): number | null {
+  const match = value.match(/(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[,.](\d{1,3})/);
+  if (!match) return null;
+  const hours = Number(match[1] ?? 0);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  const millis = Number(match[4].padEnd(3, "0").slice(0, 3));
+  if (![hours, minutes, seconds, millis].every(Number.isFinite)) return null;
+  return hours * 3600 + minutes * 60 + seconds + millis / 1000;
+}
+
+
 /**
  * Chia một đoạn script thành các cue đều nhau theo tổng thời lượng.
  * Dùng khi ta có bản dịch tiếng Việt nhưng không có timestamp từ ASR —
@@ -178,43 +491,41 @@ export function scriptToCues(
   totalSec: number,
   maxCharsPerCue = 42,
 ): SubtitleCue[] {
-  // -------- Làm sạch script: loại bỏ MỌI dạng timecode Gemini có thể sinh ra --------
-  // Gemini đôi khi trả SRT với format không chuẩn (MM:SS:mmm hoặc MM:SS.mmm hoặc
-  // HH:MM:SS,mmm) và bỏ xuống cùng dòng với chữ, hoặc để trên dòng riêng.
-  const cleaned = script
-    // Xoá cả dòng chỉ là số thứ tự SRT ("1", "2" ...)
-    .replace(/^\s*\d{1,4}\s*$/gm, '')
-    // Xoá toàn bộ chuỗi timecode dạng X --> Y (mọi biến thể dấu chấm/phẩy/hai chấm)
-    .replace(/\d{1,2}(?::\d{2}){1,2}[,.]\d{1,3}\s*-->\s*\d{1,2}(?::\d{2}){1,2}[,.]\d{1,3}/g, '')
-    // Xoá dạng MM:SS:mmm --> MM:SS:mmm (Gemini hay sinh ra)
-    .replace(/\d{1,2}:\d{2}:\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{3}/g, '')
-    // Xoá token đơn lẻ trông giống timestamp (VD: "00:01:230")
-    .replace(/\b\d{1,2}:\d{2}:\d{3}\b/g, '')
-    .replace(/\b\d{1,2}:\d{2},\d{3}\b/g, '')
-    // Xoá mũi tên còn sót
-    .replace(/-->+/g, '')
-    // Chuẩn hoá khoảng trắng thừa
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{2,}/g, '\n')
-    .trim();
+  const cleaned = sanitizeTranscriptText(script);
+  if (!cleaned || totalSec <= 0) return [];
 
-  const words = cleaned.split(/\s+/).filter(Boolean);
-  if (words.length === 0 || totalSec <= 0) return [];
+  // Step 1: split into sentences first, respecting terminal punctuation.
+  // This prevents TTS from reading fragmented mid-sentence text.
+  const rawSentences = cleaned
+    .split(/(?<=[.!?。！？…]+)\s+|(?<=[.!?。！？…]+)$|\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-  // Gom từ thành dòng ngắn để dễ đọc trên màn hình dọc.
+  // Step 2: if a sentence exceeds maxCharsPerCue, break it at the character limit
+  // on a word boundary, but only as a last resort.
   const lines: string[] = [];
-  let cur = "";
-  for (const w of words) {
-    if ((cur + " " + w).trim().length > maxCharsPerCue) {
-      if (cur) lines.push(cur.trim());
-      cur = w;
+  for (const sentence of rawSentences) {
+    if (sentence.length <= maxCharsPerCue) {
+      lines.push(sentence);
     } else {
-      cur = (cur + " " + w).trim();
+      const words = sentence.split(/\s+/).filter(Boolean);
+      let cur = "";
+      for (const w of words) {
+        const candidate = cur ? `${cur} ${w}` : w;
+        if (candidate.length > maxCharsPerCue) {
+          if (cur) lines.push(cur.trim());
+          cur = w;
+        } else {
+          cur = candidate;
+        }
+      }
+      if (cur) lines.push(cur.trim());
     }
   }
-  if (cur) lines.push(cur.trim());
 
-  // Phân bổ thời lượng theo độ dài ký tự (dòng dài hiện lâu hơn).
+  if (!lines.length) return [];
+
+  // Step 3: distribute duration proportionally by character length.
   const totalChars = lines.reduce((a, l) => a + l.length, 0) || 1;
   const cues: SubtitleCue[] = [];
   let t = 0;
@@ -272,10 +583,7 @@ function escapeFilterPath(p: string): string {
   return p.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
-const LOGO_OVERLAY_XY: Record<
-  NonNullable<RemixOptions["logoPosition"]>,
-  string
-> = {
+const LOGO_OVERLAY_XY: Record<NonNullable<RemixOptions["logoPosition"]>, string> = {
   "top-left": "10:10",
   "top-right": "W-w-10:10",
   "bottom-left": "10:H-h-10",
@@ -289,6 +597,7 @@ export interface ApplyOpsInput {
   workDir: string;
   isImage?: boolean;
   blurRegion?: { x: number; y: number; w: number; h: number };
+  blurRegions?: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }>;
 }
 
 export function subtitlePlacementForBlurRegion(
@@ -324,7 +633,9 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   const reframe = byOp("reframe");
   const color = byOp("colorGrade");
   const subs = byOp("subtitles");
-  const textOverlay = byOp("overlayText");
+  const textOverlays = ops.filter((o) => o.op === "overlayText") as Array<
+    Extract<VideoOp, { op: "overlayText" }>
+  >;
   const logo = byOp("overlayLogo");
   const replaceAudio = byOp("replaceAudio");
   const mute = ops.some((o) => o.op === "mute");
@@ -381,8 +692,14 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     }
   }
 
-  if (input.blurRegion) {
-    const { x, y, w, h } = input.blurRegion;
+  const blurRegions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [
+    ...(input.blurRegion ? [input.blurRegion] : []),
+    ...(input.blurRegions ?? []).map((region) =>
+      transformRegionForReframe(region, info.width, info.height, reframe),
+    ),
+  ];
+  for (const region of blurRegions) {
+    const { x, y, w, h } = region;
     const fw = reframe ? reframe.width : info.width;
     const fh = reframe ? reframe.height : info.height;
     
@@ -402,8 +719,9 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     bw = Math.min(bw, fw - bx - 1);
     bh = Math.min(bh, fh - by - 1);
 
-    // Dùng delogo thay vì boxblur complex để dễ dàng chèn vào chuỗi filter tuyến tính
-    chain.push(`delogo=x=${bx}:y=${by}:w=${bw}:h=${bh}:show=0`);
+    chain.push(
+      `delogo=x=${bx}:y=${by}:w=${bw}:h=${bh}:show=0${timelineEnable(region.startSec, region.endSec)}`,
+    );
   }
 
   if (color) {
@@ -414,41 +732,93 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   }
 
   if (subs) {
-    const srtPath = path.join(workDir, "sub.srt");
-    await writeFile(srtPath, subs.srt, "utf8");
     const fontSize = clamp(subs.fontSize ?? 24, 12, 72);
-    const assFontSize = Math.round(fontSize * 0.66);
+    if (subs.ass) {
+      const assPath = path.join(workDir, "sub.ass");
+      await writeFile(assPath, subs.ass, "utf8");
+      chain.push(`ass='${escapeFilterPath(assPath)}'`);
+    } else {
+      const srtPath = path.join(workDir, "sub.srt");
+      await writeFile(srtPath, subs.srt, "utf8");
     
-    // Convert #RRGGBB to &H00BBGGRR
-    const toAssColor = (hex?: string, def = '&H00FFFFFF') => {
-      if (!hex || !hex.startsWith('#')) return def;
-      const r = hex.slice(1, 3) || 'FF';
-      const g = hex.slice(3, 5) || 'FF';
-      const b = hex.slice(5, 7) || 'FF';
-      return `&H00${b}${g}${r}`;
-    };
-
-    const style = [
-      `FontSize=${assFontSize}`,
-      `PrimaryColour=${toAssColor(subs.primaryColor, '&H00FFFFFF')}`,
-      `OutlineColour=${toAssColor(subs.outlineColor, '&H00000000')}`,
-      `BorderStyle=${subs.borderStyle ?? 1}`,
-      `Outline=${subs.outline ?? 2}`,
-      'Shadow=0',
-      `Alignment=${subs.alignment ?? 2}`,
-      `MarginV=${subs.marginV ?? 60}`,
-      subs.bold ? 'Bold=1' : null,
-      subs.italic ? 'Italic=1' : null,
-    ].filter(Boolean).join(',');
-    chain.push(
-      `subtitles='${escapeFilterPath(srtPath)}':force_style='${style}'`,
-    );
+      const style = [
+        `FontSize=${fontSize}`,
+        `PrimaryColour=${assColor(subs.primaryColor, '&H00FFFFFF')}`,
+        `OutlineColour=${assColor(subs.outlineColor, '&H00000000')}`,
+        `BorderStyle=${subs.borderStyle ?? 1}`,
+        `Outline=${subs.outline ?? 2}`,
+        'Shadow=0',
+        `Alignment=${subs.alignment ?? 2}`,
+        `MarginV=${subs.marginV ?? 60}`,
+        subs.bold ? 'Bold=1' : null,
+        subs.italic ? 'Italic=1' : null,
+      ].filter(Boolean).join(',');
+      chain.push(
+        `subtitles='${escapeFilterPath(srtPath)}':force_style='${style}'`,
+      );
+    }
   }
 
-  if (textOverlay) {
-    const escapedText = textOverlay.text.replace(/'/g, "\u2019").replace(/:/g, "\\:");
+  for (const textOverlay of textOverlays) {
+    const region = textOverlay.region
+      ? transformRegionForReframe(textOverlay.region, info.width, info.height, reframe)
+      : undefined;
+    const fw = reframe ? reframe.width : info.width;
+    const fh = reframe ? reframe.height : info.height;
+    const baseFontSize = region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit"
+      ? clamp(Math.round(region.h * fh * 0.5), 12, 84)
+      : clamp(textOverlay.fontSize ?? 32, 12, 84);
+    const autoMaxFontSize = region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit"
+      ? Math.max(baseFontSize, Math.round(region.h * fh * 0.72))
+      : textOverlay.maxFontSize;
+    const fitted = region && textOverlay.fitToRegion
+      ? fitTextToRegion(textOverlay.text, {
+          width: Math.max(1, Math.round(region.w * fw)),
+          height: Math.max(1, Math.round(region.h * fh)),
+          desiredFontSize: baseFontSize,
+          minFontSize: textOverlay.minFontSize,
+          maxFontSize: autoMaxFontSize,
+        })
+      : { text: textOverlay.text, fontSize: baseFontSize };
+    const escapedText = fitted.text
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\u2019")
+      .replace(/:/g, "\\:")
+      .replace(/\n/g, "\\n");
+    const color = /^#[0-9a-fA-F]{6}$/.test(textOverlay.color ?? "")
+      ? `0x${textOverlay.color!.slice(1)}`
+      : "white";
+    const bgColor = ffmpegColor(textOverlay.bgColor, "black");
+    const outlineColor = ffmpegColor(textOverlay.outlineColor, "black");
+    const opacity = clamp(textOverlay.boxOpacity ?? 0.75, 0, 1);
+    const fontOpt = getFontOptionForDrawtext(textOverlay.font);
+    const boldScale = textOverlay.bold ? 1.08 : 1;
+    const finalFontSize = Math.round(fitted.fontSize * boldScale);
+    const xExpr = region
+      ? `${Math.round(region.x * fw)}+(${Math.max(1, Math.round(region.w * fw))}-text_w)/2`
+      : "(w-text_w)/2";
+    const yExpr = region
+      ? `${Math.round(region.y * fh)}+(${Math.max(1, Math.round(region.h * fh))}-text_h)/2`
+      : textOverlay.position === "top"
+        ? "h*0.12"
+        : textOverlay.position === "bottom"
+          ? "h*0.78"
+          : "(h-text_h)/2";
+    const enable = timelineEnable(textOverlay.startSec, textOverlay.endSec);
+    if (region && textOverlay.coverRegion) {
+      const coverX = Math.max(0, Math.round(region.x * fw));
+      const coverY = Math.max(0, Math.round(region.y * fh));
+      const coverW = Math.min(fw - coverX, Math.max(1, Math.round(region.w * fw)));
+      const coverH = Math.min(fh - coverY, Math.max(1, Math.round(region.h * fh)));
+      chain.push(
+        `drawbox=x=${coverX}:y=${coverY}:w=${coverW}:h=${coverH}:color=${bgColor}@${Math.max(opacity, 0.72)}:t=fill${enable}`,
+      );
+    }
+    const boxParams = textOverlay.coverRegion
+      ? "box=0"
+      : `box=1:boxcolor=${bgColor}@${opacity}:boxborderw=${region ? fitBoxBorder(region, fw, fh) : 14}`;
     chain.push(
-      `drawtext=text='${escapedText}':fontcolor=white:fontsize=h/15:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5:boxborderw=10`
+      `drawtext=text='${escapedText}'${fontOpt}:fontcolor=${color}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(2, Math.round(finalFontSize * 0.14))}:borderw=${Math.max(1, Math.round(finalFontSize * 0.08))}:bordercolor=${outlineColor}${enable}`
     );
   }
 
@@ -459,10 +829,13 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   if (useComplex) {
     const pre = chain.length ? `[0:v]${chain.join(",")}[base]` : `[0:v]null[base]`;
     const logoScale = clamp(logo!.scale ?? 0.15, 0.03, 0.5);
-    const xy = LOGO_OVERLAY_XY[logo!.position];
+    const opacity = clamp(logo!.opacity ?? 1, 0, 1);
+    const xy = logo!.position === "custom"
+      ? `${clamp(logo!.x ?? 0.85, 0, 1)}*(W-w):${clamp(logo!.y ?? 0.85, 0, 1)}*(H-h)`
+      : LOGO_OVERLAY_XY[logo!.position];
     filterComplex =
       `${pre};` +
-      `[${logoIdx}:v]scale=iw*${logoScale}:-1[logo];` +
+      `[${logoIdx}:v]scale=iw*${logoScale}:-1,format=rgba,colorchannelmixer=aa=${opacity}[logo];` +
       `[base][logo]overlay=${xy}[vout]`;
   }
 
@@ -619,13 +992,25 @@ export async function concatWithIntroOutro(
 export async function separateVoiceBgm(
   inputPath: string,
   workDir: string,
+  trim?: { start: number; duration: number },
 ): Promise<{ bgmPath: string }> {
+  if ((process.env.VOICE_SEPARATION_PROVIDER ?? "eq").toLowerCase() === "demucs") {
+    const demucs = await separateVoiceBgmWithDemucs(inputPath, workDir, trim).catch(() => null);
+    if (demucs) return demucs;
+  }
+
   const bgmPath = path.join(workDir, 'bgm_extracted.aac');
+  const args = ['-y'];
+  if (trim) {
+    args.push('-ss', String(Math.max(0, trim.start)));
+    args.push('-t', String(Math.max(0.1, trim.duration)));
+  }
 
   // Lọc lowpass + highpass: giữ lại phần tần số ngoài dải giọng người (voice band 300Hz-3kHz)
   // Dùng FFmpeg's equalizer để hạ âm giọng người và giữ nhạc nền
   await run(ffmpegBin(), [
-    '-y', '-i', inputPath,
+    ...args,
+    '-i', inputPath,
     '-af',
     // Hạ giọng người (tập trung 300-3000Hz) xuống ~-18dB, giữ nhạc nền
     'equalizer=f=1000:width_type=o:width=3:g=-18,equalizer=f=500:width_type=o:width=2:g=-12,equalizer=f=2000:width_type=o:width=2:g=-12,volume=2.0',
@@ -635,6 +1020,62 @@ export async function separateVoiceBgm(
   ]);
 
   return { bgmPath };
+}
+
+async function separateVoiceBgmWithDemucs(
+  inputPath: string,
+  workDir: string,
+  trim?: { start: number; duration: number },
+): Promise<{ bgmPath: string }> {
+  const demucsInput = path.join(workDir, "demucs_input.wav");
+  const args = ["-y"];
+  if (trim) {
+    args.push("-ss", String(Math.max(0, trim.start)));
+    args.push("-t", String(Math.max(0.1, trim.duration)));
+  }
+  await run(ffmpegBin(), [
+    ...args,
+    "-i", inputPath,
+    "-vn",
+    "-ac", "2",
+    "-ar", "44100",
+    demucsInput,
+  ]);
+
+  const outDir = path.join(workDir, "demucs_out");
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn("python3", [
+      "-m", "demucs",
+      "--two-stems", "vocals",
+      "-o", outDir,
+      demucsInput,
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    proc.stderr.on("data", (d) => (stderr += d.toString()));
+    proc.on("error", (err) => reject(new Error(`demucs lỗi: ${err.message}`)));
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`demucs thoát mã ${code}: ${stderr.slice(-800)}`));
+    });
+  });
+
+  const stemPath = await findFileByName(outDir, "no_vocals");
+  if (!stemPath) throw new Error("Demucs không tạo no_vocals stem.");
+  return { bgmPath: stemPath };
+}
+
+async function findFileByName(dir: string, nameWithoutExt: string): Promise<string | null> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = await findFileByName(p, nameWithoutExt);
+      if (found) return found;
+    } else if (path.parse(entry.name).name === nameWithoutExt) {
+      return p;
+    }
+  }
+  return null;
 }
 
 /**
@@ -679,13 +1120,15 @@ export async function mixAudioTracks(
   bgmPath: string,
   outputPath: string,
   bgmVolume = 0.3,
+  ttsVolume = 2.5,
 ): Promise<void> {
   const vol = Math.min(1, Math.max(0, bgmVolume));
+  const ttsVol = Math.min(3.0, Math.max(0.5, ttsVolume));
   
   // Dùng apad để đệm khoảng lặng vô tận cho TTS, đảm bảo mix sẽ kết thúc chính xác
   // khi BGM (thời lượng video) kết thúc (duration=shortest). 
   // dropout_transition=0 để âm lượng BGM không bị bật ngược lên đột ngột khi TTS hết.
-  const filterComplex = `[0:a]volume=2.0,apad[tts];[1:a]volume=${vol}[bgm];[tts][bgm]amix=inputs=2:duration=shortest:dropout_transition=0[out]`;
+  const filterComplex = `[0:a]volume=${ttsVol.toFixed(2)},apad[tts];[1:a]volume=${vol}[bgm];[tts][bgm]amix=inputs=2:normalize=0:duration=shortest:dropout_transition=0[out]`;
 
   await run(ffmpegBin(), [
     '-y',
@@ -700,6 +1143,194 @@ export async function mixAudioTracks(
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
+}
+
+function ffmpegColor(hex: string | undefined, fallback: string): string {
+  return /^#[0-9a-fA-F]{6}$/.test(hex ?? "") ? `0x${hex!.slice(1)}` : fallback;
+}
+
+function escapeDrawtext(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\u2019").replace(/:/g, "\\:");
+}
+
+function timelineEnable(startSec: number | undefined, endSec: number | undefined): string {
+  const start = typeof startSec === "number" && Number.isFinite(startSec)
+    ? Math.max(0, startSec)
+    : undefined;
+  const end = typeof endSec === "number" && Number.isFinite(endSec)
+    ? Math.max(0, endSec)
+    : undefined;
+
+  if (start === undefined && end === undefined) return "";
+  if (start !== undefined && end !== undefined) {
+    const safeEnd = end > start ? end : start + 0.1;
+    return `:enable='between(t,${roundTime(start)},${roundTime(safeEnd)})'`;
+  }
+  if (start !== undefined) return `:enable='gte(t,${roundTime(start)})'`;
+  return `:enable='lte(t,${roundTime(end!)})'`;
+}
+
+function roundTime(sec: number): string {
+  return (Math.round(sec * 100) / 100).toFixed(2);
+}
+
+export function fitTextToRegion(
+  text: string,
+  input: {
+    width: number;
+    height: number;
+    desiredFontSize: number;
+    minFontSize?: number;
+    maxFontSize?: number;
+  },
+): { text: string; fontSize: number; lines: string[] } {
+  const maxFontSize = clamp(
+    input.maxFontSize ?? input.desiredFontSize,
+    12,
+    Math.max(12, input.desiredFontSize),
+  );
+  const minFontSize = clamp(input.minFontSize ?? 14, 8, maxFontSize);
+  const maxLines = input.height >= maxFontSize * 1.8 ? 2 : 1;
+  const contentWidth = Math.max(1, input.width * 0.9);
+  const contentHeight = Math.max(1, input.height * 0.78);
+
+  for (let size = Math.round(maxFontSize); size >= minFontSize; size--) {
+    const maxCharsPerLine = Math.max(4, Math.floor(contentWidth / (size * 0.58)));
+    const lines = wrapText(text, maxCharsPerLine, maxLines);
+    const renderedHeight = lines.length * size + Math.max(0, lines.length - 1) * Math.round(size * 0.14);
+    const widestLine = Math.max(...lines.map((line) => estimatedTextWidth(line, size)), 0);
+    if (renderedHeight <= contentHeight && widestLine <= contentWidth) {
+      return { text: lines.join("\n"), fontSize: size, lines };
+    }
+  }
+
+  const fallbackChars = Math.max(4, Math.floor(contentWidth / (minFontSize * 0.58)));
+  const lines = wrapText(text, fallbackChars, maxLines);
+  return { text: lines.join("\n"), fontSize: minFontSize, lines };
+}
+
+function wrapText(text: string, maxCharsPerLine: number, maxLines: number): string[] {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (words.length === 0) return [""];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+    if (lines.length === maxLines) break;
+  }
+  if (lines.length < maxLines && current) lines.push(current);
+  if (lines.length > maxLines) return lines.slice(0, maxLines);
+  const usedWords = lines.join(" ").split(/\s+/).filter(Boolean).length;
+  if (usedWords < words.length && lines.length) {
+    lines[lines.length - 1] = truncateToFit(lines[lines.length - 1], maxCharsPerLine);
+  }
+  return lines;
+}
+
+function truncateToFit(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(1, maxChars - 1)).trim()}…`;
+}
+
+function estimatedTextWidth(text: string, fontSize: number): number {
+  return text.length * fontSize * 0.58;
+}
+
+function fitBoxBorder(
+  region: { w: number; h: number },
+  frameWidth: number,
+  frameHeight: number,
+): number {
+  const minSide = Math.min(region.w * frameWidth, region.h * frameHeight);
+  return clamp(Math.round(minSide * 0.12), 4, 16);
+}
+
+const VIETNAMESE_FONT_FILE_MAP: Record<string, string> = {
+  "Anton": "Anton-Regular.ttf",
+  "Be Vietnam Pro": "BeVietnamPro-Bold.ttf",
+  "Montserrat": "Montserrat-Bold.ttf",
+  "Nunito": "Nunito-Bold.ttf",
+  "Oswald": "Oswald-Bold.ttf",
+  "Baloo 2": "Baloo2-Bold.ttf",
+  "Inter": "Inter-Regular.ttf",
+  "Impact": "Anton-Regular.ttf",
+  "Arial": "BeVietnamPro-Bold.ttf",
+  "Arial Black": "Montserrat-Bold.ttf",
+  "Noto Sans": "BeVietnamPro-Bold.ttf",
+};
+
+function getFontOptionForDrawtext(fontName?: string): string {
+  if (!fontName) return "";
+  const cleaned = fontName.trim();
+  const filename = VIETNAMESE_FONT_FILE_MAP[cleaned];
+  if (filename) {
+    const fullPath = path.join(process.cwd(), "public", "fonts", filename);
+    if (existsSync(fullPath)) {
+      const escapedPath = fullPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+      return `:fontfile='${escapedPath}'`;
+    }
+  }
+  return `:font='${escapeDrawtext(cleaned)}'`;
+}
+
+export function transformRegionForReframe(
+  region: { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number },
+  sourceWidth: number,
+  sourceHeight: number,
+  reframe: Extract<VideoOp, { op: "reframe" }> | undefined,
+): { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number } {
+  if (!reframe || sourceWidth <= 0 || sourceHeight <= 0) {
+    return { ...clampRegion(region), startSec: region.startSec, endSec: region.endSec };
+  }
+
+  const targetWidth = reframe.width;
+  const targetHeight = reframe.height;
+  const scale =
+    reframe.mode === "crop"
+      ? Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight)
+      : Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+  const scaledWidth = sourceWidth * scale;
+  const scaledHeight = sourceHeight * scale;
+  const offsetX = (targetWidth - scaledWidth) / 2;
+  const offsetY = (targetHeight - scaledHeight) / 2;
+
+  const left = region.x * scaledWidth + offsetX;
+  const top = region.y * scaledHeight + offsetY;
+  const right = (region.x + region.w) * scaledWidth + offsetX;
+  const bottom = (region.y + region.h) * scaledHeight + offsetY;
+
+  const clippedLeft = clamp(left, 0, targetWidth);
+  const clippedTop = clamp(top, 0, targetHeight);
+  const clippedRight = clamp(right, clippedLeft + 1, targetWidth);
+  const clippedBottom = clamp(bottom, clippedTop + 1, targetHeight);
+
+  return {
+    ...clampRegion({
+    x: clippedLeft / targetWidth,
+    y: clippedTop / targetHeight,
+    w: (clippedRight - clippedLeft) / targetWidth,
+    h: (clippedBottom - clippedTop) / targetHeight,
+    }),
+    startSec: region.startSec,
+    endSec: region.endSec,
+  };
+}
+
+function clampRegion(region: { x: number; y: number; w: number; h: number }) {
+  const x = clamp(region.x, 0, 0.98);
+  const y = clamp(region.y, 0, 0.98);
+  return {
+    x,
+    y,
+    w: Math.max(0.01, Math.min(region.w, 1 - x)),
+    h: Math.max(0.01, Math.min(region.h, 1 - y)),
+  };
 }
 
 // ---------------------------------------------------------------------------

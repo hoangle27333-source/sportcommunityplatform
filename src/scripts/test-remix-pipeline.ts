@@ -58,11 +58,19 @@ async function main() {
     const outTemplate = path.join(workDir, `${tempId}.%(ext)s`);
     console.log('   Đang tải... (có thể mất 30-60s)');
 
-    await ytdl(YOUTUBE_URL, {
+    const ytOptions: Record<string, any> = {
       output: outTemplate,
       format: 'best[ext=mp4]/bestvideo[ext=mp4]/best',
       noWarnings: true,
-    });
+    };
+
+    if (process.env.YTDL_COOKIES) {
+      ytOptions.cookies = process.env.YTDL_COOKIES;
+    } else if (process.env.YTDL_COOKIES_FROM_BROWSER) {
+      ytOptions["cookies-from-browser"] = process.env.YTDL_COOKIES_FROM_BROWSER;
+    }
+
+    await ytdl(YOUTUBE_URL, ytOptions);
 
     const files = await readdir(workDir);
     const downloaded = files.filter(f => f.startsWith(tempId)).map(f => path.join(workDir, f));

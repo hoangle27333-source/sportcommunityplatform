@@ -2,6 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireUser, requireEditor, AuthError } from "@/lib/auth/require-user";
 import { enqueue, QUEUE_NAMES } from "@/lib/queue";
+import { requiresVoicePipelineForRemix } from "@/lib/remix/preflight";
+import { buildRemixOptionsFromPreset } from "@/lib/remix/preset-options";
+import type { RemixOptions } from "@/lib/remix/types";
+import {
+  getRemixServiceHealth,
+  requireVoicePipelineV2ForLocalization,
+} from "@/lib/remix/service-health";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +27,15 @@ export const dynamic = "force-dynamic";
 const optionsSchema = z
   .object({
     vietsub: z.boolean().optional(),
+    pipelineMode: z.enum(["simple", "localization_dub", "clip_factory", "hybrid"]).optional(),
+    clipCount: z.number().int().min(1).max(10).optional(),
+    clipDurationSec: z.number().int().min(5).max(180).optional(),
+    protectedTerms: z.array(z.string().min(1).max(100)).max(50).optional(),
     dubVi: z.boolean().optional(),
-    dubMode: z.enum(['none', 'full', 'preserve_bgm']).optional(),
+    dubMode: z.enum(['none', 'full', 'preserve_bgm', 'heygen']).optional(),
+    scriptInputMode: z.enum(["from_video_audio", "manual_script"]).optional(),
+    manualScript: z.string().max(50000).optional(),
+    heygenTargetLanguage: z.string().max(50).optional(),
     bgVolume: z.number().optional(),
     vertical: z.boolean().optional(),
     trimSeconds: z.number().min(1).max(600).optional(),
@@ -31,13 +45,53 @@ const optionsSchema = z
     logoPosition: z
       .enum(["top-left", "top-right", "bottom-left", "bottom-right"])
       .optional(),
+    watermarkConfig: z.object({
+      enabled: z.boolean().optional(),
+      type: z.enum(["image", "text"]).optional(),
+      imageMediaId: z.string().uuid().optional(),
+      text: z.string().max(300).optional(),
+      opacity: z.number().min(0).max(1).optional(),
+      scale: z.number().min(0.03).max(0.5).optional(),
+      removeBackground: z.boolean().optional(),
+      position: z.enum(["top-left", "top-right", "bottom-left", "bottom-right", "custom"]).optional(),
+      customPosition: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional(),
+      perRatioPosition: z.record(
+        z.enum(["9:16", "16:9", "1:1", "4:5", "original"]),
+        z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+      ).optional(),
+      perRatioScale: z.record(
+        z.enum(["9:16", "16:9", "1:1", "4:5", "original"]),
+        z.number().min(0.03).max(0.5),
+      ).optional(),
+      coverOriginal: z.boolean().optional(),
+      oldWatermarkRegions: z.array(z.object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        w: z.number().min(0.01).max(1),
+        h: z.number().min(0.01).max(1),
+        startSec: z.number().min(0).optional(),
+        endSec: z.number().min(0).optional(),
+      })).max(12).optional(),
+    }).optional(),
     colorGrade: z.boolean().optional(),
     muteOriginal: z.boolean().optional(),
     captionPrompt: z.string().max(2000).optional(),
     captionTone: z.string().max(100).optional(),
     imageTranslate: z.enum(["overlay", "regenerate"]).optional(),
+    translateOnScreenText: z.boolean().optional(),
+    onScreenTextStyle: z.object({
+      preset: z.enum(["meme", "pop", "bubble", "neon", "clean"]).optional(),
+      font: z.string().max(100).optional(),
+      size: z.number().int().min(16).max(72).optional(),
+      sizeMode: z.enum(["auto_fit", "fixed"]).optional(),
+      color: z.string().max(20).optional(),
+      bgColor: z.string().max(20).optional(),
+      outlineColor: z.string().max(20).optional(),
+      bold: z.boolean().optional(),
+    }).optional(),
     textOverlay: z.string().max(2000).optional(),
     voiceName: z.string().max(100).optional(),
+    voiceVolume: z.number().min(0.5).max(3.0).optional(),
     blurOriginalSub: z.boolean().optional(),
     subFont: z.string().max(100).optional(),
     subFontSize: z.number().int().min(10).max(72).optional(),
@@ -47,7 +101,8 @@ const optionsSchema = z
     subItalic: z.boolean().optional(),
     subOutline: z.number().int().min(0).max(5).optional(),
     subBorderStyle: z.number().int().min(0).max(4).optional(),
-    subPosition: z.enum(['top', 'bottom']).optional(),
+    subPosition: z.enum(['top', 'bottom', 'auto', 'custom']).optional(),
+    subCustomY: z.number().min(0.05).max(0.9).optional(),
     autoDetectSubtitleRegion: z.boolean().optional(),
     blurRegion: z.object({
       x: z.number(),
@@ -56,16 +111,27 @@ const optionsSchema = z
       h: z.number(),
     }).optional(),
     subtitleConfig: z.object({
+      preset: z.enum(["tiktok_bold", "meme", "pop", "bubble", "neon", "clean"]).optional(),
       font: z.string().optional(),
       size: z.number().optional(),
       color: z.string().optional(),
       bgColor: z.string().optional(),
+      highlightColor: z.string().optional(),
       bold: z.boolean().optional(),
       italic: z.boolean().optional(),
       outline: z.number().optional(),
       borderStyle: z.number().optional(),
-      position: z.enum(['top', 'bottom', 'auto']).optional(),
+      position: z.enum(['top', 'bottom', 'auto', 'custom']).optional(),
+      customY: z.number().min(0.05).max(0.9).optional(),
+      animation: z.enum(["static", "word_highlight", "reveal_words"]).optional(),
     }).optional(),
+    subtitleAnimation: z.enum(["static", "word_highlight", "reveal_words"]).optional(),
+    subtitlePreset: z.enum(["tiktok_bold", "meme", "pop", "bubble", "neon", "clean"]).optional(),
+    subHighlightColor: z.string().max(20).optional(),
+    copyrightPreflight: z.object({
+      riskLevel: z.enum(["low", "medium", "high"]).optional(),
+      acknowledgements: z.record(z.boolean()).optional(),
+    }).passthrough().optional(),
     targetLanguage: z.enum(['vi', 'en']).optional(),
     outputRatio: z.enum(['9:16', '16:9', '1:1', '4:5', 'original']).optional(),
     outputCrf: z.number().int().min(15).max(32).optional(),
@@ -140,6 +206,58 @@ export async function POST(req: NextRequest) {
   try {
     const { db, user } = await requireEditor();
     const body = createSchema.parse(await req.json());
+    const baseOptions = body.options as RemixOptions;
+    const resolvedPresetId =
+      body.outputKind === "video"
+        ? (
+            body.presetId
+              ? await verifyPresetId(db, user.id, body.presetId)
+              : await findDefaultPresetId(db, user.id)
+          )
+        : (body.presetId
+            ? await verifyPresetId(db, user.id, body.presetId)
+            : null);
+
+    let presetConfig: Record<string, any> | null = null;
+    if (resolvedPresetId) {
+      const { data: preset, error } = await db
+        .from("remix_presets")
+        .select("*")
+        .eq("id", resolvedPresetId)
+        .maybeSingle();
+      if (error) {
+        return NextResponse.json(
+          { error: `Không đọc được preset đã chọn: ${error.message}` },
+          { status: 500 },
+        );
+      }
+      presetConfig = preset ?? null;
+    }
+
+    const effectiveOptions =
+      presetConfig && body.outputKind === "video"
+        ? buildRemixOptionsFromPreset(presetConfig, baseOptions)
+        : baseOptions;
+
+    const needsVoicePipeline = requiresVoicePipelineForRemix({
+      outputKind: body.outputKind,
+      ...effectiveOptions,
+    });
+
+    if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
+      const health = await getRemixServiceHealth();
+      if (!health.voicePipeline.reachable) {
+        return NextResponse.json(
+          {
+            error:
+              "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
+              `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi tạo job.`,
+            preflight: health,
+          },
+          { status: 503 },
+        );
+      }
+    }
 
     const { data: job, error } = await db
       .from("remix_jobs")
@@ -150,8 +268,8 @@ export async function POST(req: NextRequest) {
         ownership_confirmed: body.ownershipConfirmed,
         output_kind: body.outputKind,
         prompt: body.prompt ?? null,
-        options: body.options,
-        preset_id: body.presetId ?? null,
+        options: effectiveOptions,
+        preset_id: resolvedPresetId,
         campaign_id: body.campaignId ?? null,
         status: "queued",
         created_by: user.id,
@@ -178,6 +296,43 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return handleError(e);
   }
+}
+
+async function findDefaultPresetId(
+  db: Awaited<ReturnType<typeof requireEditor>>["db"],
+  userId: string,
+) {
+  const { data, error } = await db
+    .from("remix_presets")
+    .select("id")
+    .eq("is_default", true)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(`Không đọc được preset mặc định: ${error.message}`);
+  }
+  return data?.[0]?.id ?? null;
+}
+
+async function verifyPresetId(
+  db: Awaited<ReturnType<typeof requireEditor>>["db"],
+  userId: string,
+  presetId: string,
+) {
+  const { data, error } = await db
+    .from("remix_presets")
+    .select("id")
+    .eq("id", presetId)
+    .maybeSingle<{ id: string }>();
+
+  if (error) {
+    throw new Error(`Không đọc được preset đã chọn: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("Preset đã chọn không tồn tại hoặc không thuộc tài khoản hiện tại.");
+  }
+  return data.id;
 }
 
 function handleError(e: unknown) {

@@ -17,7 +17,12 @@ const presetSchema = z.object({
   subItalic: z.boolean().default(false),
   subOutline: z.coerce.number().int().min(0).max(10).default(2),
   subBorderStyle: z.coerce.number().int().min(0).max(4).default(3),
-  subPosition: z.string().default('auto'),
+  subPosition: z.enum(['top', 'bottom', 'auto', 'custom']).default('auto'),
+  subCustomY: z.coerce.number().min(0.05).max(0.9).default(0.78),
+  subtitlePreset: z.enum(["tiktok_bold", "meme", "pop", "bubble", "neon", "clean"]).default("tiktok_bold"),
+  subtitleAnimation: z.enum(["static", "word_highlight", "reveal_words"]).default("word_highlight"),
+  subHighlightColor: z.string().default("#FFF200"),
+  watermarkDefaults: z.record(z.unknown()).default({}),
   blurRegion: z.object({
     x: z.coerce.number(),
     y: z.coerce.number(),
@@ -35,8 +40,17 @@ const presetSchema = z.object({
   outroEnabled: z.boolean().default(false),
   outroMediaId: z.string().optional().nullable().transform(val => (val && val.trim() !== '' ? val.trim() : null)),
   autoVietsub: z.boolean().default(true),
+  translateOnScreenText: z.boolean().default(false),
+  onScreenTextPreset: z.enum(["meme", "pop", "bubble", "neon", "clean"]).default("meme"),
+  onScreenTextFont: z.string().default("Impact"),
+  onScreenTextSize: z.coerce.number().int().min(16).max(72).default(34),
+  onScreenTextSizeMode: z.enum(["auto_fit", "fixed"]).default("auto_fit"),
+  onScreenTextColor: z.string().default("#FFFFFF"),
+  onScreenTextBgColor: z.string().default("#000000"),
+  onScreenTextOutlineColor: z.string().default("#000000"),
+  onScreenTextBold: z.boolean().default(true),
   autoDub: z.boolean().default(false),
-  dubMode: z.enum(['none', 'full', 'preserve_bgm']).default('none'),
+  dubMode: z.enum(['none', 'full', 'preserve_bgm', 'heygen']).default('none'),
 });
 
 // GET: list all presets
@@ -57,41 +71,58 @@ export async function POST(req: NextRequest) {
   try {
     const { db, user } = await requireEditor();
     const body = presetSchema.parse(await req.json());
+    const insertPayload: Record<string, any> = {
+      org_id: user.id, // use user.id as org_id for single-tenant
+      name: body.name,
+      target_language: body.targetLanguage,
+      voice_name: body.voiceName,
+      speaking_rate: body.speakingRate,
+      sub_font: body.subFont,
+      sub_font_size: body.subFontSize,
+      sub_color: body.subColor,
+      sub_bg_color: body.subBgColor,
+      sub_bold: body.subBold,
+      sub_italic: body.subItalic,
+      sub_outline: body.subOutline,
+      sub_border_style: body.subBorderStyle,
+      sub_position: body.subPosition,
+      sub_custom_y: body.subCustomY,
+      subtitle_preset: body.subtitlePreset,
+      subtitle_animation: body.subtitleAnimation,
+      sub_highlight_color: body.subHighlightColor,
+      watermark_defaults: body.watermarkDefaults,
+      blur_original_sub: body.blurOriginalSub,
+      auto_detect_subtitle_region: body.autoDetectSubtitleRegion,
+      blur_region: body.blurRegion ?? null,
+      bg_volume: body.bgVolume,
+      output_format: body.outputFormat,
+      output_ratio: body.outputRatio,
+      output_crf: body.outputCrf,
+      intro_enabled: body.introEnabled,
+      intro_media_id: body.introMediaId ?? null,
+      outro_enabled: body.outroEnabled,
+      outro_media_id: body.outroMediaId ?? null,
+      auto_vietsub: body.autoVietsub,
+      translate_on_screen_text: body.translateOnScreenText,
+      on_screen_text_preset: body.onScreenTextPreset,
+      on_screen_text_font: body.onScreenTextFont,
+      on_screen_text_size: body.onScreenTextSize,
+      on_screen_text_size_mode: body.onScreenTextSizeMode,
+      on_screen_text_color: body.onScreenTextColor,
+      on_screen_text_bg_color: body.onScreenTextBgColor,
+      on_screen_text_outline_color: body.onScreenTextOutlineColor,
+      on_screen_text_bold: body.onScreenTextBold,
+      auto_dub: body.dubMode !== 'none',
+      dub_mode: body.dubMode,
+    };
+
     const { data, error } = await db
       .from('remix_presets')
-      .insert({
-        org_id: user.id, // use user.id as org_id for single-tenant
-        name: body.name,
-        target_language: body.targetLanguage,
-        voice_name: body.voiceName,
-        speaking_rate: body.speakingRate,
-        sub_font: body.subFont,
-        sub_font_size: body.subFontSize,
-        sub_color: body.subColor,
-        sub_bg_color: body.subBgColor,
-        sub_bold: body.subBold,
-        sub_italic: body.subItalic,
-        sub_outline: body.subOutline,
-        sub_border_style: body.subBorderStyle,
-        sub_position: body.subPosition,
-        blur_original_sub: body.blurOriginalSub,
-        auto_detect_subtitle_region: body.autoDetectSubtitleRegion,
-        blur_region: body.blurRegion ?? null,
-        bg_volume: body.bgVolume,
-        output_format: body.outputFormat,
-        output_ratio: body.outputRatio,
-        output_crf: body.outputCrf,
-        intro_enabled: body.introEnabled,
-        intro_media_id: body.introMediaId ?? null,
-        outro_enabled: body.outroEnabled,
-        outro_media_id: body.outroMediaId ?? null,
-        auto_vietsub: body.autoVietsub,
-        auto_dub: body.dubMode !== 'none',
-        dub_mode: body.dubMode,
-      })
+      .insert(insertPayload)
       .select('*')
       .single();
-    if (error || !data) return NextResponse.json({ error: error?.message ?? 'Tạo preset thất bại.' }, { status: 500 });
+
+    if (error || !data) return NextResponse.json({ error: error?.message ?? 'Lưu preset thất bại.' }, { status: 500 });
     return NextResponse.json({ preset: data }, { status: 201 });
   } catch (e) { return handleError(e); }
 }

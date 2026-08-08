@@ -127,6 +127,15 @@ export async function synthesizeToFile(
   workDir: string,
   voiceOverride?: string,
 ): Promise<{ path: string } | { error: string }> {
+  return synthesizeTextToFile(text, workDir, voiceOverride, "tts");
+}
+
+export async function synthesizeTextToFile(
+  text: string,
+  workDir: string,
+  voiceOverride?: string,
+  basename = "tts",
+): Promise<{ path: string } | { error: string }> {
   const provider = getTtsProvider();
   if (!provider) {
     return {
@@ -139,7 +148,8 @@ export async function synthesizeToFile(
 
   try {
     const { buffer, ext } = await provider.synthesize(clean, workDir, voiceOverride);
-    const p = path.join(workDir, `tts.${ext}`);
+    const safeBase = basename.replace(/[^a-zA-Z0-9_-]+/g, "_") || "tts";
+    const p = path.join(workDir, `${safeBase}.${ext}`);
     await writeFile(p, buffer);
     return { path: p };
   } catch (e) {

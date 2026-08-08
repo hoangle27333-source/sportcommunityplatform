@@ -1,0 +1,87 @@
+import { config } from 'dotenv';
+config({ path: '.env.local' });
+import { z } from 'zod';
+
+const presetSchema = z.object({
+  name: z.string().optional().transform(val => (val && val.trim() !== '' ? val.trim() : 'Default')),
+  targetLanguage: z.string().default('vi'),
+  voiceName: z.string().default('vi-VN-WaveNet-A'),
+  speakingRate: z.coerce.number().min(0.25).max(4.0).default(1.0),
+  subFont: z.string().default('Arial'),
+  subFontSize: z.coerce.number().int().min(8).max(100).default(24),
+  subColor: z.string().default('#FFFFFF'),
+  subBgColor: z.string().default('#80000000'),
+  subBold: z.boolean().default(false),
+  subItalic: z.boolean().default(false),
+  subOutline: z.coerce.number().int().min(0).max(10).default(2),
+  subBorderStyle: z.coerce.number().int().min(0).max(4).default(3),
+  subPosition: z.string().default('auto'),
+  subtitlePreset: z.enum(["tiktok_bold", "meme", "pop", "bubble", "neon", "clean"]).default("tiktok_bold"),
+  subtitleAnimation: z.enum(["static", "word_highlight"]).default("word_highlight"),
+  subHighlightColor: z.string().default("#FFF200"),
+  watermarkDefaults: z.record(z.unknown()).default({}),
+  blurRegion: z.object({
+    x: z.coerce.number(),
+    y: z.coerce.number(),
+    w: z.coerce.number(),
+    h: z.coerce.number(),
+  }).optional().nullable(),
+  blurOriginalSub: z.boolean().default(true),
+  autoDetectSubtitleRegion: z.boolean().default(false),
+  bgVolume: z.coerce.number().min(0).max(1).default(0.3),
+  outputFormat: z.string().default('mp4'),
+  outputRatio: z.string().default('9:16'),
+  outputCrf: z.coerce.number().int().min(1).max(51).default(18),
+  introEnabled: z.boolean().default(false),
+  introMediaId: z.string().optional().nullable().transform(val => (val && val.trim() !== '' ? val.trim() : null)),
+  outroEnabled: z.boolean().default(false),
+  outroMediaId: z.string().optional().nullable().transform(val => (val && val.trim() !== '' ? val.trim() : null)),
+  autoVietsub: z.boolean().default(true),
+  translateOnScreenText: z.boolean().default(false),
+  onScreenTextPreset: z.enum(["meme", "pop", "bubble", "neon", "clean"]).default("meme"),
+  onScreenTextFont: z.string().default("Impact"),
+  onScreenTextSize: z.coerce.number().int().min(16).max(72).default(34),
+  onScreenTextColor: z.string().default("#FFFFFF"),
+  onScreenTextBgColor: z.string().default("#000000"),
+  onScreenTextOutlineColor: z.string().default("#000000"),
+  onScreenTextBold: z.boolean().default(true),
+  autoDub: z.boolean().default(false),
+  dubMode: z.enum(['none', 'full', 'preserve_bgm', 'heygen']).default('none'),
+});
+
+try {
+  presetSchema.parse({
+    name: "Test",
+    voiceName: "vi-VN-WaveNet-A",
+    subFont: "Arial",
+    subFontSize: 24,
+    subColor: "#ffffff",
+    subBgColor: "#000000",
+    subBold: false,
+    subItalic: false,
+    subOutline: 2,
+    subBorderStyle: 3,
+    subPosition: "auto",
+    outputRatio: "9:16",
+    outputCrf: 18,
+    blurOriginalSub: false,
+    autoDetectSubtitleRegion: false,
+    translateOnScreenText: false,
+    onScreenTextPreset: "meme",
+    onScreenTextFont: "Impact",
+    onScreenTextSize: 34,
+    onScreenTextColor: "#ffffff",
+    onScreenTextBgColor: "#000000",
+    onScreenTextOutlineColor: "#000000",
+    onScreenTextBold: true,
+    blurRegion: null,
+    targetLanguage: "vi",
+    dubMode: "none",
+    autoDub: false,
+    autoVietsub: false,
+    watermarkDefaults: {}
+  });
+  console.log("Validation OK");
+} catch(e) {
+  console.log(JSON.stringify(e.issues, null, 2));
+}

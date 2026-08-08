@@ -2,8 +2,25 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireEditor, AuthError } from '@/lib/auth/require-user';
 import { enqueue, QUEUE_NAMES } from '@/lib/queue';
+import { requiresVoicePipelineForRemix } from '@/lib/remix/preflight';
+import {
+  getRemixServiceHealth,
+  requireVoicePipelineV2ForLocalization,
+} from '@/lib/remix/service-health';
+import { buildRemixOptionsFromPreset } from '@/lib/remix/preset-options';
 
 export const dynamic = 'force-dynamic';
+
+const defaultBatchOptions = {
+  vietsub: true,
+  dubVi: true,
+  dubMode: 'full' as const,
+  vertical: true,
+  targetLanguage: 'vi' as const,
+  translateOnScreenText: true,
+  autoDetectSubtitleRegion: true,
+  blurOriginalSub: true,
+};
 
 const batchSchema = z.object({
   urls: z.array(z.string().url()).min(1).max(10),
@@ -23,9 +40,45 @@ export async function POST(req: NextRequest) {
     const presetId = body.presetId
       ? await verifyPresetId(db, user.id, body.presetId)
       : await findDefaultPresetId(db, user.id);
+    let presetConfig: Record<string, any> | null = null;
+    if (presetId) {
+      const { data: preset, error } = await db
+        .from('remix_presets')
+        .select('*')
+        .eq('id', presetId)
+        .maybeSingle();
+      if (error) throw new Error(`Không đọc được preset đã chọn: ${error.message}`);
+      presetConfig = preset ?? null;
+    }
     const options = presetId
-      ? {}
-      : { vietsub: true, dubVi: true, vertical: true };
+      ? buildRemixOptionsFromPreset(presetConfig)
+      : defaultBatchOptions;
+    const needsVoicePipeline = presetConfig
+      ? requiresVoicePipelineForRemix({
+          outputKind: 'video',
+          vietsub: Boolean(presetConfig.auto_vietsub),
+          dubVi: Boolean(presetConfig.auto_dub),
+          dubMode: String(presetConfig.dub_mode ?? (presetConfig.auto_dub ? 'full' : 'none')),
+        })
+      : requiresVoicePipelineForRemix({
+          outputKind: 'video',
+          ...defaultBatchOptions,
+        });
+
+    if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
+      const health = await getRemixServiceHealth();
+      if (!health.voicePipeline.reachable) {
+        return NextResponse.json(
+          {
+            error:
+              "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
+              `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi batch generate.`,
+            preflight: health,
+          },
+          { status: 503 },
+        );
+      }
+    }
 
     for (let i = 0; i < body.urls.length; i++) {
       const url = body.urls[i];
@@ -64,7 +117,6 @@ async function findDefaultPresetId(db: Awaited<ReturnType<typeof requireEditor>>
   const { data, error } = await db
     .from('remix_presets')
     .select('id')
-    .eq('org_id', userId)
     .eq('is_default', true)
     .order('updated_at', { ascending: false })
     .limit(1);
@@ -82,7 +134,6 @@ async function verifyPresetId(
     .from('remix_presets')
     .select('id')
     .eq('id', presetId)
-    .eq('org_id', userId)
     .maybeSingle<{ id: string }>();
 
   if (error) throw new Error(`Không đọc được preset đã chọn: ${error.message}`);

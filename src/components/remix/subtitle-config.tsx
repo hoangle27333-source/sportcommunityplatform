@@ -1,116 +1,215 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
-import { Bold, Italic } from "lucide-react";
 
 export interface SubtitleSettings {
+  preset?: "tiktok_bold" | "meme" | "pop" | "bubble" | "neon" | "clean";
   font: string;
   size: number;
   color: string;
   bgColor: string;
+  highlightColor?: string;
   bold: boolean;
   italic: boolean;
   outline: number;
   borderStyle: number; // 0=none, 1=outline, 3=opaque box
-  position: 'top' | 'bottom' | 'auto';
+  position: 'top' | 'bottom' | 'auto' | 'custom';
+  customY?: number;
+  animation?: "static" | "word_highlight" | "reveal_words";
 }
 
 export const defaultSubtitleSettings: SubtitleSettings = {
+  preset: 'tiktok_bold',
   font: 'Arial',
-  size: 24,
+  size: 36,
   color: '#FFFFFF',
   bgColor: '#000000',
-  bold: false,
+  highlightColor: '#FFF200',
+  bold: true,
   italic: false,
-  outline: 2,
-  borderStyle: 3,
+  outline: 3,
+  borderStyle: 1,
   position: 'auto',
+  customY: 0.78,
+  animation: 'word_highlight',
 };
 
-export function SubtitleConfig({ value, onChange }: { value: SubtitleSettings, onChange: (s: SubtitleSettings) => void }) {
+type SubtitlePresetKey = "tiktok_bold" | "meme" | "pop" | "bubble" | "neon" | "clean";
+
+const SUBTITLE_PRESETS: Record<SubtitlePresetKey, {
+  label: string;
+  font: string;
+  size: number;
+  color: string;
+  bgColor: string;
+  highlightColor?: string;
+  bold: boolean;
+  borderStyle: number;
+  outline: number;
+  animation?: "static" | "word_highlight" | "reveal_words";
+}> = {
+  tiktok_bold: { label: "TikTok Bold", font: "Montserrat", size: 36, color: "#FFFFFF", bgColor: "#000000", highlightColor: "#FFF200", bold: true, borderStyle: 1, outline: 3, animation: "word_highlight" },
+  meme: { label: "Meme Impact", font: "Anton", size: 34, color: "#FFFFFF", bgColor: "#000000", bold: true, borderStyle: 3, outline: 2 },
+  pop: { label: "Pop Sticker", font: "Montserrat", size: 34, color: "#FFF200", bgColor: "#FF2A6D", bold: true, borderStyle: 3, outline: 2 },
+  bubble: { label: "Bubble", font: "Baloo 2", size: 32, color: "#111111", bgColor: "#FFFFFF", bold: true, borderStyle: 3, outline: 2 },
+  neon: { label: "Neon Reel", font: "Oswald", size: 32, color: "#00F5FF", bgColor: "#090A18", bold: true, borderStyle: 3, outline: 2 },
+  clean: { label: "Clean Caption", font: "Be Vietnam Pro", size: 28, color: "#FFFFFF", bgColor: "#111827", bold: false, borderStyle: 1, outline: 2 },
+};
+
+export function SubtitleConfig({
+  value,
+  onChange,
+  title = "Cấu hình phụ đề",
+  sampleText = "Đây là phụ đề mẫu",
+  autoDescription = "AI tự phát hiện vị trí phụ đề gốc (thường bottom 18%) và chèn phụ đề mới trong vùng đã làm mờ. Nếu không phát hiện được, mặc định đặt ở dưới cùng.",
+}: {
+  value: SubtitleSettings;
+  onChange: (s: SubtitleSettings) => void;
+  title?: string;
+  sampleText?: string;
+  autoDescription?: string;
+}) {
   const update = (updates: Partial<SubtitleSettings>) => {
     onChange({ ...value, ...updates });
   };
 
   return (
-    <div className="border border-border rounded-md p-4 space-y-4 bg-muted/20">
-      <h4 className="text-sm font-medium">Cấu hình phụ đề</h4>
+    <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/20">
+      <h4 className="text-sm font-medium">{title}</h4>
       
-      <div className="flex flex-wrap gap-4">
-        <div className="flex-1 min-w-[120px] space-y-1">
-          <label className="text-xs text-muted-foreground">Phông chữ</label>
-          <select 
-            className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" 
-            value={value.font} 
-            onChange={(e) => update({ font: e.target.value })}
+      {/* Preset buttons */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {(Object.entries(SUBTITLE_PRESETS) as Array<[SubtitlePresetKey, typeof SUBTITLE_PRESETS[SubtitlePresetKey]]>).map(([key, style]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => update({
+              font: style.font,
+              size: style.size,
+              color: style.color,
+              bgColor: style.bgColor,
+              highlightColor: style.highlightColor ?? value.highlightColor,
+              bold: style.bold,
+              borderStyle: style.borderStyle,
+              outline: style.outline,
+              preset: key,
+              animation: style.animation ?? value.animation ?? "static",
+              customY: value.customY ?? 0.78,
+            })}
+            className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+              value.font === style.font && value.color === style.color
+                ? "border-primary bg-primary/10 text-primary font-medium"
+                : "border-border bg-background hover:bg-muted"
+            }`}
           >
-            <option value="Arial">Arial</option>
-            <option value="Roboto">Roboto</option>
-            <option value="Noto Sans">Noto Sans</option>
-            <option value="Times New Roman">Times New Roman</option>
+            {style.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Font & Size */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Font chữ</label>
+          <select
+            value={value.font}
+            onChange={(e) => update({ font: e.target.value })}
+            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+          >
+            <option value="Anton">Anton (Meme / Impact - Việt hoá)</option>
+            <option value="Oswald">Oswald (Condensed - Việt hoá)</option>
+            <option value="Be Vietnam Pro">Be Vietnam Pro (Tiêu chuẩn - Việt hoá)</option>
+            <option value="Montserrat">Montserrat (Hiện đại - Việt hoá)</option>
+            <option value="Nunito">Nunito (Bo tròn - Việt hoá)</option>
+            <option value="Baloo 2">Baloo 2 (Sticker - Việt hoá)</option>
+            <option value="Inter">Inter (Tối giản - Việt hoá)</option>
+            <option value="Impact">Impact (Cơ bản)</option>
+            <option value="Arial">Arial (Cơ bản)</option>
+            <option value="Arial Black">Arial Black (Cơ bản)</option>
+            <option value="Noto Sans">Noto Sans (Cơ bản)</option>
           </select>
         </div>
-        <div className="w-[80px] space-y-1">
-          <label className="text-xs text-muted-foreground">Kích cỡ</label>
-          <input 
-            type="number" min={12} max={72} 
-            className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" 
-            value={value.size} 
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Kích cỡ</label>
+          <input
+            type="number"
+            min={12}
+            max={72}
+            value={value.size}
             onChange={(e) => update({ size: Number(e.target.value) })}
+            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
           />
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-end">
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Màu chữ</label>
-          <div className="flex h-9 items-center rounded-md border border-input bg-background px-2 shadow-sm">
-            <input 
-              type="color" 
-              className="w-6 h-6 border-0 bg-transparent cursor-pointer p-0" 
-              value={value.color} 
-              onChange={(e) => update({ color: e.target.value })}
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Màu nền</label>
-          <div className="flex h-9 items-center rounded-md border border-input bg-background px-2 shadow-sm">
-            <input 
-              type="color" 
-              className="w-6 h-6 border-0 bg-transparent cursor-pointer p-0" 
-              value={value.bgColor} 
-              onChange={(e) => update({ bgColor: e.target.value })}
-            />
-          </div>
-        </div>
-        
-        <div className="flex h-9 items-center gap-1 bg-muted/50 border border-input p-1 rounded-md shadow-sm">
-          <Button 
-            type="button" 
-            variant="ghost" 
-            size="icon" 
-            className={`h-7 w-7 rounded-sm ${value.bold ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground'}`}
-            onClick={() => update({ bold: !value.bold })}
-          >
-            <Bold className="h-4 w-4" />
-          </Button>
-          <Button 
-            type="button" 
-            variant="ghost" 
-            size="icon" 
-            className={`h-7 w-7 rounded-sm ${value.italic ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground'}`}
-            onClick={() => update({ italic: !value.italic })}
-          >
-            <Italic className="h-4 w-4" />
-          </Button>
-        </div>
+      {/* Colors & Styles */}
+      <div className="flex flex-wrap gap-4 items-center">
+        <label className="space-y-1">
+          <span className="block text-xs text-muted-foreground">Màu chữ</span>
+          <input
+            type="color"
+            value={value.color}
+            onChange={(e) => update({ color: e.target.value })}
+            className="h-9 w-12 rounded border border-input bg-background p-1 cursor-pointer"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="block text-xs text-muted-foreground">Màu nền / viền</span>
+          <input
+            type="color"
+            value={value.bgColor}
+            onChange={(e) => update({ bgColor: e.target.value })}
+            className="h-9 w-12 rounded border border-input bg-background p-1 cursor-pointer"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="block text-xs text-muted-foreground">Màu nhấn từng từ</span>
+          <input
+            type="color"
+            value={value.highlightColor ?? '#FFF200'}
+            onChange={(e) => update({ highlightColor: e.target.value })}
+            className="h-9 w-12 rounded border border-input bg-background p-1 cursor-pointer"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value.bold}
+            onChange={(e) => update({ bold: e.target.checked })}
+            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+          />
+          Đậm
+        </label>
+        <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value.italic}
+            onChange={(e) => update({ italic: e.target.checked })}
+            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+          />
+          Nghiêng
+        </label>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-xs text-muted-foreground block">Đường viền & Nền</label>
-        <div className="flex gap-4">
+      {/* Border Style & Outline Thickness */}
+      <div className="space-y-2 pt-1">
+        <label className="text-xs text-muted-foreground block">Hiệu ứng hiển thị</label>
+        <div className="flex flex-wrap gap-4 mb-3">
+          <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+            <input type="radio" checked={(value.animation ?? 'static') === 'static'} onChange={() => update({ animation: 'static' })} />
+            Tĩnh
+          </label>
+          <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+            <input type="radio" checked={value.animation === 'word_highlight'} onChange={() => update({ animation: 'word_highlight' })} />
+            Highlight từng chữ
+          </label>
+          <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+            <input type="radio" checked={value.animation === 'reveal_words'} onChange={() => update({ animation: 'reveal_words' })} />
+            Nhả từng chữ
+          </label>
+        </div>
+        <label className="text-xs text-muted-foreground block">Kiểu đường viền / nền</label>
+        <div className="flex flex-wrap gap-4">
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={value.borderStyle === 0} onChange={() => update({ borderStyle: 0 })} />
             Không có
@@ -139,6 +238,7 @@ export function SubtitleConfig({ value, onChange }: { value: SubtitleSettings, o
         )}
       </div>
 
+      {/* Position */}
       <div className="space-y-2">
         <label className="text-xs text-muted-foreground block">Vị trí</label>
         <div className="flex gap-1 bg-muted/50 border border-input p-1 rounded-md w-fit shadow-sm">
@@ -161,38 +261,70 @@ export function SubtitleConfig({ value, onChange }: { value: SubtitleSettings, o
             }`}
             onClick={() => update({ position: 'auto' })}
           >
-            🤖 Auto
+            Auto
+          </button>
+          <button
+            type="button"
+            className={`px-3 py-1 text-xs rounded-sm transition-all ${
+              value.position === 'custom'
+                ? 'bg-background shadow-sm font-medium'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => update({ position: 'custom', customY: value.customY ?? 0.78 })}
+          >
+            Custom
           </button>
         </div>
         {value.position === 'auto' && (
           <p className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2 border border-border/50 leading-relaxed">
-            AI tự phát hiện vị trí phụ đề gốc (thường bottom 18%) và chèn phụ đề mới trong vùng đã làm mờ. Nếu không phát hiện được, mặc định đặt ở dưới cùng.
+            {autoDescription}
           </p>
+        )}
+        {value.position === 'custom' && (
+          <div className="flex items-center gap-3 bg-muted/30 p-2 rounded-md border border-border/50">
+            <span className="text-xs text-muted-foreground">Y</span>
+            <input
+              type="range"
+              min={0.05}
+              max={0.9}
+              step={0.01}
+              className="w-44"
+              value={value.customY ?? 0.78}
+              onChange={(e) => update({ customY: Number(e.target.value) })}
+            />
+            <span className="text-xs font-medium tabular-nums">{Math.round((value.customY ?? 0.78) * 100)}%</span>
+          </div>
         )}
       </div>
 
-      <div className="mt-4 border rounded-md h-32 bg-zinc-900 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-700 to-zinc-900 flex items-center justify-center p-4 relative overflow-hidden shadow-inner">
-        <div 
-          className="absolute w-full flex justify-center text-center leading-snug"
+      {/* Preview Box */}
+      <div className="rounded-md bg-zinc-950 p-4 text-center min-h-[90px] flex items-center justify-center relative overflow-hidden border border-border/50">
+        <span
+          className="inline-block rounded px-3 py-1 leading-tight max-w-full break-words"
           style={{
             fontFamily: value.font,
-            fontSize: `${value.size}px`,
+            fontSize: `${Math.min(Number(value.size) || 24, 38)}px`,
             color: value.color,
-            fontWeight: value.bold ? 'bold' : 'normal',
+            ...(value.borderStyle === 3 ? { backgroundColor: value.bgColor } : {}),
+            ...(value.borderStyle === 1 ? { WebkitTextStroke: `${value.outline || 1}px ${value.bgColor}` } : {}),
+            fontWeight: value.bold ? 800 : 500,
             fontStyle: value.italic ? 'italic' : 'normal',
-            ...(value.borderStyle === 3 ? { backgroundColor: value.bgColor, padding: '4px 8px' } : {}),
-            ...(value.borderStyle === 1 ? { WebkitTextStroke: `${value.outline}px ${value.bgColor}` } : {}),
-            top: value.position === 'top' ? '15%' : 'auto',
-            bottom: value.position === 'bottom' ? '15%' : 'auto',
           }}
         >
-          <span style={value.borderStyle === 1 ? { position: 'relative' } : {}}>
-            {value.borderStyle === 1 && (
-              <span style={{ position: 'absolute', left: 0, top: 0, WebkitTextStroke: '0', color: value.color, zIndex: 1 }}>Đây là phụ đề mẫu</span>
-            )}
-            <span style={{ position: 'relative', zIndex: 0 }}>Đây là phụ đề mẫu</span>
-          </span>
-        </div>
+          {value.animation === 'word_highlight' ? (
+            <>
+              <span style={{ color: value.highlightColor ?? '#FFF200' }}>{sampleText.split(' ')[0]}</span>
+              {' '}
+              {sampleText.split(' ').slice(1).join(' ')}
+            </>
+          ) : value.animation === 'reveal_words' ? (
+            <>
+              <span style={{ color: value.highlightColor ?? '#FFF200' }}>{sampleText.split(' ')[0]}</span>
+              {' '}
+              {sampleText.split(' ').slice(1, 3).join(' ')}
+            </>
+          ) : sampleText}
+        </span>
       </div>
     </div>
   );

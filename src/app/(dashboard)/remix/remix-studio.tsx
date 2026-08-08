@@ -24,9 +24,30 @@ import { SubtitleConfig, type SubtitleSettings, defaultSubtitleSettings } from '
 import { BatchURLInput } from '@/components/remix/batch-url-input';
 import { RatioPicker } from '@/components/remix/ratio-picker';
 import { BlurRegionPicker, type BlurRegion } from '@/components/remix/blur-region-picker';
+import { requiresOcrServiceForRemix, requiresVoicePipelineForRemix } from "@/lib/remix/preflight";
+import { sanitizeTranscriptText } from "@/lib/remix/utils";
 
 type SourceType = "upload" | "own_link" | "inspiration";
 type OutputKind = "video" | "image" | "caption";
+type PipelineMode = "simple" | "localization_dub" | "clip_factory" | "hybrid";
+type OnScreenTextPreset = "meme" | "pop" | "bubble" | "neon" | "clean";
+type OnScreenTextSizeMode = "auto_fit" | "fixed";
+
+const ON_SCREEN_TEXT_PRESETS: Record<OnScreenTextPreset, {
+  label: string;
+  font: string;
+  size: number;
+  color: string;
+  bgColor: string;
+  outlineColor: string;
+  bold: boolean;
+}> = {
+  meme: { label: "Meme Impact", font: "Anton", size: 34, color: "#FFFFFF", bgColor: "#000000", outlineColor: "#000000", bold: true },
+  pop: { label: "Pop Sticker", font: "Montserrat", size: 34, color: "#FFF200", bgColor: "#FF2A6D", outlineColor: "#101010", bold: true },
+  bubble: { label: "Bubble", font: "Baloo 2", size: 32, color: "#111111", bgColor: "#FFFFFF", outlineColor: "#FFB703", bold: true },
+  neon: { label: "Neon Reel", font: "Oswald", size: 32, color: "#00F5FF", bgColor: "#090A18", outlineColor: "#FF00E5", bold: true },
+  clean: { label: "Clean Caption", font: "Be Vietnam Pro", size: 28, color: "#FFFFFF", bgColor: "#111827", outlineColor: "#111827", bold: false },
+};
 
 interface CampaignOption {
   id: string;
@@ -54,7 +75,51 @@ interface JobDetail {
   output_kind: string;
   prompt: string | null;
   options: Record<string, any>;
-  plan?: { summary?: string; warnings?: string[]; scriptVi?: string; realScriptVi?: string; } | null;
+  plan?: {
+    summary?: string;
+    warnings?: string[];
+    scriptVi?: string;
+    realScriptVi?: string;
+    analysisBrief?: {
+      content?: { summary?: string; hook?: string; tone?: string; topics?: string[] };
+      structure?: { sceneCount?: number; pacingStyle?: string; avgSceneDurationSec?: number };
+      replicationGuidance?: { suggestedPipeline?: string; keyElements?: string[]; risks?: string[] };
+    };
+    scenePlan?: {
+      scenes?: Array<{ id: string; startSec: number; endSec: number; role: string; visualType: string; reason: string; score?: number }>;
+    };
+    editDecisions?: {
+      renderRuntime?: string;
+      cuts?: Array<{ id: string; inSec: number; outSec: number; reason: string }>;
+      overlays?: Array<{
+        id?: string;
+        kind: string;
+        reason: string;
+        startSec?: number;
+        endSec?: number;
+        sourceText?: string;
+        translatedText?: string;
+        region?: { x: number; y: number; w: number; h: number };
+        confidence?: number;
+      }>;
+      audio?: { mode?: string; voiceName?: string };
+      subtitles?: { enabled?: boolean; position?: string };
+    };
+    finalReview?: {
+      status?: "pass" | "revise" | "fail";
+      issuesFound?: string[];
+      checks?: {
+        technicalProbe?: { durationSec?: number; resolution?: string; hasAudio?: boolean; codec?: string };
+        visualSpotcheck?: { expectedResolution?: string; resolutionMatches?: boolean };
+      };
+    };
+    costEstimate?: { provider?: string; estimatedVnd?: number; estimatedUsd?: number; notes?: string[] };
+    copyrightPreflight?: {
+      riskLevel?: "low" | "medium" | "high";
+      items?: Array<{ id: string; label: string; status: "pass" | "warning" | "fail"; detail: string }>;
+      warnings?: string[];
+    };
+  } | null;
   result_caption: string | null;
   result_hashtags: string[] | null;
   resultUrl: string | null;
@@ -63,6 +128,23 @@ interface JobDetail {
   iteration: number;
   is_auto_fix?: boolean;
   auto_fix_source_id?: string | null;
+}
+
+interface RemixServiceHealth {
+  voicePipeline: {
+    configured: boolean;
+    reachable: boolean;
+    url: string | null;
+    error?: string;
+    requireV2ForLocalization: boolean;
+  };
+  ocr: {
+    configured: boolean;
+    reachable: boolean;
+    url: string | null;
+    error?: string;
+    engine: "gemini" | "paddleocr";
+  };
 }
 
 const RUNNING = new Set(["queued", "analyzing", "processing", "revising"]);
@@ -119,7 +201,7 @@ export function RemixStudio({
   const [targetLanguage, setTargetLanguage] = React.useState<"vi" | "en">("vi");
   const [vietsub, setVietsub] = React.useState(false);
   const [dubVi, setDubVi] = React.useState(false); // kept for backward compat
-  const [dubMode, setDubMode] = React.useState<'none' | 'full' | 'preserve_bgm'>('none');
+  const [dubMode, setDubMode] = React.useState<'none' | 'full' | 'preserve_bgm' | 'heygen'>('none');
   const [vertical, setVertical] = React.useState(true);
   const [outputRatio, setOutputRatio] = React.useState("9:16");
   const [blurOriginalSub, setBlurOriginalSub] = React.useState(false);
@@ -130,6 +212,20 @@ export function RemixStudio({
   const [colorGrade, setColorGrade] = React.useState(false);
   const [muteOriginal, setMuteOriginal] = React.useState(false);
   const [trimSeconds, setTrimSeconds] = React.useState("");
+  const [translateOnScreenText, setTranslateOnScreenText] = React.useState(false);
+  const [onScreenTextHint, setOnScreenTextHint] = React.useState("");
+  const [onScreenTextPreset, setOnScreenTextPreset] = React.useState<OnScreenTextPreset>("meme");
+  const [onScreenTextFont, setOnScreenTextFont] = React.useState("Anton");
+  const [onScreenTextSize, setOnScreenTextSize] = React.useState("34");
+  const [onScreenTextSizeMode, setOnScreenTextSizeMode] = React.useState<OnScreenTextSizeMode>("auto_fit");
+  const [onScreenTextColor, setOnScreenTextColor] = React.useState("#FFFFFF");
+  const [onScreenTextBgColor, setOnScreenTextBgColor] = React.useState("#000000");
+  const [onScreenTextOutlineColor, setOnScreenTextOutlineColor] = React.useState("#000000");
+  const [onScreenTextBold, setOnScreenTextBold] = React.useState(true);
+  const [pipelineMode, setPipelineMode] = React.useState<PipelineMode>("simple");
+  const [clipCount, setClipCount] = React.useState("3");
+  const [clipDurationSec, setClipDurationSec] = React.useState("30");
+  const [protectedTermsText, setProtectedTermsText] = React.useState("");
 
   // --- Caption & Image options ---
   const [captionPrompt, setCaptionPrompt] = React.useState("");
@@ -169,13 +265,19 @@ export function RemixStudio({
   const [batchUrls, setBatchUrls] = React.useState<string[]>([]);
   const [batchSubmitting, setBatchSubmitting] = React.useState(false);
   const [selectedVoice, setSelectedVoice] = React.useState('vi-VN-WaveNet-A');
+  const [voiceVolume, setVoiceVolume] = React.useState(2.0);
+
   const [subtitleSettings, setSubtitleSettings] = React.useState<SubtitleSettings>(defaultSubtitleSettings);
+  const [scriptInputMode, setScriptInputMode] = React.useState<'from_video_audio' | 'manual_script'>('from_video_audio');
+  const [manualScript, setManualScript] = React.useState('');
   const [editedScript, setEditedScript] = React.useState('');
 
   // Tự động điền script lồng tiếng khi có kết quả
   React.useEffect(() => {
     if (detail?.plan?.scriptVi || detail?.plan?.realScriptVi) {
-      setEditedScript(detail.plan.scriptVi || detail.plan.realScriptVi || '');
+      setEditedScript(
+        sanitizeTranscriptText(detail.plan.scriptVi || detail.plan.realScriptVi || ''),
+      );
     }
   }, [detail?.id, detail?.plan?.scriptVi, detail?.plan?.realScriptVi]);
   const [scriptEditorOpen, setScriptEditorOpen] = React.useState(true);
@@ -186,13 +288,14 @@ export function RemixStudio({
   const [presets, setPresets] = React.useState<any[]>([]);
   const [selectedPresetId, setSelectedPresetId] = React.useState<string>('');
   const [presetsLoaded, setPresetsLoaded] = React.useState(false);
+  const [serviceHealth, setServiceHealth] = React.useState<RemixServiceHealth | null>(null);
 
   const isVideoFlow = outputKind === "video";
 
   // Load presets when modal opens
   React.useEffect(() => {
     if (!presetsLoaded) {
-      fetch('/api/remix/presets')
+      fetch('/api/remix/presets', { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.presets) {
@@ -207,6 +310,28 @@ export function RemixStudio({
     }
   }, [presetsLoaded]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreflight() {
+      try {
+        const res = await fetch("/api/remix/preflight", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setServiceHealth(data);
+      } catch {
+        // ignore local preflight hiccups
+      }
+    }
+
+    void loadPreflight();
+    const timer = setInterval(() => void loadPreflight(), 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   // Apply a preset's settings to manual form state
   const applyPreset = React.useCallback((p: any) => {
     if (!p) return;
@@ -214,23 +339,47 @@ export function RemixStudio({
     setVertical(p.output_ratio === '9:16');
     setTargetLanguage(p.target_language === 'en' ? 'en' : 'vi');
     setSelectedVoice(p.voice_name || 'vi-VN-WaveNet-A');
-    setDubMode((p.dub_mode as 'none' | 'full' | 'preserve_bgm') ?? (p.auto_dub ? 'full' : 'none'));
+    setDubMode((p.dub_mode as 'none' | 'full' | 'preserve_bgm' | 'heygen') ?? (p.auto_dub ? 'full' : 'none'));
     setDubVi(p.auto_dub ?? false);
     setVietsub(p.auto_vietsub ?? false);
+    setTranslateOnScreenText(p.translate_on_screen_text ?? false);
+    setOnScreenTextPreset((p.on_screen_text_preset ?? 'meme') as OnScreenTextPreset);
+    setOnScreenTextFont(p.on_screen_text_font ?? 'Anton');
+    setOnScreenTextSize(String(p.on_screen_text_size ?? 34));
+    setOnScreenTextSizeMode((p.on_screen_text_size_mode ?? 'auto_fit') as OnScreenTextSizeMode);
+    setOnScreenTextColor(p.on_screen_text_color ?? '#FFFFFF');
+    setOnScreenTextBgColor(p.on_screen_text_bg_color ?? '#000000');
+    setOnScreenTextOutlineColor(p.on_screen_text_outline_color ?? '#000000');
+    setOnScreenTextBold(p.on_screen_text_bold ?? true);
     setBlurOriginalSub(p.blur_original_sub ?? false);
     setAutoDetectSub(p.auto_detect_subtitle_region ?? false);
     if (p.blur_region) setBlurRegion(p.blur_region);
     setSubtitleSettings({
+      preset: p.subtitle_preset || defaultSubtitleSettings.preset,
       font: p.sub_font || defaultSubtitleSettings.font,
       size: p.sub_font_size || defaultSubtitleSettings.size,
       color: p.sub_color || defaultSubtitleSettings.color,
       bgColor: p.sub_bg_color || defaultSubtitleSettings.bgColor,
+      highlightColor: p.sub_highlight_color || defaultSubtitleSettings.highlightColor,
       bold: p.sub_bold ?? defaultSubtitleSettings.bold,
       italic: p.sub_italic ?? defaultSubtitleSettings.italic,
       outline: p.sub_outline ?? defaultSubtitleSettings.outline,
       borderStyle: p.sub_border_style !== undefined ? p.sub_border_style : defaultSubtitleSettings.borderStyle,
       position: p.sub_position || defaultSubtitleSettings.position,
+      customY: p.sub_custom_y ?? defaultSubtitleSettings.customY,
+      animation: p.subtitle_animation || defaultSubtitleSettings.animation,
     });
+  }, []);
+
+  const applyOnScreenTextPreset = React.useCallback((preset: OnScreenTextPreset) => {
+    const style = ON_SCREEN_TEXT_PRESETS[preset];
+    setOnScreenTextPreset(preset);
+    setOnScreenTextFont(style.font);
+    setOnScreenTextSize(String(style.size));
+    setOnScreenTextColor(style.color);
+    setOnScreenTextBgColor(style.bgColor);
+    setOnScreenTextOutlineColor(style.outlineColor);
+    setOnScreenTextBold(style.bold);
   }, []);
 
   React.useEffect(() => {
@@ -384,6 +533,11 @@ export function RemixStudio({
     setError(null);
     setNotice(null);
 
+    if (createBlockedReason) {
+      setError(`${createBlockedReason} Chạy npm run remix:services:detached rồi thử lại.`);
+      return;
+    }
+
     if (sourceType === "upload" && !uploadedMedia) {
       setError("Hãy tải lên file nguồn trước.");
       return;
@@ -400,6 +554,18 @@ export function RemixStudio({
     setSubmitting(true);
     try {
       let options: Record<string, unknown> = {};
+      options.pipelineMode = pipelineMode;
+      const protectedTerms = protectedTermsText
+        .split(",")
+        .map((term) => term.trim())
+        .filter(Boolean);
+      if (protectedTerms.length) options.protectedTerms = protectedTerms;
+      if (pipelineMode === "clip_factory") {
+        const count = Number(clipCount);
+        const dur = Number(clipDurationSec);
+        if (Number.isFinite(count)) options.clipCount = count;
+        if (Number.isFinite(dur)) options.clipDurationSec = dur;
+      }
 
       // --- Khi dùng Preset mode: lấy options trực tiếp từ preset object ---
       if (outputMode === 'preset' && selectedPresetId) {
@@ -413,21 +579,40 @@ export function RemixStudio({
           if (p.auto_vietsub) {
             options.vietsub = true;
             options.subtitleConfig = {
-              font: p.sub_font || 'Arial',
-              size: p.sub_font_size || 24,
-              color: p.sub_color || '#FFFFFF',
-              bgColor: p.sub_bg_color || '#000000',
-              bold: p.sub_bold || false,
-              italic: p.sub_italic || false,
-              outline: p.sub_outline ?? 2,
-              borderStyle: p.sub_border_style ?? 3,
-              position: p.sub_position || 'bottom',
+              preset: p.subtitle_preset ?? defaultSubtitleSettings.preset,
+              font: p.sub_font ?? defaultSubtitleSettings.font,
+              size: p.sub_font_size ?? defaultSubtitleSettings.size,
+              color: p.sub_color ?? defaultSubtitleSettings.color,
+              bgColor: p.sub_bg_color ?? defaultSubtitleSettings.bgColor,
+              highlightColor: p.sub_highlight_color ?? defaultSubtitleSettings.highlightColor,
+              bold: p.sub_bold ?? defaultSubtitleSettings.bold,
+              italic: p.sub_italic ?? defaultSubtitleSettings.italic,
+              outline: p.sub_outline ?? defaultSubtitleSettings.outline,
+              borderStyle: p.sub_border_style ?? defaultSubtitleSettings.borderStyle,
+              position: p.sub_position ?? defaultSubtitleSettings.position,
+              customY: p.sub_custom_y ?? defaultSubtitleSettings.customY,
+              animation: p.subtitle_animation ?? defaultSubtitleSettings.animation,
             };
+            options.subPosition = p.sub_position ?? defaultSubtitleSettings.position;
+            options.subCustomY = p.sub_custom_y ?? defaultSubtitleSettings.customY;
             if (p.blur_original_sub) {
               options.blurOriginalSub = true;
               if (p.blur_region) options.blurRegion = p.blur_region;
               else options.autoDetectSubtitleRegion = true;
             }
+          }
+          if (p.translate_on_screen_text) {
+            options.translateOnScreenText = true;
+            options.onScreenTextStyle = {
+              preset: p.on_screen_text_preset ?? 'meme',
+              font: p.on_screen_text_font ?? 'Impact',
+              size: p.on_screen_text_size ?? 34,
+              sizeMode: p.on_screen_text_size_mode ?? 'auto_fit',
+              color: p.on_screen_text_color ?? '#FFFFFF',
+              bgColor: p.on_screen_text_bg_color ?? '#000000',
+              outlineColor: p.on_screen_text_outline_color ?? '#000000',
+              bold: p.on_screen_text_bold ?? true,
+            };
           }
           
           const dubMode = p.dub_mode || (p.auto_dub ? 'full' : 'none');
@@ -448,6 +633,9 @@ export function RemixStudio({
             options.outroMediaId = p.outro_media_id;
           }
           if (p.output_crf) options.outputCrf = p.output_crf;
+          if (p.watermark_defaults && Object.keys(p.watermark_defaults).length) {
+            options.watermarkConfig = p.watermark_defaults;
+          }
         }
       } else {
         // --- Manual mode: đọc từ form state như cũ ---
@@ -469,6 +657,11 @@ export function RemixStudio({
 
         if (outputKind === "video") {
           options.targetLanguage = targetLanguage;
+          if (scriptInputMode === 'manual_script' && manualScript.trim()) {
+            options.scriptInputMode = 'manual_script';
+            options.manualScript = manualScript.trim();
+            options.editedScript = manualScript.trim();
+          }
           if (vietsub) {
             options.vietsub = true;
             options.subtitleConfig = subtitleSettings;
@@ -483,8 +676,23 @@ export function RemixStudio({
             options.dubMode = dubMode;
             options.dubVi = true;
             options.voiceName = selectedVoice;
+            options.voiceVolume = voiceVolume;
           }
           if (muteOriginal) options.muteOriginal = true;
+          if (translateOnScreenText) {
+            options.translateOnScreenText = true;
+            options.onScreenTextStyle = {
+              preset: onScreenTextPreset,
+              font: onScreenTextFont,
+              size: Number(onScreenTextSize),
+              sizeMode: onScreenTextSizeMode,
+              color: onScreenTextColor,
+              bgColor: onScreenTextBgColor,
+              outlineColor: onScreenTextOutlineColor,
+              bold: onScreenTextBold,
+            };
+            if (onScreenTextHint.trim()) options.textOverlay = onScreenTextHint.trim();
+          }
           const secs = Number(trimSeconds);
           if (Number.isFinite(secs) && secs > 0) options.trimSeconds = secs;
         }
@@ -497,6 +705,11 @@ export function RemixStudio({
       // Caption prompt & tone áp dụng ở cả 2 mode
       if (captionPrompt.trim()) options.captionPrompt = captionPrompt.trim();
       if (captionTone) options.captionTone = captionTone;
+      if (outputKind === "video" && scriptInputMode === 'manual_script' && manualScript.trim()) {
+        options.scriptInputMode = 'manual_script';
+        options.manualScript = manualScript.trim();
+        options.editedScript = manualScript.trim();
+      }
 
       const res = await fetch("/api/remix", {
         method: "POST",
@@ -665,6 +878,43 @@ export function RemixStudio({
 
   const running = detail ? RUNNING.has(detail.status) : Boolean(jobId && !detail);
   const activeSource = SOURCE_TABS.find((t) => t.value === sourceType)!;
+  const selectedPreset = outputMode === "preset"
+    ? presets.find((p: any) => p.id === selectedPresetId)
+    : null;
+  const currentRemixIntent = outputMode === "preset"
+    ? {
+        outputKind,
+        vietsub: Boolean(selectedPreset?.auto_vietsub),
+        dubVi: Boolean(selectedPreset?.auto_dub),
+        dubMode: selectedPreset?.dub_mode ?? (selectedPreset?.auto_dub ? "full" : "none"),
+        translateOnScreenText: Boolean(selectedPreset?.translate_on_screen_text),
+      }
+    : {
+        outputKind,
+        vietsub,
+        dubVi,
+        dubMode,
+        translateOnScreenText,
+      };
+  const needsVoicePipeline = requiresVoicePipelineForRemix(currentRemixIntent);
+  const needsOcrService = serviceHealth
+    ? requiresOcrServiceForRemix(currentRemixIntent, serviceHealth.ocr.engine)
+    : false;
+  const voicePipelineBlocked = Boolean(
+    serviceHealth?.voicePipeline.requireV2ForLocalization &&
+    needsVoicePipeline &&
+    !serviceHealth?.voicePipeline.reachable,
+  );
+  const ocrServiceBlocked = Boolean(
+    needsOcrService &&
+    serviceHealth?.ocr.engine === "paddleocr" &&
+    !serviceHealth?.ocr.reachable,
+  );
+  const createBlockedReason = voicePipelineBlocked
+    ? `Voice Pipeline V2 chưa chạy tại ${serviceHealth?.voicePipeline.url ?? "VOICE_PIPELINE_URL"}.`
+    : ocrServiceBlocked
+      ? `PaddleOCR chưa chạy tại ${serviceHealth?.ocr.url ?? "PADDLEOCR_SERVICE_URL"}.`
+      : null;
 
   return (
     <div className="space-y-4">
@@ -676,7 +926,7 @@ export function RemixStudio({
             <Zap className="h-4 w-4" />
             Auto Generate
           </Button>
-          <Button onClick={() => setIsCreateModalOpen(true)}>
+          <Button onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); }}>
             <Plus className="size-4 mr-2" aria-hidden="true" />
             Tạo nội dung mới
           </Button>
@@ -686,6 +936,13 @@ export function RemixStudio({
       {error && !isCreateModalOpen && (
         <Alert tone="danger" title="Lỗi">
           {error}
+        </Alert>
+      )}
+
+      {voicePipelineBlocked && (
+        <Alert tone="warning" title="Local preflight">
+          Voice Pipeline V2 đang là bắt buộc cho job localization nhưng service local chưa sẵn sàng.
+          Chạy `npm run remix:services:detached` rồi tạo lại job.
         </Alert>
       )}
 
@@ -845,6 +1102,109 @@ export function RemixStudio({
                     </p>
                   )}
 
+                  {detail.plan && (
+                    <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
+                      <div className="grid grid-cols-6 gap-1 text-center text-[11px] font-medium text-muted-foreground">
+                        {[
+                          ["Analyze", Boolean(detail.plan.analysisBrief)],
+                          ["Script", Boolean(detail.plan.scriptVi || detail.plan.realScriptVi)],
+                          ["Assets", Boolean(detail.plan.costEstimate)],
+                          ["Edit", Boolean(detail.plan.editDecisions)],
+                          ["Render", Boolean(detail.resultUrl)],
+                          ["Review", Boolean(detail.plan.finalReview)],
+                        ].map(([label, done]) => (
+                          <div
+                            key={String(label)}
+                            className={`rounded border px-1.5 py-2 ${
+                              done
+                                ? "border-primary/40 bg-primary/10 text-primary"
+                                : "border-border bg-background text-muted-foreground"
+                            }`}
+                          >
+                            {label}
+                          </div>
+                        ))}
+                      </div>
+
+                      {detail.plan.analysisBrief && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-medium">Công thức video</h4>
+                            <span className="text-xs text-muted-foreground">
+                              {detail.plan.analysisBrief.replicationGuidance?.suggestedPipeline ?? "simple"} · {detail.plan.editDecisions?.renderRuntime ?? "ffmpeg"}
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {detail.plan.analysisBrief.content?.summary}
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                            <div className="rounded border border-border bg-background p-2">
+                              <span className="block text-muted-foreground">Hook</span>
+                              <span className="font-medium">{detail.plan.analysisBrief.content?.hook ?? "—"}</span>
+                            </div>
+                            <div className="rounded border border-border bg-background p-2">
+                              <span className="block text-muted-foreground">Nhịp</span>
+                              <span className="font-medium">{detail.plan.analysisBrief.structure?.pacingStyle ?? "—"}</span>
+                            </div>
+                            <div className="rounded border border-border bg-background p-2">
+                              <span className="block text-muted-foreground">Chi phí ước tính</span>
+                              <span className="font-medium">
+                                {detail.plan.costEstimate?.estimatedVnd
+                                  ? `${detail.plan.costEstimate.estimatedVnd.toLocaleString("vi-VN")}đ`
+                                  : "0đ local"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {detail.plan.scenePlan?.scenes?.length ? (
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium">Scene / clip plan</h4>
+                          <div className="space-y-2">
+                            {detail.plan.scenePlan.scenes.slice(0, 5).map((scene) => (
+                              <div key={scene.id} className="flex items-start justify-between gap-3 rounded border border-border bg-background p-2 text-xs">
+                                <div>
+                                  <p className="font-medium">
+                                    {scene.id} · {scene.role} · {scene.visualType}
+                                  </p>
+                                  <p className="text-muted-foreground">{scene.reason}</p>
+                                </div>
+                                <span className="shrink-0 text-muted-foreground">
+                                  {scene.startSec.toFixed(1)}s–{scene.endSec.toFixed(1)}s
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {detail.plan.finalReview && (
+                        <Alert
+                          tone={detail.plan.finalReview.status === "pass" ? "success" : detail.plan.finalReview.status === "fail" ? "danger" : "warning"}
+                          title={`Post-render QA: ${detail.plan.finalReview.status}`}
+                        >
+                          <div className="space-y-1 text-sm">
+                            <p>
+                              {detail.plan.finalReview.checks?.technicalProbe?.resolution ?? "unknown"} ·{" "}
+                              {detail.plan.finalReview.checks?.technicalProbe?.durationSec?.toFixed(1) ?? "?"}s ·{" "}
+                              {detail.plan.finalReview.checks?.technicalProbe?.hasAudio ? "có audio" : "không audio"}
+                            </p>
+                            {detail.plan.finalReview.issuesFound?.length ? (
+                              <ul className="list-inside list-disc">
+                                {detail.plan.finalReview.issuesFound.map((issue, i) => (
+                                  <li key={i}>{issue}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p>File render đạt các kiểm tra kỹ thuật cơ bản.</p>
+                            )}
+                          </div>
+                        </Alert>
+                      )}
+                    </div>
+                  )}
+
                   {/* Preview media */}
                   {detail.resultUrl && detail.output_kind === "video" && (
                     <div className="space-y-3">
@@ -904,11 +1264,19 @@ export function RemixStudio({
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
                                   <p className="text-xs font-medium mb-1 text-muted-foreground">Gốc</p>
-                                  <video src={detail.resultUrl || ""} controls className="w-full rounded border border-border" />
+                                  <video
+                                    src={detail.resultUrl || ""}
+                                    controls
+                                    className="w-full rounded border border-border"
+                                  />
                                 </div>
                                 <div>
                                   <p className="text-xs font-medium mb-1 text-blue-400">AI sửa</p>
-                                  <video src={(autoFixJob as any).resultUrl || (autoFixJob as any).options?.resultUrl || ""} controls className="w-full rounded border border-blue-500/30" />
+                                  <video
+                                    src={(autoFixJob as any).resultUrl || (autoFixJob as any).options?.resultUrl || ""}
+                                    controls
+                                    className="w-full rounded border border-blue-500/30"
+                                  />
                                 </div>
                               </div>
                               <div className="flex gap-2 mt-4">
@@ -1035,6 +1403,30 @@ export function RemixStudio({
                   {/* Feedback + duyệt */}
                   {detail.status === "review" && (
                     <div className="space-y-4 border-t border-border pt-6">
+                      {detail.plan?.copyrightPreflight?.items?.length ? (
+                        <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <h4 className="font-semibold text-sm">Facebook copyright preflight</h4>
+                            <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+                              detail.plan.copyrightPreflight.riskLevel === "high"
+                                ? "bg-destructive/10 text-destructive"
+                                : detail.plan.copyrightPreflight.riskLevel === "medium"
+                                  ? "bg-amber-500/10 text-amber-700"
+                                  : "bg-success/10 text-success"
+                            }`}>
+                              {detail.plan.copyrightPreflight.riskLevel ?? "unknown"}
+                            </span>
+                          </div>
+                          <div className="grid gap-2 md:grid-cols-2">
+                            {detail.plan.copyrightPreflight.items.map((item) => (
+                              <div key={item.id} className="rounded-md border border-border/70 bg-background p-3 text-xs">
+                                <div className="font-medium">{item.label}</div>
+                                <div className="mt-1 text-muted-foreground leading-relaxed">{item.detail}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       <Field
                         label="Bạn cần sửa lại điều gì?"
                         hint={`Đã sửa ${detail.iteration}/5 lần. Mô tả cụ thể thay đổi bạn muốn.`}
@@ -1099,6 +1491,12 @@ export function RemixStudio({
               {error && (
                 <Alert tone="danger" title="Không thực hiện được">
                   {error}
+                </Alert>
+              )}
+
+              {createBlockedReason && (
+                <Alert tone="warning" title="Thiếu local service">
+                  {createBlockedReason} Chạy `npm run remix:services:detached` rồi thử lại.
                 </Alert>
               )}
 
@@ -1230,6 +1628,75 @@ export function RemixStudio({
                   ))}
                 </div>
 
+                <div className="space-y-3 bg-muted/20 p-4 rounded-lg border border-border/50">
+                  <Field
+                    label="Production pipeline"
+                    hint="Lưu proposal/scene/edit/QA artifacts vào plan để dễ review."
+                  >
+                    {(p) => (
+                      <select
+                        {...p}
+                        value={pipelineMode}
+                        onChange={(e) => setPipelineMode(e.target.value as PipelineMode)}
+                        className={`${p.className} bg-background`}
+                      >
+                        <option value="simple">Simple remix</option>
+                        <option value="localization_dub">Localization & Dub</option>
+                        <option value="hybrid">Hybrid overlay</option>
+                        <option value="clip_factory">Clip Factory</option>
+                      </select>
+                    )}
+                  </Field>
+
+                  {pipelineMode === "clip_factory" && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Field label="Số clip đề xuất">
+                        {(p) => (
+                          <input
+                            {...p}
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={clipCount}
+                            onChange={(e) => setClipCount(e.target.value)}
+                            className={`${p.className} bg-background`}
+                          />
+                        )}
+                      </Field>
+                      <Field label="Thời lượng mỗi clip (giây)">
+                        {(p) => (
+                          <input
+                            {...p}
+                            type="number"
+                            min={5}
+                            max={180}
+                            value={clipDurationSec}
+                            onChange={(e) => setClipDurationSec(e.target.value)}
+                            className={`${p.className} bg-background`}
+                          />
+                        )}
+                      </Field>
+                    </div>
+                  )}
+
+                  {(pipelineMode === "localization_dub" || pipelineMode === "clip_factory") && (
+                    <Field
+                      label="Protected terms"
+                      hint="Cách nhau bằng dấu phẩy; hệ thống sẽ ghi rõ trong plan để người review kiểm tra."
+                    >
+                      {(p) => (
+                        <input
+                          {...p}
+                          value={protectedTermsText}
+                          onChange={(e) => setProtectedTermsText(e.target.value)}
+                          placeholder="Tên sân, tên thương hiệu, gói hội viên..."
+                          className={`${p.className} bg-background`}
+                        />
+                      )}
+                    </Field>
+                  )}
+                </div>
+
                 {/* PRESET MODE */}
                 {outputMode === 'preset' && (
                   <div className="space-y-3 bg-muted/20 p-4 rounded-lg border border-border/50">
@@ -1264,9 +1731,10 @@ export function RemixStudio({
                                 </div>
                                 <div className="text-xs text-muted-foreground mt-0.5 flex gap-2 flex-wrap">
                                   <span>{p.output_ratio || '9:16'}</span>
-                                  {p.auto_vietsub && <span>• Phụ đề</span>}
-                                  <span>• {p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc nền' : p.dub_mode === 'full' ? '🎙️ Lồng tiếng' : '🔇 Gốc'}</span>
-                                  <span>• {p.voice_name?.split('-').slice(0, 3).join('-') || 'WaveNet-A'}</span>
+                                  {p.auto_vietsub && <span>• Chữ lồng tiếng</span>}
+                                  {p.translate_on_screen_text && <span>• Dịch text on-screen</span>}
+                                  <span>• {p.dub_mode === 'heygen' ? '✨ HeyGen AI' : p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc nền' : p.dub_mode === 'full' ? '🎙️ Lồng tiếng' : '🔇 Gốc'}</span>
+                                  <span>• {p.dub_mode === 'heygen' ? 'Clone giọng' : p.voice_name?.split('-').slice(0, 3).join('-') || 'WaveNet-A'}</span>
                                 </div>
                               </div>
                             </label>
@@ -1284,11 +1752,12 @@ export function RemixStudio({
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                             <span>Tỉ lệ: <strong className="text-foreground">{p.output_ratio}</strong></span>
                             <span>Ngôn ngữ: <strong className="text-foreground">{p.target_language === 'en' ? '🇺🇸 EN' : '🇻🇳 VI'}</strong></span>
-                            <span>Phụ đề: <strong className="text-foreground">{p.auto_vietsub ? '✅ Bật' : '—'}</strong></span>
+                            <span>Chữ lồng tiếng: <strong className="text-foreground">{p.auto_vietsub ? '✅ Bật' : '—'}</strong></span>
+                            <span>Text on-screen: <strong className="text-foreground">{p.translate_on_screen_text ? '✅ Dịch' : '—'}</strong></span>
                             <span>Lồng tiếng: <strong className="text-foreground">
-                              {p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc' : p.dub_mode === 'full' ? '🎙️ Full' : '🔇 Tắt'}
+                              {p.dub_mode === 'heygen' ? '✨ HeyGen' : p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc' : p.dub_mode === 'full' ? '🎙️ Full' : '🔇 Tắt'}
                             </strong></span>
-                            <span>Giọng: <strong className="text-foreground">{p.voice_name?.replace('vi-VN-', '').replace('en-US-', '') || '—'}</strong></span>
+                            <span>Giọng: <strong className="text-foreground">{p.dub_mode === 'heygen' ? 'Clone thật' : p.voice_name?.replace('vi-VN-', '').replace('en-US-', '') || '—'}</strong></span>
                             <span>CRF: <strong className="text-foreground">{p.output_crf}</strong></span>
                           </div>
                         </div>
@@ -1444,15 +1913,48 @@ export function RemixStudio({
                           </div>
 
                           <div className="space-y-2">
+                            <div className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3">
+                              <label className="text-xs font-medium text-muted-foreground block uppercase tracking-wider">Nguồn script cho voice/subtitle</label>
+                              <div className="flex gap-1 bg-background/80 border border-input p-1 rounded-md w-fit shadow-sm">
+                                <button
+                                  type="button"
+                                  className={`px-3 py-1 text-xs rounded-sm transition-all ${scriptInputMode === 'from_video_audio' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                                  onClick={() => setScriptInputMode('from_video_audio')}
+                                >
+                                  Lấy từ audio video
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-3 py-1 text-xs rounded-sm transition-all ${scriptInputMode === 'manual_script' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                                  onClick={() => setScriptInputMode('manual_script')}
+                                >
+                                  Nhập script trực tiếp
+                                </button>
+                              </div>
+                              {scriptInputMode === 'manual_script' && (
+                                <Textarea
+                                  value={manualScript}
+                                  onChange={(e) => setManualScript(e.target.value)}
+                                  placeholder="Paste script để generate voice và subtitle trực tiếp..."
+                                  className="min-h-[130px] bg-background"
+                                />
+                              )}
+                            </div>
                             <Checkbox
-                              label={`Phụ đề ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'} (burn-in)`}
-                              description="Ghi chữ trực tiếp lên video, đọc được khi tắt tiếng."
+                              label={`Hiện text lồng tiếng ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'} trên video`}
+                              description="Hiển thị lời thoại đã dịch/lồng tiếng trực tiếp trên video."
                               checked={vietsub}
                               onChange={(e) => setVietsub(e.target.checked)}
                             />
                             {vietsub && (
                               <div className="mt-2 ml-7 mb-4 space-y-4">
-                                <SubtitleConfig value={subtitleSettings} onChange={setSubtitleSettings} />
+                                <SubtitleConfig
+                                  value={subtitleSettings}
+                                  onChange={setSubtitleSettings}
+                                  title="Cấu hình text lồng tiếng"
+                                  sampleText="Đây là text lồng tiếng mẫu"
+                                  autoDescription="AI tự chọn vị trí an toàn cho text lồng tiếng sau khi xử lý vùng chữ gốc. Nếu không phát hiện được, mặc định đặt ở dưới cùng."
+                                />
                                 <BlurRegionPicker 
                                   region={blurRegion}
                                   onChange={setBlurRegion}
@@ -1463,6 +1965,9 @@ export function RemixStudio({
                                   }}
                                   autoDetect={autoDetectSub}
                                   onAutoDetectChange={setAutoDetectSub}
+                                  label="Blur text on-screen gốc"
+                                  autoDetectLabel="AI tự phát hiện vùng text on-screen gốc"
+                                  autoDetectDescription="Gemini Vision phân tích nhiều khung hình để xác định chính xác vùng chữ gốc. Nếu không tìm thấy, video sẽ không bị làm mờ."
                                 />
                               </div>
                             )}
@@ -1479,8 +1984,9 @@ export function RemixStudio({
                             {dubMode !== 'none' && (
                               <div className="mt-2 ml-7 mb-4 space-y-2">
                                 {([
-                                  { value: 'full', icon: '🎙️', label: 'Thay toàn bộ audio', desc: 'Thay audio gốc bằng giọng TTS. Phù hợp khi không có nhạc nền.' },
-                                  { value: 'preserve_bgm', icon: '🎵', label: 'Giữ nhạc nền gốc', desc: 'Tách giọng người khỏi nhạc nền, lồng TTS, mix lại với nhạc nền.' },
+                                  { value: 'full', icon: '🎙️', label: 'Luồng thường: Thay toàn bộ audio', desc: 'Thay audio gốc bằng giọng TTS. Phù hợp khi không có nhạc nền.' },
+                                  { value: 'preserve_bgm', icon: '🎵', label: 'Luồng thường: Giữ nhạc nền gốc', desc: 'Tách giọng người khỏi nhạc nền, lồng TTS, mix lại với nhạc nền.' },
+                                  { value: 'heygen', icon: '✨', label: 'Luồng HeyGen: Video Translate (Lip-sync AI)', desc: 'Dịch video qua HeyGen API, tự động clone giọng thật của speaker và khớp khẩu hình.' },
                                 ] as const).map(opt => (
                                   <label
                                     key={opt.value}
@@ -1504,13 +2010,190 @@ export function RemixStudio({
                                     </div>
                                   </label>
                                 ))}
-                                <div className="mt-3 max-w-xs">
-                                  <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Giọng lồng tiếng</label>
-                                  <VoiceSelector value={selectedVoice} onChange={setSelectedVoice} />
-                                </div>
+                                {dubMode !== 'heygen' ? (
+                                  <div className="mt-3 max-w-xs space-y-3">
+                                    <div>
+                                      <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Giọng lồng tiếng</label>
+                                      <VoiceSelector value={selectedVoice} onChange={setSelectedVoice} />
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                                          Âm lượng giọng
+                                        </label>
+                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                          voiceVolume < 1.5 ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                                          voiceVolume <= 2.5 ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+                                          'bg-orange-500/10 text-orange-600 dark:text-orange-400'
+                                        }`}>
+                                          {voiceVolume < 1.5 ? '🔉' : voiceVolume <= 2.5 ? '🔊' : '📢'} {Math.round(voiceVolume * 100)}%
+                                        </span>
+                                      </div>
+                                      <input
+                                        type="range"
+                                        min={0.5}
+                                        max={3.0}
+                                        step={0.1}
+                                        value={voiceVolume}
+                                        onChange={(e) => setVoiceVolume(Number(e.target.value))}
+                                        className="w-full h-2 appearance-none rounded-full cursor-pointer accent-primary"
+                                      />
+                                      <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                                        <span>Nhỏ (50%)</span>
+                                        <span>Mặc định (200%)</span>
+                                        <span>To (300%)</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                                    <div className="font-semibold flex items-center gap-1.5">
+                                      <span>✨ HeyGen Video Translate</span>
+                                    </div>
+                                    <p>• HeyGen sẽ tự động clone giọng thật của người nói trong video gốc.</p>
+                                    <p>• Đồng bộ khẩu hình (lip-sync) chuẩn theo ngữ điệu ngôn ngữ đích.</p>
+                                    <p>• Vẫn giữ trọn vẹn quy trình xử lý Text on-screen và Blur phụ đề cũ sau khi HeyGen trả video về.</p>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
+                          <Checkbox
+                            label={`Dịch text on-screen sang ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'}`}
+                            description="AI đọc chữ đang có trong frame gốc, review tone/mood rồi chuyển ngữ tự nhiên theo ngữ cảnh."
+                            checked={translateOnScreenText}
+                            onChange={(e) => setTranslateOnScreenText(e.target.checked)}
+                          />
+                          {translateOnScreenText && (
+                            <div className="ml-7 max-w-lg space-y-4">
+                              <Field
+                                label="Hint dịch text on-screen"
+                                hint="Không phải nội dung chèn trực tiếp; dùng để giữ thuật ngữ và tinh thần bản dịch."
+                              >
+                                {(p) => (
+                                  <input
+                                    {...p}
+                                    value={onScreenTextHint}
+                                    onChange={(e) => setOnScreenTextHint(e.target.value)}
+                                    placeholder="Ví dụ: tone vui, giữ nguyên tên sân và gói hội viên"
+                                    className={`${p.className} bg-background`}
+                                  />
+                                )}
+                              </Field>
+                              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {(Object.entries(ON_SCREEN_TEXT_PRESETS) as Array<[OnScreenTextPreset, typeof ON_SCREEN_TEXT_PRESETS[OnScreenTextPreset]]>).map(([key, style]) => (
+                                    <button
+                                      key={key}
+                                      type="button"
+                                      onClick={() => applyOnScreenTextPreset(key)}
+                                      className={`rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                                        onScreenTextPreset === key
+                                          ? "border-primary bg-primary/10 text-primary"
+                                          : "border-border bg-background hover:bg-muted"
+                                      }`}
+                                    >
+                                      {style.label}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <Field label="Font chữ">
+                                    {(p) => (
+                                      <select
+                                        {...p}
+                                        value={onScreenTextFont}
+                                        onChange={(e) => setOnScreenTextFont(e.target.value)}
+                                        className={`${p.className} bg-background`}
+                                      >
+                                        <option value="Anton">Anton (Meme / Impact - Việt hoá)</option>
+                                        <option value="Oswald">Oswald (Condensed - Việt hoá)</option>
+                                        <option value="Be Vietnam Pro">Be Vietnam Pro (Tiêu chuẩn - Việt hoá)</option>
+                                        <option value="Montserrat">Montserrat (Hiện đại - Việt hoá)</option>
+                                        <option value="Nunito">Nunito (Bo tròn - Việt hoá)</option>
+                                        <option value="Baloo 2">Baloo 2 (Sticker - Việt hoá)</option>
+                                        <option value="Inter">Inter (Tối giản - Việt hoá)</option>
+                                        <option value="Impact">Impact (Cơ bản)</option>
+                                        <option value="Arial">Arial (Cơ bản)</option>
+                                        <option value="Arial Black">Arial Black (Cơ bản)</option>
+                                        <option value="Noto Sans">Noto Sans (Cơ bản)</option>
+                                      </select>
+                                    )}
+                                  </Field>
+                                  <Field label="Cách tính kích cỡ">
+                                    {(p) => (
+                                      <select
+                                        {...p}
+                                        value={onScreenTextSizeMode}
+                                        onChange={(e) => setOnScreenTextSizeMode(e.target.value as OnScreenTextSizeMode)}
+                                        className={`${p.className} bg-background`}
+                                      >
+                                        <option value="auto_fit">Auto theo text gốc</option>
+                                        <option value="fixed">Cố định theo preset</option>
+                                      </select>
+                                    )}
+                                  </Field>
+                                  <Field label="Kích cỡ">
+                                    {(p) => (
+                                      <input
+                                        {...p}
+                                        type="number"
+                                        min={16}
+                                        max={72}
+                                        value={onScreenTextSize}
+                                        onChange={(e) => setOnScreenTextSize(e.target.value)}
+                                        className={`${p.className} bg-background`}
+                                      />
+                                    )}
+                                  </Field>
+                                </div>
+
+                                <div className="flex flex-wrap gap-4">
+                                  {[
+                                    ["Màu chữ", onScreenTextColor, setOnScreenTextColor],
+                                    ["Màu nền", onScreenTextBgColor, setOnScreenTextBgColor],
+                                    ["Màu viền", onScreenTextOutlineColor, setOnScreenTextOutlineColor],
+                                  ].map(([label, value, setter]) => (
+                                    <label key={String(label)} className="space-y-1">
+                                      <span className="block text-xs text-muted-foreground">{String(label)}</span>
+                                      <input
+                                        type="color"
+                                        value={String(value)}
+                                        onChange={(e) => (setter as (v: string) => void)(e.target.value)}
+                                        className="h-9 w-12 rounded border border-input bg-background p-1"
+                                      />
+                                    </label>
+                                  ))}
+                                  <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={onScreenTextBold}
+                                      onChange={(e) => setOnScreenTextBold(e.target.checked)}
+                                    />
+                                    Đậm
+                                  </label>
+                                </div>
+
+                                <div className="rounded-md bg-zinc-950 p-4 text-center">
+                                  <span
+                                    className="inline-block rounded px-3 py-1 leading-tight"
+                                    style={{
+                                      fontFamily: onScreenTextFont,
+                                      fontSize: `${Math.min(Number(onScreenTextSize) || 34, 42)}px`,
+                                      color: onScreenTextColor,
+                                      backgroundColor: onScreenTextBgColor,
+                                      WebkitTextStroke: `1px ${onScreenTextOutlineColor}`,
+                                      fontWeight: onScreenTextBold ? 800 : 500,
+                                    }}
+                                  >
+                                    Text on-screen mẫu
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                           <Checkbox
                             label="Bỏ audio gốc"
                             description="Dùng khi chỉ cần hình + phụ đề."
@@ -1639,6 +2322,7 @@ export function RemixStudio({
                 <Button
                   onClick={handleSubmit}
                   loading={submitting}
+                  disabled={Boolean(createBlockedReason)}
                   className="w-full sm:w-auto min-w-32"
                 >
                   {submitting ? "Đang tạo…" : "Khởi tạo tiến trình"}
@@ -1673,20 +2357,25 @@ export function RemixStudio({
             <div className="p-4 border-t border-border/50 bg-muted/30 flex justify-end gap-3 sticky bottom-0">
               <Button variant="outline" onClick={() => setShowAutoDialog(false)}>Hủy</Button>
               <Button
-                disabled={batchUrls.length === 0 || batchSubmitting}
+                disabled={batchUrls.length === 0 || batchSubmitting || voicePipelineBlocked}
                 onClick={async () => {
                   setBatchSubmitting(true);
+                  setError(null);
                   try {
-                    await fetch('/api/remix/batch', {
+                    const res = await fetch('/api/remix/batch', {
                       method: 'POST',
                       headers: { 'content-type': 'application/json' },
                       body: JSON.stringify({ urls: batchUrls, mode: 'auto', ownershipConfirmed: true }),
                     });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data.error ?? 'Batch generate thất bại.');
+                    }
                     setShowAutoDialog(false);
                     setBatchUrls([]);
                     router.refresh(); // Tải lại danh sách job trên thanh lịch sử
                   } catch (err) {
-                    console.error(err);
+                    setError((err as Error).message);
                   } finally {
                     setBatchSubmitting(false);
                   }

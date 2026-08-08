@@ -106,7 +106,6 @@ export function UserMenu({
     try {
       await createClient().auth.signOut();
       router.push("/login");
-      router.refresh();
     } finally {
       setLoading(false);
     }

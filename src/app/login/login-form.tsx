@@ -44,7 +44,6 @@ export function LoginForm({ next }: { next: string }) {
       return;
     }
     router.replace(next);
-    router.refresh();
   }
 
   async function handleGoogleLogin() {

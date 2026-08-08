@@ -19,9 +19,23 @@ interface BlurRegionPickerProps {
   /** Bật chế độ AI tự detect vùng phụ đề gốc (thay thế chọn vùng thủ công). */
   autoDetect?: boolean;
   onAutoDetectChange?: (enabled: boolean) => void;
+  label?: string;
+  autoDetectLabel?: string;
+  autoDetectDescription?: string;
 }
 
-export function BlurRegionPicker({ videoUrl, region, onChange, defaultEnabled, onToggle, autoDetect, onAutoDetectChange }: BlurRegionPickerProps) {
+export function BlurRegionPicker({
+  videoUrl,
+  region,
+  onChange,
+  defaultEnabled,
+  onToggle,
+  autoDetect,
+  onAutoDetectChange,
+  label = "Blur text on-screen gốc",
+  autoDetectLabel = "AI tự phát hiện vùng text on-screen gốc",
+  autoDetectDescription = "Gemini Vision phân tích 3 khung hình để xác định chính xác vùng chữ gốc. Nếu không tìm thấy, video sẽ không bị làm mờ.",
+}: BlurRegionPickerProps) {
   const [preset, setPreset] = useState<'18' | '25' | 'custom'>('18');
 
   const applyPreset = (p: '18' | '25' | 'custom') => {
@@ -43,7 +57,7 @@ export function BlurRegionPicker({ videoUrl, region, onChange, defaultEnabled, o
           checked={defaultEnabled}
           onChange={(e) => onToggle(e.target.checked)}
         />
-        <label htmlFor="blur-toggle" className="font-semibold text-sm cursor-pointer">Blur phụ đề gốc</label>
+        <label htmlFor="blur-toggle" className="font-semibold text-sm cursor-pointer">{label}</label>
       </div>
 
       {defaultEnabled && (
@@ -62,11 +76,10 @@ export function BlurRegionPicker({ videoUrl, region, onChange, defaultEnabled, o
             />
             <div>
               <label className="text-sm font-medium cursor-pointer flex items-center gap-1.5 pointer-events-none">
-                🤖 AI tự phát hiện vùng phụ đề gốc
+                {autoDetectLabel}
               </label>
               <p className="text-xs text-muted-foreground mt-0.5 pointer-events-none">
-                Gemini Vision phân tích 3 khung hình để xác định chính xác vùng phụ đề.
-                Nếu không tìm thấy, video sẽ không bị làm mờ.
+                {autoDetectDescription}
               </p>
             </div>
           </div>
@@ -132,4 +145,3 @@ export function BlurRegionPicker({ videoUrl, region, onChange, defaultEnabled, o
     </div>
   );
 }
-

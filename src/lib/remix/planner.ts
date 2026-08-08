@@ -1,11 +1,18 @@
 import { getAIProvider } from "@/lib/ai";
-import type { VideoInfo } from "./video-ops";
-import { scriptToCues, buildSrt, subtitlePlacementForBlurRegion } from "./video-ops";
+import type { SubtitleCue, VideoInfo } from "./video-ops";
+import { buildAssSubtitles, scriptToCues, buildSrt, subtitlePlacementForBlurRegion } from "./video-ops";
+import { sanitizeTranscriptText } from "./utils";
+import type { OnScreenTextTranslation } from "./on-screen-text";
 import {
   KNOWN_VIDEO_OPS,
+  type AlignedVoiceCue,
   type RemixOptions,
+  type RemixAnalysisBrief,
+  type RemixEditDecisions,
   type RemixOutputKind,
   type RemixPlan,
+  type RemixScenePlan,
+  type RemixSourceType,
   type VideoOp,
 } from "./types";
 
@@ -26,6 +33,8 @@ import {
 // ---------------------------------------------------------------------------
 
 const VERTICAL = { width: 1080, height: 1920 } as const;
+type ScenePlanScene = RemixScenePlan["scenes"][number];
+type EditOverlay = RemixEditDecisions["overlays"][number];
 
 interface RawPlan {
   summary?: string;
@@ -37,6 +46,7 @@ interface RawPlan {
 }
 
 export interface PlanRemixInput {
+  sourceType?: RemixSourceType;
   outputKind: RemixOutputKind;
   prompt?: string;
   options: RemixOptions;
@@ -52,6 +62,10 @@ export interface PlanRemixInput {
   hasLogo?: boolean;
   /** Script tiếng Việt đã được ASR thật từ audio video — ưu tiên hơn AI tự sinh. */
   realScriptVi?: string;
+  /** Cue voice đã được ASR trước plan, dùng làm timeline nguồn cho dubbing/subtitle. */
+  voiceCues?: AlignedVoiceCue[];
+  /** Text-on-screen đã OCR trước plan, dùng làm layout/timing nguồn cho overlay. */
+  onScreenTextTracks?: OnScreenTextTranslation[];
 }
 
 /**
@@ -76,8 +90,12 @@ export async function planRemix(input: PlanRemixInput): Promise<RemixPlan> {
   let videoOps = sanitizeVideoOps(raw?.videoOps, input.videoInfo ?? null);
 
   // Ưu tiên realScriptVi (từ ASR thật) nếu có — không dùng AI fabricate
-  const scriptVi = input.realScriptVi?.trim()
-    || (typeof raw?.scriptVi === 'string' ? raw.scriptVi.trim() : '');
+  const scriptVi = sanitizeTranscriptText(
+    input.options.scriptInputMode === "manual_script" && input.options.manualScript?.trim()
+      ? input.options.manualScript.trim()
+      : input.realScriptVi?.trim()
+      || (typeof raw?.scriptVi === 'string' ? raw.scriptVi.trim() : ''),
+  );
 
   // ---- Áp option cứng (nguồn chân lý là checkbox của người dùng) ----
   if ((input.outputKind === 'video' || input.outputKind === 'image') && input.videoInfo) {
@@ -92,21 +110,308 @@ export async function planRemix(input: PlanRemixInput): Promise<RemixPlan> {
       info: input.videoInfo,
       scriptVi,
       hasLogo: input.hasLogo ?? false,
+      voiceCues: input.voiceCues,
       warnings,
     });
   }
+
+  const artifacts = buildProductionArtifacts(input, videoOps, scriptVi, warnings);
 
   return {
     summary:
       typeof raw?.summary === 'string' && raw.summary.trim()
         ? raw.summary.trim()
         : describePlan(videoOps, input.options),
+    ...artifacts,
     videoOps,
     scriptVi: scriptVi || undefined,
     caption: typeof raw?.caption === 'string' ? raw.caption.trim() : undefined,
     hashtags: normalizeHashtags(raw?.hashtags),
     warnings,
   };
+}
+
+function buildProductionArtifacts(
+  input: PlanRemixInput,
+  ops: VideoOp[],
+  scriptVi: string,
+  warnings: string[],
+): Pick<RemixPlan, "analysisBrief" | "scenePlan" | "editDecisions" | "costEstimate"> {
+  const info = input.videoInfo ?? null;
+  const options = input.options;
+  const pipelineMode = choosePipelineMode(input);
+  const trim = ops.find((op) => op.op === "trim") as Extract<VideoOp, { op: "trim" }> | undefined;
+  const startSec = trim?.start ?? 0;
+  const durationSec =
+    trim?.duration ??
+    (info?.durationSec && info.durationSec > 0 ? info.durationSec : options.clipDurationSec ?? 30);
+  const endSec = startSec + durationSec;
+  const visualType = inferVisualType(input);
+
+  const analysisBrief: RemixPlan["analysisBrief"] = {
+    version: "1.0",
+    source: {
+      type: input.sourceType ?? "upload",
+      durationSec: info?.durationSec,
+      resolution: info ? `${info.width}x${info.height}` : undefined,
+      hasAudio: info?.hasAudio,
+    },
+    content: {
+      summary: input.inspiration
+        ? summarizeText(input.inspiration, 220)
+        : input.prompt
+          ? summarizeText(input.prompt, 220)
+          : scriptVi
+            ? summarizeText(scriptVi, 220)
+            : "Nguồn sẽ được xử lý theo các tuỳ chọn remix đã chọn.",
+      hook: inferHook(input.prompt, scriptVi, input.inspiration),
+      tone: options.captionTone ?? (input.inspiration ? "reference-led" : "brand-safe"),
+      topics: inferTopics(input.prompt, scriptVi, input.inspiration),
+    },
+    structure: {
+      sceneCount: options.pipelineMode === "clip_factory" ? clampInt(options.clipCount ?? 3, 1, 10) : 1,
+      pacingStyle: inferPacing(info?.durationSec, options),
+      avgSceneDurationSec: durationSec,
+    },
+    style: {
+      subtitleStyle: options.vietsub
+        ? `${options.subtitleConfig?.position ?? options.subPosition ?? "bottom"} burn-in`
+        : undefined,
+      outputRatio: options.outputRatio ?? (options.vertical ? "9:16" : "original"),
+      productionQuality: "presentable",
+    },
+    replicationGuidance: {
+      suggestedPipeline: pipelineMode,
+      keyElements: buildKeyElements(input, ops),
+      risks: [...warnings, ...buildPlanRisks(input, ops)].slice(0, 8),
+    },
+  };
+
+  const scenes = buildScenePlanScenes(input, startSec, durationSec, visualType);
+  const scenePlan: RemixScenePlan = {
+    version: "1.0",
+    scenes,
+  };
+
+  const editDecisions: RemixPlan["editDecisions"] = {
+    version: "1.0",
+    renderRuntime: "ffmpeg",
+    cuts: scenes
+      .filter((scene) => scene.type === "source" || scene.type === "clip")
+      .map((scene) => ({
+        id: `cut-${scene.id}`,
+        source: "source",
+        inSec: scene.startSec,
+        outSec: scene.endSec,
+        reason: scene.reason,
+      })),
+    overlays: [
+      ...(options.vietsub
+        ? [{
+            kind: "subtitles" as const,
+            startSec,
+            endSec,
+            reason: "Burn-in phụ đề theo cấu hình người dùng.",
+          }]
+        : []),
+      ...(options.brandLogo
+        ? [{
+            kind: "logo" as const,
+            startSec,
+            endSec,
+            reason: "Watermark thương hiệu theo cấu hình người dùng.",
+          }]
+        : []),
+      ...(options.translateOnScreenText || options.textOverlay?.trim()
+        ? (input.onScreenTextTracks?.length
+          ? input.onScreenTextTracks.map((track, idx) => ({
+              id: `text-${idx + 1}`,
+              kind: "text" as const,
+              startSec: track.startSec,
+              endSec: track.endSec,
+              reason: "Preflight OCR: xác định trước text on-screen, bbox và timing để bước dịch/render bám theo.",
+              sourceText: track.detectedText,
+              translatedText: undefined,
+              region: track.region,
+              confidence: track.confidence,
+            }))
+          : [{
+            kind: "text" as const,
+            startSec,
+            endSec,
+            reason: "Chưa có OCR preflight; render sẽ cố phát hiện text on-screen trước khi chèn.",
+          }])
+        : []),
+      ...(options.vietsub && options.blurOriginalSub !== false
+        ? [{
+            kind: "blur" as const,
+            startSec,
+            endSec,
+            reason: "Làm mờ vùng phụ đề gốc trước khi chèn phụ đề mới.",
+          }]
+        : []),
+    ] satisfies EditOverlay[],
+    audio: {
+      mode: options.muteOriginal
+        ? "muted"
+        : options.dubMode === "preserve_bgm"
+          ? "tts_preserve_bgm"
+          : options.dubMode === "full" || options.dubVi
+            ? "tts_replace"
+            : "original",
+      voiceName: options.voiceName,
+      cues: input.voiceCues?.map((cue, idx) => ({
+        id: `voice-${idx + 1}`,
+        startSec: cue.startSec,
+        endSec: cue.endSec,
+        sourceText: cue.sourceText,
+        translatedText: cue.translatedText ?? cue.sourceText,
+        confidence: cue.confidence ?? 1,
+        words: cue.words,
+      })),
+    },
+    subtitles: {
+      enabled: Boolean(options.vietsub),
+      position: options.subtitleConfig?.position ?? options.subPosition,
+    },
+  };
+
+  const costEstimate: RemixPlan["costEstimate"] = {
+    provider: "ffmpeg+configured-ai",
+    estimatedVnd: estimateCostVnd(input),
+    notes: buildCostNotes(input, pipelineMode),
+  };
+
+  return { analysisBrief, scenePlan, editDecisions, costEstimate };
+}
+
+function choosePipelineMode(input: PlanRemixInput): NonNullable<RemixOptions["pipelineMode"]> {
+  if (input.options.pipelineMode) return input.options.pipelineMode;
+  if (input.options.clipCount && input.options.clipCount > 1) return "clip_factory";
+  if (input.options.vietsub || input.options.dubMode === "full" || input.options.dubMode === "preserve_bgm" || input.options.dubVi) {
+    return "localization_dub";
+  }
+  if (input.options.translateOnScreenText || input.options.textOverlay || input.options.brandLogo || input.options.introEnabled || input.options.outroEnabled) {
+    return "hybrid";
+  }
+  return "simple";
+}
+
+function buildScenePlanScenes(
+  input: PlanRemixInput,
+  startSec: number,
+  durationSec: number,
+  visualType: ScenePlanScene["visualType"],
+): RemixScenePlan["scenes"] {
+  if (choosePipelineMode(input) !== "clip_factory") {
+    return [
+      {
+        id: "scene-1",
+        type: "source",
+        startSec,
+        endSec: startSec + durationSec,
+        role: "payload",
+        visualType,
+        reason: "Main source-led edit rendered by the whitelisted FFmpeg op chain.",
+        score: 1,
+      },
+    ];
+  }
+
+  const count = clampInt(input.options.clipCount ?? 3, 1, 10);
+  const clipDuration = clampInt(input.options.clipDurationSec ?? 30, 5, 180);
+  const sourceDuration = Math.max(input.videoInfo?.durationSec ?? count * clipDuration, clipDuration);
+  const step = Math.max(clipDuration, sourceDuration / count);
+
+  return Array.from({ length: count }, (_, i) => {
+    const s = Math.min(Math.max(0, i * step), Math.max(0, sourceDuration - clipDuration));
+    const e = Math.min(sourceDuration, s + clipDuration);
+    return {
+      id: `clip-${i + 1}`,
+      type: "clip",
+      startSec: Math.round(s * 10) / 10,
+      endSec: Math.round(e * 10) / 10,
+      role: i === 0 ? "hook" : "payload",
+      visualType,
+      reason: "Clip Factory v1 candidate: evenly sampled segment pending transcript-based ranking.",
+      score: Math.round((0.82 - i * 0.04) * 100) / 100,
+    };
+  });
+}
+
+function inferVisualType(input: PlanRemixInput): ScenePlanScene["visualType"] {
+  const text = `${input.prompt ?? ""} ${input.inspiration ?? ""}`.toLowerCase();
+  if (text.includes("screen") || text.includes("demo")) return "screen_recording";
+  if (text.includes("talk") || text.includes("phỏng vấn") || text.includes("interview")) return "talking_head";
+  if (text.includes("b-roll") || text.includes("broll")) return "b_roll";
+  if (input.options.translateOnScreenText || input.options.textOverlay || input.options.vietsub) return "mixed";
+  return "unknown";
+}
+
+function inferPacing(durationSec: number | undefined, options: RemixOptions): RemixAnalysisBrief["structure"]["pacingStyle"] {
+  if (options.clipCount && options.clipCount > 1) return "short_social";
+  if (!durationSec) return "unknown";
+  if (durationSec <= 45) return "short_social";
+  if (durationSec <= 180) return "steady";
+  return "long_form";
+}
+
+function buildKeyElements(input: PlanRemixInput, ops: VideoOp[]): string[] {
+  const out = ["FFmpeg render một pass với op whitelist"];
+  if (input.inspiration) out.push("Giữ công thức hook/nhịp từ link tham khảo, không tải media bên thứ ba");
+  if (ops.some((op) => op.op === "trim")) out.push("Cắt đoạn có chủ đích");
+  if (ops.some((op) => op.op === "reframe")) out.push("Reframe theo platform ratio");
+  if (input.options.vietsub) out.push("Transcript/subtitle-first localization");
+  if (input.options.dubMode && input.options.dubMode !== "none") out.push("AI dubbing theo voice đã chọn");
+  return out.slice(0, 6);
+}
+
+function buildPlanRisks(input: PlanRemixInput, ops: VideoOp[]): string[] {
+  const risks: string[] = [];
+  const reframe = ops.find((op) => op.op === "reframe") as Extract<VideoOp, { op: "reframe" }> | undefined;
+  if (reframe?.mode === "crop") risks.push("Crop có thể cắt mất chủ thể; cần xem lại preview.");
+  if (input.options.dubMode === "preserve_bgm") risks.push("Tách voice/bgm bằng FFmpeg chỉ là heuristic, nhạc nền có thể còn lẫn giọng gốc.");
+  if (input.options.vietsub && !input.realScriptVi) risks.push("Phụ đề phụ thuộc ASR/AI; cần kiểm tra thuật ngữ và timing.");
+  if (input.options.protectedTerms?.length) risks.push(`Giữ nguyên protected terms: ${input.options.protectedTerms.join(", ")}.`);
+  return risks;
+}
+
+function buildCostNotes(
+  input: PlanRemixInput,
+  pipelineMode: NonNullable<RemixOptions["pipelineMode"]>,
+): string[] {
+  const notes = [`Pipeline mode: ${pipelineMode}. Runtime v1: ffmpeg.`];
+  notes.push("FFmpeg local không phát sinh phí provider.");
+  if (input.options.vietsub) notes.push("ASR/dịch phụ đề dùng provider AI đã cấu hình.");
+  if (input.options.dubMode && input.options.dubMode !== "none") notes.push("TTS có thể phát sinh phí theo provider/voice.");
+  if (pipelineMode === "clip_factory") notes.push("Clip Factory v1 lập candidate trong plan; multi-output render có thể mở rộng sau.");
+  return notes;
+}
+
+function estimateCostVnd(input: PlanRemixInput): number {
+  let total = 0;
+  if (input.options.vietsub) total += 300;
+  if (input.options.dubMode && input.options.dubMode !== "none") total += 700;
+  if (input.options.clipCount && input.options.clipCount > 1) total += input.options.clipCount * 150;
+  return total;
+}
+
+function summarizeText(text: string, maxLen: number): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact.length > maxLen ? `${compact.slice(0, maxLen - 1)}…` : compact;
+}
+
+function inferHook(...texts: Array<string | undefined>): string | undefined {
+  const first = texts.find((t) => t?.trim())?.trim();
+  if (!first) return undefined;
+  return summarizeText(first.split(/[.!?\n]/).find(Boolean) ?? first, 90);
+}
+
+function inferTopics(...texts: Array<string | undefined>): string[] {
+  const text = texts.filter(Boolean).join(" ").toLowerCase();
+  const candidates = ["sân bóng", "thể thao", "khuyến mãi", "đặt sân", "reels", "tutorial", "review", "fitness"];
+  const found = candidates.filter((x) => text.includes(x));
+  return found.length ? found.slice(0, 6) : ["remix", "social video"];
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +424,7 @@ interface HardOptionsInput {
   info: VideoInfo;
   scriptVi: string;
   hasLogo: boolean;
+  voiceCues?: AlignedVoiceCue[];
   warnings: string[];
 }
 
@@ -127,7 +433,7 @@ interface HardOptionsInput {
  * thuẫn. Đây là lớp "luật" đứng trên đề xuất của AI.
  */
 function applyHardOptions(input: HardOptionsInput): VideoOp[] {
-  const { options: o, info, scriptVi, hasLogo, warnings } = input;
+  const { options: o, info, scriptVi, hasLogo, voiceCues, warnings } = input;
   // Bỏ các op mà option cứng sẽ tự quyết định, tránh trùng lặp.
   // Kiểu phải là VideoOp[] (không để TS thu hẹp theo kết quả filter) vì bên
   // dưới ta còn push thêm trim/reframe/subtitles/overlayLogo/mute.
@@ -137,7 +443,6 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
       op.op !== "subtitles" &&
       op.op !== "mute" &&
       op.op !== "overlayLogo" &&
-      op.op !== "overlayText" &&
       op.op !== "trim",
   );
 
@@ -150,11 +455,6 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
       start,
       duration: Math.min(o.trimSeconds, maxDur),
     });
-  }
-
-  // --- Text Overlay ---
-  if (o.textOverlay && o.textOverlay.trim()) {
-    ops.push({ op: "overlayText", text: o.textOverlay.trim() });
   }
 
   // --- Khung dọc ---
@@ -192,12 +492,10 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
         // Compute vị trí và margin
         const pos = o.subtitleConfig?.position ?? o.subPosition ?? 'bottom';
         let targetHeight = info.height;
-        let isCropped = false;
         
         const reframeOp = ops.find((op) => op.op === "reframe") as Extract<VideoOp, { op: "reframe" }> | undefined;
         if (reframeOp) {
           targetHeight = reframeOp.height;
-          if (reframeOp.mode === 'crop') isCropped = true;
         }
 
         let marginV = 60;
@@ -206,6 +504,9 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
         if (pos === 'top') {
           alignment = 8; // ASS top-center
           marginV = 40;
+        } else if (pos === 'custom') {
+          alignment = 8;
+          marginV = Math.round(clampNumber(o.subtitleConfig?.customY ?? o.subCustomY, 0.05, 0.9, 0.78) * targetHeight);
         } else if (pos === 'auto') {
           if (o.blurOriginalSub) {
             // Có phụ đề gốc (bật làm mờ): đặt sub mới bên trong vùng blur.
@@ -222,15 +523,7 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
         ops.push({
           op: "subtitles",
           srt: buildSrt(cues),
-          fontSize: o.subtitleConfig?.size ?? o.subFontSize ?? 20,
-          primaryColor: o.subtitleConfig?.color ?? o.subColor,
-          outlineColor: o.subtitleConfig?.outline ? o.subBgColor : undefined,
-          borderStyle: o.subtitleConfig?.borderStyle ?? o.subBorderStyle,
-          bold: o.subtitleConfig?.bold ?? o.subBold,
-          italic: o.subtitleConfig?.italic ?? o.subItalic,
-          outline: o.subtitleConfig?.outline ?? o.subOutline,
-          marginV,
-          alignment,
+          ...buildSubtitleVideoOpStyle(o, cues, voiceCues, { marginV, alignment }),
         });
       }
     } else {
@@ -240,8 +533,49 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
     }
   }
 
-  // --- Logo thương hiệu ---
-  if (o.brandLogo) {
+  // --- Watermark mới (ảnh hoặc text) ---
+  const wm = o.watermarkConfig;
+  if (wm?.enabled) {
+    const position = wm.position ?? o.logoPosition ?? "bottom-right";
+    const ratio = o.outputRatio ?? (o.vertical ? "9:16" : "original");
+    const custom = wm.perRatioPosition?.[ratio] ?? wm.customPosition;
+    const ratioScale = wm.perRatioScale?.[ratio] ?? wm.scale ?? 0.15;
+    if (wm.type === "text" && wm.text?.trim()) {
+      ops.push({
+        op: "overlayText",
+        text: wm.text.trim(),
+        startSec: 0,
+        endSec: info.durationSec,
+        region: watermarkTextRegion(position, custom),
+        fitToRegion: true,
+        coverRegion: false,
+        minFontSize: 12,
+        maxFontSize: Math.round(52 * (ratioScale / 0.15)),
+        font: o.subtitleConfig?.font ?? o.subFont ?? "Be Vietnam Pro",
+        fontSize: Math.round(34 * (ratioScale / 0.15)),
+        color: o.subtitleConfig?.color ?? o.subColor ?? "#FFFFFF",
+        bgColor: "#000000",
+        outlineColor: "#000000",
+        boxOpacity: Math.max(0, Math.min(1, wm.opacity ?? 0.82)) * 0.45,
+        bold: true,
+      });
+    } else if (wm.type === "image" && (wm.imageMediaId || o.logoMediaId || hasLogo)) {
+      ops.push({
+        op: "overlayLogo",
+        logoPath: "__WATERMARK__",
+        position: custom ? "custom" : (position === "custom" ? "bottom-right" : position),
+        x: custom?.x,
+        y: custom?.y,
+        scale: ratioScale,
+        opacity: wm.opacity ?? 0.9,
+      });
+    } else {
+      warnings.push("Bật watermark nhưng chưa có text hoặc ảnh watermark để chèn.");
+    }
+  }
+
+  // --- Logo thương hiệu cũ ---
+  if (o.brandLogo && !wm?.enabled) {
     if (hasLogo) {
       ops.push({
         op: "overlayLogo",
@@ -275,6 +609,89 @@ function applyHardOptions(input: HardOptionsInput): VideoOp[] {
   }
 
   return ops;
+}
+
+function buildSubtitleVideoOpStyle(
+  o: RemixOptions,
+  cues: SubtitleCue[],
+  voiceCues: AlignedVoiceCue[] | undefined,
+  placement: { marginV: number; alignment: number },
+): Omit<Extract<VideoOp, { op: "subtitles" }>, "op" | "srt"> {
+  const preset = o.subtitleConfig?.preset ?? o.subtitlePreset;
+  const font =
+    o.subtitleConfig?.font ??
+    o.subFont ??
+    (preset === "tiktok_bold" ? "Montserrat" : undefined);
+  const fontSize =
+    o.subtitleConfig?.size ??
+    o.subFontSize ??
+    (preset === "tiktok_bold" ? 36 : 20);
+  const primaryColor =
+    o.subtitleConfig?.color ??
+    o.subColor ??
+    (preset === "tiktok_bold" ? "#FFFFFF" : undefined);
+  const outlineColor =
+    o.subtitleConfig?.bgColor ??
+    o.subBgColor ??
+    (preset === "tiktok_bold" ? "#000000" : undefined);
+  const animation = o.subtitleConfig?.animation ?? o.subtitleAnimation ?? "static";
+  const highlightColor =
+    o.subtitleConfig?.highlightColor ??
+    o.subHighlightColor ??
+    (preset === "tiktok_bold" ? "#FFF200" : "#FFF200");
+  const base = {
+    font,
+    fontSize,
+    primaryColor,
+    outlineColor,
+    highlightColor,
+    borderStyle: o.subtitleConfig?.borderStyle ?? o.subBorderStyle ?? (preset === "tiktok_bold" ? 1 : undefined),
+    bold: o.subtitleConfig?.bold ?? o.subBold ?? preset === "tiktok_bold",
+    italic: o.subtitleConfig?.italic ?? o.subItalic,
+    outline: o.subtitleConfig?.outline ?? o.subOutline ?? (preset === "tiktok_bold" ? 3 : undefined),
+    marginV: placement.marginV,
+    alignment: placement.alignment,
+  };
+  if (animation !== "word_highlight" && animation !== "reveal_words") return base;
+
+  const wordCues = cues.map((cue) => {
+    const matching = voiceCues?.find(
+      (item) => Math.abs(item.startSec - cue.startSec) < 0.35 && Math.abs(item.endSec - cue.endSec) < 0.75,
+    );
+    return {
+      ...cue,
+      words: matching?.words?.length
+        ? matching.words.map((word) => ({
+            word: word.word,
+            startSec: Math.max(cue.startSec, word.startSec),
+            endSec: Math.min(cue.endSec, Math.max(word.startSec + 0.05, word.endSec)),
+          }))
+        : undefined,
+    };
+  });
+  return {
+    ...base,
+    ass: buildAssSubtitles(wordCues, { ...base, animation }),
+  };
+}
+
+function watermarkTextRegion(
+  position: NonNullable<RemixOptions["watermarkConfig"]>["position"],
+  custom?: { x: number; y: number },
+): { x: number; y: number; w: number; h: number } {
+  if (custom) return { x: custom.x, y: custom.y, w: 0.26, h: 0.06 };
+  switch (position) {
+    case "top-left":
+      return { x: 0.04, y: 0.04, w: 0.28, h: 0.07 };
+    case "top-right":
+      return { x: 0.68, y: 0.04, w: 0.28, h: 0.07 };
+    case "bottom-left":
+      return { x: 0.04, y: 0.89, w: 0.28, h: 0.07 };
+    case "custom":
+    case "bottom-right":
+    default:
+      return { x: 0.68, y: 0.89, w: 0.28, h: 0.07 };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +770,11 @@ function clampInt(n: number, lo: number, hi: number): number {
   return Math.round(Math.min(hi, Math.max(lo, n)));
 }
 
+function clampNumber(n: number | undefined, lo: number, hi: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(hi, Math.max(lo, n as number));
+}
+
 function toStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
@@ -400,6 +822,7 @@ function buildPlanPrompt(input: PlanRemixInput): string {
     o.brandLogo && '- brandLogo: chèn logo thương hiệu',
     o.colorGrade && '- colorGrade: chỉnh màu nhẹ',
     o.muteOriginal && '- muteOriginal: bỏ audio gốc',
+    (o.translateOnScreenText || o.textOverlay) && `- translateOnScreenText: phát hiện chữ trong frame gốc, review tone/mood, rồi dịch tự nhiên sang ${o.targetLanguage === 'en' ? 'tiếng Anh' : 'tiếng Việt'}`,
     o.blurOriginalSub && '- blurOriginalSub: làm mờ vùng phụ đề gốc',
     (o.subtitleConfig?.position === 'auto' || o.subPosition === 'auto') && '- subPosition=auto: đặt phụ đề trong vùng blur phụ đề gốc',
   ]
