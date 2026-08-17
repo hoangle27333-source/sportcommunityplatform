@@ -115,7 +115,7 @@ export class RemixError extends Error {
 }
 
 function requireVoicePipelineV2ForLocalization(): boolean {
-  return (process.env.VOICE_REQUIRE_V2_FOR_LOCALIZATION ?? "true").toLowerCase() !== "false";
+  return (process.env.VOICE_REQUIRE_V2_FOR_LOCALIZATION ?? "false").toLowerCase() === "true";
 }
 
 interface RemixJobRow {

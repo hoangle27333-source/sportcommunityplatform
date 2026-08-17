@@ -43,7 +43,12 @@ export async function getRemixServiceHealth(): Promise<RemixServiceHealth> {
 }
 
 export function requireVoicePipelineV2ForLocalization(): boolean {
-  return (process.env.VOICE_REQUIRE_V2_FOR_LOCALIZATION ?? "true").toLowerCase() !== "false";
+  if (process.env.VOICE_REQUIRE_V2_FOR_LOCALIZATION !== undefined) {
+    return process.env.VOICE_REQUIRE_V2_FOR_LOCALIZATION.toLowerCase() === "true";
+  }
+  // By default, do not block job enqueuing on web tier (e.g. Vercel serverless).
+  // The worker executing the job will run Voice Pipeline V2 if configured.
+  return false;
 }
 
 async function probeHttpHealth(baseUrl: string): Promise<ServiceProbeResult> {
