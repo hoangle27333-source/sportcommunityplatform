@@ -49,7 +49,15 @@ async function accountToken(
     .select("id, platform, access_token_enc, status")
     .eq("id", accountId)
     .single<AccountRow>();
-  if (error || !data || data.status === "revoked") return null;
+  if (
+    error ||
+    !data ||
+    data.status === "revoked" ||
+    data.status === "expired" ||
+    data.status === "needs_reauth"
+  ) {
+    return null;
+  }
   try {
     return { platform: data.platform, token: decryptSecret(data.access_token_enc) };
   } catch {
@@ -120,7 +128,7 @@ export async function ingestComments(
       if (e instanceof GraphApiError && e.isAuthError) {
         await db
           .from("social_accounts")
-          .update({ status: "expired" })
+          .update({ status: "needs_reauth" })
           .eq("id", accountId);
         break;
       }
@@ -236,7 +244,7 @@ export async function sendReply(
     if (e instanceof GraphApiError && e.isAuthError) {
       await db
         .from("social_accounts")
-        .update({ status: "expired" })
+        .update({ status: "needs_reauth" })
         .eq("id", item.social_account_id);
     }
     return { sent: false, error: msg };

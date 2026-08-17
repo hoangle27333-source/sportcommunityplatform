@@ -3,6 +3,7 @@ import pino from "pino";
 import { QUEUE_NAMES, createRedisConnection } from "@/lib/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestComments, suggestReply } from "@/lib/engagement/engagement";
+import { getWorkerConcurrency } from "@/worker/config";
 
 /**
  * Engagement worker processor (SPEC §8).
@@ -53,7 +54,7 @@ export function createEngagementWorker(): Worker<EngagementJobData> {
     },
     {
       connection: createRedisConnection(),
-      concurrency: 2,
+      concurrency: getWorkerConcurrency(QUEUE_NAMES.engagement),
     },
   );
 

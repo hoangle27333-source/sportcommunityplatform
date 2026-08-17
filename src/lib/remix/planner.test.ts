@@ -12,7 +12,9 @@ import {
 import {
   buildPaddleOcrSampleTimestamps,
   buildSampleTimestamps,
+  classifyOnScreenTextTrack,
   clampSameSlotTiming,
+  filterForegroundOnScreenTextTracks,
   groupOnScreenTextTracks,
 } from "./on-screen-text";
 import { buildFacebookCopyrightPreflight } from "./copyright-preflight";
@@ -502,6 +504,71 @@ describe("on-screen text tracking", () => {
 
     expect(tracks[0].translatedText).toBe("Người thay thế");
   });
+
+  it("loại signage/background nhỏ dù OCR lặp nhiều frame", () => {
+    const tracks = filterForegroundOnScreenTextTracks([
+      {
+        detectedText: "outside",
+        translatedText: "bên ngoài",
+        region: { x: 0.12, y: 0.57, w: 0.07, h: 0.025 },
+        startSec: 0,
+        endSec: 11,
+        toneMood: "sports",
+        confidence: 0.92,
+        notes: ["detections=8"],
+      },
+    ]);
+
+    expect(tracks).toHaveLength(0);
+  });
+
+  it("giữ caption/subtitle foreground đủ rộng ở lower/mid frame", () => {
+    const track = {
+      detectedText: "every family has that one unstable child who does this for fun",
+      translatedText: "gia đình nào cũng có một đứa liều lĩnh làm vậy cho vui",
+      region: { x: 0.16, y: 0.49, w: 0.62, h: 0.055 },
+      startSec: 0,
+      endSec: 11,
+      toneMood: "sports",
+      confidence: 0.82,
+      notes: ["detections=12"],
+    };
+
+    expect(classifyOnScreenTextTrack(track).reason).toBe("caption_like");
+    expect(filterForegroundOnScreenTextTracks([track])).toHaveLength(1);
+  });
+
+  it("giữ overlay lớn/meme text nổi bật", () => {
+    const track = {
+      detectedText: "A BAD HELPER",
+      translatedText: "Một trợ thủ tệ",
+      region: { x: 0.18, y: 0.08, w: 0.64, h: 0.09 },
+      startSec: 0,
+      endSec: 4,
+      toneMood: "meme",
+      confidence: 0.8,
+      notes: ["detections=2"],
+    };
+
+    expect(classifyOnScreenTextTrack(track).keep).toBe(true);
+    expect(filterForegroundOnScreenTextTracks([track])).toHaveLength(1);
+  });
+
+  it("giữ top title ngắn nếu đủ lớn và ổn định", () => {
+    const track = {
+      detectedText: "Ghost Rider",
+      translatedText: "Kỵ sĩ ma",
+      region: { x: 0.31, y: 0.02, w: 0.38, h: 0.05 },
+      startSec: 0,
+      endSec: 6,
+      toneMood: "meme",
+      confidence: 0.86,
+      notes: ["detections=6"],
+    };
+
+    expect(classifyOnScreenTextTrack(track).reason).toBe("top_title");
+    expect(filterForegroundOnScreenTextTracks([track])).toHaveLength(1);
+  });
 });
 
 describe("PaddleOCR response normalization", () => {
@@ -580,6 +647,19 @@ describe("fitTextToRegion", () => {
 
     expect(fitted.fontSize).toBeLessThan(42);
     expect(fitted.lines.length).toBeLessThanOrEqual(2);
+  });
+
+  it("bẻ hoặc cắt token dài để không vượt quá box", () => {
+    const fitted = fitTextToRegion("SuperHyperUltraMegaLongOverlayWord", {
+      width: 120,
+      height: 40,
+      desiredFontSize: 28,
+      minFontSize: 12,
+      maxFontSize: 28,
+    });
+
+    expect(fitted.lines.length).toBeLessThanOrEqual(2);
+    expect(fitted.text.length).toBeGreaterThan(0);
   });
 });
 

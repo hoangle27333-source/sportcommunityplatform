@@ -4,6 +4,7 @@ import { QUEUE_NAMES, createRedisConnection } from "@/lib/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { analyzeCampaign } from "@/lib/analytics/analyze-campaign";
 import { renderBannerToStorage } from "@/lib/content/banner";
+import { getWorkerConcurrency } from "@/worker/config";
 
 /**
  * Content-generation worker processor (SPEC §6, §7).
@@ -61,7 +62,7 @@ export function createContentGenWorker(): Worker<ContentGenJobData> {
     },
     {
       connection: createRedisConnection(),
-      concurrency: 2,
+      concurrency: getWorkerConcurrency(QUEUE_NAMES.contentGen),
     },
   );
 

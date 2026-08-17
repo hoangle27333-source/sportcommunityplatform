@@ -23,17 +23,20 @@ interface ImageEditorProps {
   /** The URL of the image to edit */
   sourceUrl: string;
   /** Callback when user finishes editing */
-  onSave: (imageFile: File) => void;
+  onSave: (imageFile: File, designState?: Record<string, unknown>) => void;
   /** Callback to cancel editing */
   onCancel: () => void;
+  /** Optional reusable template state for a new image. */
+  initialDesignState?: Record<string, unknown>;
 }
 
 export default function ImageEditor({
   sourceUrl,
   onSave,
   onCancel,
+  initialDesignState,
 }: ImageEditorProps) {
-  const handleSave = (editedImageObject: any) => {
+  const handleSave = (editedImageObject: any, designState?: Record<string, unknown>) => {
     // editedImageObject contains:
     // { imageBase64, fullName, extension, mimeType, imageCanvas }
     if (!editedImageObject.imageCanvas) return;
@@ -43,7 +46,7 @@ export default function ImageEditor({
       const file = new File([blob], editedImageObject.fullName || "edited-image.png", {
         type: editedImageObject.mimeType || "image/png",
       });
-      onSave(file);
+      onSave(file, designState);
     }, editedImageObject.mimeType || "image/png");
   };
 
@@ -60,7 +63,8 @@ export default function ImageEditor({
         <div className="flex-1 w-full h-full relative">
           <FilerobotImageEditor
             source={sourceUrl}
-            onSave={(editedImageObject, designState) => handleSave(editedImageObject)}
+            onSave={(editedImageObject, designState) => handleSave(editedImageObject, designState as Record<string, unknown>)}
+            loadableDesignState={initialDesignState as any}
             annotationsCommon={{
               fill: "#ff0000",
             }}

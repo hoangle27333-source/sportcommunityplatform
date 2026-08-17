@@ -88,9 +88,26 @@ interface TranslationRefineResponse {
     id?: string;
     detectedText?: string;
     translatedText?: string;
+    preserveOriginal?: boolean;
+    entityType?: string;
     confidence?: number;
     notes?: unknown;
   }>;
+}
+
+type TranslationRefineItem = NonNullable<TranslationRefineResponse["items"]>[number];
+
+type OnScreenTextDropReason =
+  | "too_short"
+  | "too_small"
+  | "too_narrow"
+  | "low_confidence"
+  | "ocr_noise"
+  | "background_like";
+
+export interface OnScreenTextClassification {
+  keep: boolean;
+  reason: "caption_like" | "dominant_overlay" | "central_label" | "large_label" | "top_title" | OnScreenTextDropReason;
 }
 
 export async function translateOnScreenTextFromVideo(input: {
@@ -277,7 +294,10 @@ export async function detectOnScreenTextLayoutFromVideo(input: {
     )
     .filter((item): item is OnScreenTextDetection => Boolean(item));
 
-  return clampSameSlotTiming(groupOnScreenTextTracks(detections, input.durationSec), input.durationSec).slice(0, 64);
+  return clampSameSlotTiming(
+    filterForegroundOnScreenTextTracks(groupOnScreenTextTracks(detections, input.durationSec)),
+    input.durationSec,
+  ).slice(0, 64);
 }
 
 export async function translatePlannedOnScreenTextTracks(input: {
@@ -320,11 +340,11 @@ function buildBatchPrompt(input: {
 Analyze these video frames in order. Sample timestamps in seconds are:
 ${input.timestamps.map((sec, idx) => `frame${input.frameOffset + idx}: ${sec}s`).join("\n")}
 
-First infer the video's tone and mood from visual style, context, facial expression, typography, and any visible on-screen words. Then OCR every distinct text block that is actually rendered into the video image, such as title cards, meme text, stickers, labels, lower captions, callouts, or words that appear later in the clip.
+First infer the video's tone and mood from visual style, context, facial expression, typography, and foreground on-screen words. Then OCR only creator-added or viewer-facing text blocks rendered into the video image, such as title cards, meme text, sticker text, lower captions/subtitles, callouts, or prominent overlay words that appear later in the clip.
 
 Translate each detected on-screen text into ${input.targetLanguage}. The translation must be natural, idiomatic, and faithful to the tone/mood of the original video, not word-for-word. Preserve protected terms exactly: ${input.protectedTerms}.
 
-Do NOT translate app/player UI, watermarks, usernames, timestamps, or platform chrome. Do NOT create new marketing copy if there is no on-screen text.
+Do NOT translate app/player UI, watermarks, usernames, timestamps, platform chrome, environmental/background text, distant signage, banners, jersey/logos, road signs, race/event boards, or tiny labels printed on objects. Do NOT create new marketing copy if there is no foreground on-screen text.
 ${input.remixPrompt ? `\nRemix prompt/context: ${input.remixPrompt}` : ""}${input.hint}
 
 Return ONLY JSON:
@@ -356,8 +376,9 @@ Rules for items:
 - Keep text unchanged only when it exactly matches a protected term.
 - For single-word object labels, translate the word literally and tersely; do not infer a different object/action from the scene.
 - For ambiguous English words in food/object labels, prefer the visible-object meaning, not conversational filler. For example COURSE near food means a meal course, not "of course".
-- Include both top text and lower/mid-screen captions if both are visible.
-- Include small one-word labels such as names, reactions, or captions in the middle/lower frame.
+- Include both top text and lower/mid-screen captions if both are foreground viewer-facing overlays.
+- Include a small label only when it is clearly creator-added foreground text, not background/environment signage.
+- Prefer omitting uncertain tiny or distant text over creating a false replacement box.
 - Do not omit text just because it is already in English.
 - Use the exact frameIndex/timestampSec where this item is visible.
 - If a text appears across most sampled frames, set startSec=0 and endSec=${Math.round(input.durationSec * 10) / 10}.
@@ -492,7 +513,7 @@ ${input.prompt ? `Video/remix context for disambiguation only: ${input.prompt}` 
 Return ONLY JSON:
 {
   "items": [
-    { "id": "item0", "detectedText": "same OCR text", "translatedText": "faithful translation", "confidence": 0.9, "notes": ["short QA note"] }
+    { "id": "item0", "detectedText": "same OCR text", "translatedText": "faithful translation", "preserveOriginal": false, "entityType": "translatable_text", "confidence": 0.9, "notes": ["short QA note"] }
   ]
 }
 
@@ -502,8 +523,10 @@ Rules:
 - If target is Vietnamese, translatedText must be Vietnamese, not the original English, except protected terms.
 - Preserve line breaks when the original has multiple visual lines.
 - Never replace a short visual label with a sentence from the voiceover.
-- Do not keep text unchanged just because it is ALL CAPS. Translate ALL CAPS labels into the target language too.
-- Keep text unchanged only when it exactly matches a protected term.
+- Do not keep text unchanged just because it is ALL CAPS.
+- If the text is a proper noun or title that should stay original in context, set preserveOriginal=true and keep translatedText equal to detectedText.
+- Use entityType values such as proper_noun, title, brand, username, place, mixed, translatable_text.
+- Keep text unchanged when it is a protected term, or when it is clearly a proper noun/title/brand in context.
 - Single-word labels must stay terse. If the word is ambiguous, use the visual label/object meaning.
 
 Items:
@@ -514,8 +537,11 @@ ${JSON.stringify(payload)}`;
 
     return input.detections.map((item, idx) => {
       const refined = byId.get(`item${idx}`);
+      const preserveOriginal = shouldPreserveOriginalText(refined);
       const translatedText =
-        typeof refined?.translatedText === "string" && refined.translatedText.trim()
+        preserveOriginal
+          ? item.detectedText
+          : typeof refined?.translatedText === "string" && refined.translatedText.trim()
           ? enforceTargetTranslation(
               item.detectedText,
               normalizeTranslatedText(item.detectedText, refined.translatedText.trim()),
@@ -626,7 +652,7 @@ ${input.prompt ? `Video/remix context for disambiguation only: ${input.prompt}` 
 Return ONLY JSON:
 {
   "items": [
-    { "id": "force0", "translatedText": "Vietnamese translation", "confidence": 0.9, "notes": ["why"] }
+    { "id": "force0", "translatedText": "Vietnamese translation", "preserveOriginal": false, "entityType": "translatable_text", "confidence": 0.9, "notes": ["why"] }
   ]
 }
 
@@ -634,6 +660,7 @@ Rules:
 - Keep ids exactly the same.
 - Translate all visible words completely, including multi-line text.
 - Preserve line breaks when detectedText has line breaks.
+- If detectedText is clearly a proper noun, title, person name, brand, team, place, or username in context, set preserveOriginal=true and keep the original text unchanged.
 - Single-word labels should be terse Vietnamese labels.
 - Food/object labels use object meaning. COURSE near food means "món", not "tất nhiên".
 
@@ -647,8 +674,11 @@ ${JSON.stringify(payload)}`;
       const pendingIdx = pending.indexOf(item);
       if (pendingIdx < 0) return item;
       const refined = byId.get(`force${pendingIdx}`);
+      const preserveOriginal = shouldPreserveOriginalText(refined);
       const candidate =
-        typeof refined?.translatedText === "string" && refined.translatedText.trim()
+        preserveOriginal
+          ? item.detectedText
+          : typeof refined?.translatedText === "string" && refined.translatedText.trim()
           ? normalizeTranslatedText(item.detectedText, refined.translatedText.trim()).slice(0, 260)
           : item.translatedText;
       const translatedText = enforceTargetTranslation(
@@ -656,7 +686,7 @@ ${JSON.stringify(payload)}`;
         candidate,
         input.options.targetLanguage ?? "vi",
       );
-      const stillUntranslated = translationLooksUntranslated(item.detectedText, translatedText);
+      const stillUntranslated = !preserveOriginal && translationLooksUntranslated(item.detectedText, translatedText);
       if (stillUntranslated || !isPlausibleVisualTranslation(item.detectedText, translatedText)) {
         return {
           ...item,
@@ -737,6 +767,126 @@ export function groupOnScreenTextTracks(
     .filter((track) => track.confidence >= 0.25)
     .sort((a, b) => a.startSec - b.startSec || a.region.y - b.region.y);
   return resolveTrackConflicts(merged);
+}
+
+export function filterForegroundOnScreenTextTracks<T extends OnScreenTextTranslation>(tracks: T[]): T[] {
+  const summary = summarizeOnScreenTextFilter(tracks);
+  return tracks
+    .map((track, idx) => {
+      const classification = summary.classifications[idx];
+      if (!classification?.keep) return null;
+      return {
+        ...track,
+        notes: Array.from(new Set([
+          ...track.notes,
+          `foreground=${classification.reason}`,
+          `ocrFilter=kept:${summary.kept},dropped:${summary.dropped}`,
+          ...Object.entries(summary.dropReasons).map(([reason, count]) => `drop_${reason}=${count}`),
+        ])).slice(0, 12),
+      };
+    })
+    .filter((track): track is T => Boolean(track));
+}
+
+export function summarizeOnScreenTextFilter<T extends OnScreenTextTranslation>(tracks: T[]): {
+  total: number;
+  kept: number;
+  dropped: number;
+  dropReasons: Record<OnScreenTextDropReason, number>;
+  classifications: OnScreenTextClassification[];
+} {
+  const classifications = tracks.map(classifyOnScreenTextTrack);
+  const dropReasons = {
+    too_short: 0,
+    too_small: 0,
+    too_narrow: 0,
+    low_confidence: 0,
+    ocr_noise: 0,
+    background_like: 0,
+  } satisfies Record<OnScreenTextDropReason, number>;
+  classifications.forEach((classification) => {
+    if (!classification.keep && classification.reason in dropReasons) {
+      dropReasons[classification.reason as OnScreenTextDropReason] += 1;
+    }
+  });
+  const kept = classifications.filter((item) => item.keep).length;
+  return {
+    total: tracks.length,
+    kept,
+    dropped: tracks.length - kept,
+    dropReasons,
+    classifications,
+  };
+}
+
+export function classifyOnScreenTextTrack(track: OnScreenTextTranslation): OnScreenTextClassification {
+  const area = track.region.w * track.region.h;
+  const centerX = track.region.x + track.region.w / 2;
+  const centerY = track.region.y + track.region.h / 2;
+  const words = track.detectedText.split(/\s+/).filter(Boolean).length;
+  const normalizedLength = normalizedText(track.detectedText).length;
+  const detections = onScreenTextDetectionCount(track);
+
+  if (normalizedLength <= 2) return { keep: false, reason: "too_short" };
+  if (!/[a-zA-ZÀ-ỹ]/.test(track.detectedText) || /^[\d\s.:-]+$/.test(track.detectedText.trim())) {
+    return { keep: false, reason: "ocr_noise" };
+  }
+  if (area < 0.0016 || track.region.h < 0.018) return { keep: false, reason: "too_small" };
+  if (track.region.w < 0.075) return { keep: false, reason: "too_narrow" };
+  if (detections < 2 && track.confidence < 0.58) return { keep: false, reason: "low_confidence" };
+
+  const captionLike =
+    words >= 4 &&
+    track.region.w >= 0.24 &&
+    track.region.h >= 0.018 &&
+    centerY >= 0.42 &&
+    centerY <= 0.90;
+  if (captionLike) return { keep: true, reason: "caption_like" };
+
+  const topTitle =
+    words <= 3 &&
+    normalizedLength >= 5 &&
+    centerY <= 0.2 &&
+    track.region.w >= 0.16 &&
+    track.region.h >= 0.026 &&
+    area >= 0.0042 &&
+    (detections >= 2 || track.confidence >= 0.72);
+  if (topTitle) return { keep: true, reason: "top_title" };
+
+  const dominantOverlay =
+    track.region.w >= 0.18 &&
+    track.region.h >= 0.04 &&
+    area >= 0.008;
+  if (dominantOverlay) return { keep: true, reason: "dominant_overlay" };
+
+  const centralLabel =
+    words >= 2 &&
+    centerX >= 0.18 &&
+    centerX <= 0.82 &&
+    centerY >= 0.18 &&
+    centerY <= 0.86 &&
+    track.region.w >= 0.16 &&
+    track.region.h >= 0.026 &&
+    area >= 0.0048 &&
+    (detections >= 2 || track.confidence >= 0.68);
+  if (centralLabel) return { keep: true, reason: "central_label" };
+
+  const largeLabel =
+    words <= 3 &&
+    normalizedLength >= 5 &&
+    track.region.w >= 0.18 &&
+    track.region.h >= 0.04 &&
+    area >= 0.0065 &&
+    (detections >= 2 || track.confidence >= 0.72);
+  if (largeLabel) return { keep: true, reason: "large_label" };
+
+  return { keep: false, reason: words <= 2 ? "background_like" : "too_small" };
+}
+
+function onScreenTextDetectionCount(track: OnScreenTextTranslation): number {
+  const note = track.notes.find((item) => item.startsWith("detections="));
+  const count = Number(note?.split("=")[1]);
+  return Number.isFinite(count) ? Math.max(1, count) : 1;
 }
 
 function shouldJoinTrack(track: OnScreenTextDetection[], detection: OnScreenTextDetection): boolean {
@@ -889,8 +1039,21 @@ function trackScore(track: OnScreenTextTranslation): number {
   const detections = Number(detectionNote?.split("=")[1] ?? 1);
   const duration = Math.max(0.1, track.endSec - track.startSec);
   const area = track.region.w * track.region.h;
+  const narrowPenalty = track.region.w < 0.16 ? 3 : 0;
+  const tinyPenalty = area < 0.006 ? 4 : 0;
+  const classification = classifyOnScreenTextTrack(track);
+  const foregroundBonus = classification.keep ? 4 : -6;
   const textCompleteness = Math.min(normalizedText(track.detectedText).length, 40) * 0.12;
-  return track.confidence * 10 + Math.min(detections, 6) * 1.5 + Math.min(duration, 8) * 0.3 + textCompleteness - area * 0.8;
+  return (
+    track.confidence * 10 +
+    Math.min(detections, 4) * 0.8 +
+    Math.min(duration, 8) * 0.25 +
+    textCompleteness +
+    foregroundBonus -
+    narrowPenalty -
+    tinyPenalty +
+    Math.min(area, 0.04) * 18
+  );
 }
 
 function normalizeTranslatedText(detectedText: string, translatedText: string): string {
@@ -919,6 +1082,15 @@ function enforceTargetTranslation(
   const literal = literalVietnameseVisualLabel(detectedText);
   if (literal && translationLooksUntranslated(detectedText, translatedText)) return literal;
   return translatedText;
+}
+
+function shouldPreserveOriginalText(
+  refined: TranslationRefineItem | undefined,
+): boolean {
+  if (!refined) return false;
+  if (refined.preserveOriginal === true) return true;
+  const entityType = typeof refined.entityType === "string" ? refined.entityType.trim().toLowerCase() : "";
+  return ["proper_noun", "title", "brand", "username", "place", "person", "team"].includes(entityType);
 }
 
 function literalVietnameseVisualLabel(text: string): string | null {

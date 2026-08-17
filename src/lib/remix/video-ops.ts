@@ -434,11 +434,12 @@ function assTimestamp(sec: number): string {
 }
 
 function assColor(hex?: string, def = "&H00FFFFFF"): string {
-  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return def;
+  if (!hex || !/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(hex)) return def;
   const r = hex.slice(1, 3);
   const g = hex.slice(3, 5);
   const b = hex.slice(5, 7);
-  return `&H00${b}${g}${r}`;
+  const alpha = hex.length === 9 ? hex.slice(7, 9) : "00";
+  return `&H${alpha}${b}${g}${r}`;
 }
 
 function escapeAssText(text: string): string {
@@ -805,13 +806,17 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     const region = textOverlay.region
       ? transformRegionForReframe(textOverlay.region, info.width, info.height, reframe)
       : undefined;
+    const eraseRegion = textOverlay.eraseRegion
+      ? transformRegionForReframe(textOverlay.eraseRegion, info.width, info.height, reframe)
+      : region;
     const fw = reframe ? reframe.width : info.width;
     const fh = reframe ? reframe.height : info.height;
+    const fontSizeBoostPx = Math.max(0, Math.round(textOverlay.fontSizeBoostPx ?? 0));
     const baseFontSize = region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit"
-      ? clamp(Math.round(region.h * fh * 0.5), 12, 84)
-      : clamp(textOverlay.fontSize ?? 32, 12, 84);
+      ? clamp(Math.round(region.h * fh * 0.5) + fontSizeBoostPx, 1, 120)
+      : clamp(textOverlay.fontSize ?? 32, 1, 120);
     const autoMaxFontSize = region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit"
-      ? Math.max(baseFontSize, Math.round(region.h * fh * 0.72))
+      ? Math.max(baseFontSize, Math.round(region.h * fh * 0.72) + fontSizeBoostPx)
       : textOverlay.maxFontSize;
     const fitted = region && textOverlay.fitToRegion
       ? fitTextToRegion(textOverlay.text, {
@@ -827,19 +832,20 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       .replace(/'/g, "\u2019")
       .replace(/:/g, "\\:")
       .replace(/\n/g, "\\n");
-    const color = /^#[0-9a-fA-F]{6}$/.test(textOverlay.color ?? "")
-      ? `0x${textOverlay.color!.slice(1)}`
-      : "white";
+    const color = ffmpegColor(textOverlay.color, "white");
+    const fontOpacity = hexOpacity(textOverlay.color);
     const bgColor = ffmpegColor(textOverlay.bgColor, "black");
     const outlineColor = ffmpegColor(textOverlay.outlineColor, "black");
-    const opacity = clamp(textOverlay.boxOpacity ?? 0.75, 0, 1);
+    const opacity = clamp(textOverlay.backgroundOpacity ?? (textOverlay.boxOpacity ?? 0.75) * hexOpacity(textOverlay.bgColor), 0, 1);
+    const outlineOpacity = hexOpacity(textOverlay.outlineColor);
     const fontOpt = getFontOptionForDrawtext(textOverlay.font);
     const boldScale = textOverlay.bold ? 1.08 : 1;
-    const finalFontSize = Math.round(fitted.fontSize * boldScale);
-    const xExpr = region
+    const baseFinalFontSize = Math.round(fitted.fontSize * boldScale);
+    let finalFontSize: string | number = baseFinalFontSize;
+    let xExpr = region
       ? `${Math.round(region.x * fw)}+(${Math.max(1, Math.round(region.w * fw))}-text_w)/2`
       : "(w-text_w)/2";
-    const yExpr = region
+    let yExpr = region
       ? `${Math.round(region.y * fh)}+(${Math.max(1, Math.round(region.h * fh))}-text_h)/2`
       : textOverlay.position === "top"
         ? "h*0.12"
@@ -847,20 +853,53 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
           ? "h*0.78"
           : "(h-text_h)/2";
     const enable = timelineEnable(textOverlay.startSec, textOverlay.endSec);
-    if (region && textOverlay.coverRegion) {
+    const animWindow = animationWindow(textOverlay.startSec, textOverlay.endSec);
+    if (textOverlay.animation === "slide_up" && animWindow) {
+      yExpr = `(${yExpr})+min(1\\,max(0\\,(${animWindow.t}-t)/${animWindow.d}))*h*0.08`;
+    } else if (textOverlay.animation === "slide_down" && animWindow) {
+      yExpr = `(${yExpr})-min(1\\,max(0\\,(${animWindow.t}-t)/${animWindow.d}))*h*0.08`;
+    } else if (textOverlay.animation === "scale_in" && animWindow) {
+      finalFontSize = `${Math.round(baseFinalFontSize * 0.72)}+(${baseFinalFontSize}-${Math.round(baseFinalFontSize * 0.72)})*min(1\\,max(0\\,(t-${animWindow.s})/${animWindow.d}))`;
+    }
+    const alphaExpr = textOverlay.animation === "fade_in" && animWindow
+      ? `min(1,max(0,(t-${animWindow.s})/${animWindow.d}))`
+      : textOverlay.animation === "fade_out" && animWindow
+        ? `min(1,max(0,(${animWindow.t}-t)/${animWindow.d}))`
+        : "";
+    const effectiveAlpha = alphaExpr
+      ? `:alpha='${fontOpacity >= 0.999 ? alphaExpr : `${fontOpacity.toFixed(3)}*(${alphaExpr})`}'`
+      : fontOpacity >= 0.999
+        ? ""
+        : `:alpha='${fontOpacity.toFixed(3)}'`;
+    if (eraseRegion && textOverlay.coverRegion) {
+      const coverX = Math.max(0, Math.round(eraseRegion.x * fw));
+      const coverY = Math.max(0, Math.round(eraseRegion.y * fh));
+      const coverW = Math.min(fw - coverX, Math.max(1, Math.round(eraseRegion.w * fw)));
+      const coverH = Math.min(fh - coverY, Math.max(1, Math.round(eraseRegion.h * fh)));
+      if (textOverlay.backgroundStyle === "blur") {
+        chain.push(
+          `delogo=x=${Math.max(1, coverX)}:y=${Math.max(1, coverY)}:w=${Math.max(1, Math.min(coverW, fw - Math.max(1, coverX) - 1))}:h=${Math.max(1, Math.min(coverH, fh - Math.max(1, coverY) - 1))}:show=0${enable}`,
+        );
+      } else {
+        chain.push(
+          `drawbox=x=${coverX}:y=${coverY}:w=${coverW}:h=${coverH}:color=${bgColor}@${Math.max(opacity, 0.72)}:t=fill${enable}`,
+        );
+      }
+    }
+    const boxParams = textOverlay.coverRegion || textOverlay.backgroundStyle === "blur"
+      ? "box=0"
+      : `box=1:boxcolor=${bgColor}@${opacity}:boxborderw=${region ? fitBoxBorder(region, fw, fh) : 14}`;
+    if (!textOverlay.coverRegion && textOverlay.backgroundStyle === "blur" && region) {
       const coverX = Math.max(0, Math.round(region.x * fw));
       const coverY = Math.max(0, Math.round(region.y * fh));
       const coverW = Math.min(fw - coverX, Math.max(1, Math.round(region.w * fw)));
       const coverH = Math.min(fh - coverY, Math.max(1, Math.round(region.h * fh)));
       chain.push(
-        `drawbox=x=${coverX}:y=${coverY}:w=${coverW}:h=${coverH}:color=${bgColor}@${Math.max(opacity, 0.72)}:t=fill${enable}`,
+        `delogo=x=${Math.max(1, coverX)}:y=${Math.max(1, coverY)}:w=${Math.max(1, Math.min(coverW, fw - Math.max(1, coverX) - 1))}:h=${Math.max(1, Math.min(coverH, fh - Math.max(1, coverY) - 1))}:show=0${enable}`,
       );
     }
-    const boxParams = textOverlay.coverRegion
-      ? "box=0"
-      : `box=1:boxcolor=${bgColor}@${opacity}:boxborderw=${region ? fitBoxBorder(region, fw, fh) : 14}`;
     chain.push(
-      `drawtext=text='${escapedText}'${fontOpt}:fontcolor=${color}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(2, Math.round(finalFontSize * 0.14))}:borderw=${Math.max(1, Math.round(finalFontSize * 0.08))}:bordercolor=${outlineColor}${enable}`
+      `drawtext=text='${escapedText}'${fontOpt}:fontcolor=${color}${effectiveAlpha}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(0, Math.round(baseFinalFontSize * 0.14))}:borderw=${Math.max(0, Math.round(baseFinalFontSize * 0.08))}:bordercolor=${outlineColor}${outlineOpacity >= 0.999 ? "" : `@${outlineOpacity.toFixed(3)}`}${enable}`
     );
   }
 
@@ -1188,7 +1227,12 @@ function clamp(n: number, lo: number, hi: number): number {
 }
 
 function ffmpegColor(hex: string | undefined, fallback: string): string {
-  return /^#[0-9a-fA-F]{6}$/.test(hex ?? "") ? `0x${hex!.slice(1)}` : fallback;
+  return /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(hex ?? "") ? `0x${hex!.slice(1, 7)}` : fallback;
+}
+
+function hexOpacity(hex: string | undefined): number {
+  if (!/^#[0-9a-fA-F]{8}$/.test(hex ?? "")) return 1;
+  return clamp(parseInt(hex!.slice(7, 9), 16) / 255, 0, 1);
 }
 
 function escapeDrawtext(value: string): string {
@@ -1212,6 +1256,21 @@ function timelineEnable(startSec: number | undefined, endSec: number | undefined
   return `:enable='lte(t,${roundTime(end!)})'`;
 }
 
+function animationWindow(startSec: number | undefined, endSec: number | undefined): { s: string; t: string; d: string } | null {
+  if (typeof startSec !== "number" || !Number.isFinite(startSec)) return null;
+  const safeStart = Math.max(0, startSec);
+  const safeEnd =
+    typeof endSec === "number" && Number.isFinite(endSec) && endSec > safeStart
+      ? endSec
+      : safeStart + 1;
+  const duration = Math.min(0.45, Math.max(0.15, (safeEnd - safeStart) * 0.25));
+  return {
+    s: roundTime(safeStart),
+    t: roundTime(Math.max(safeStart + duration, safeEnd)),
+    d: roundTime(duration),
+  };
+}
+
 function roundTime(sec: number): string {
   return (Math.round(sec * 100) / 100).toFixed(2);
 }
@@ -1228,13 +1287,13 @@ export function fitTextToRegion(
 ): { text: string; fontSize: number; lines: string[] } {
   const maxFontSize = clamp(
     input.maxFontSize ?? input.desiredFontSize,
-    12,
-    Math.max(12, input.desiredFontSize),
+    1,
+    Math.max(1, input.desiredFontSize),
   );
-  const minFontSize = clamp(input.minFontSize ?? 14, 8, maxFontSize);
-  const maxLines = input.height >= maxFontSize * 1.8 ? 2 : 1;
-  const contentWidth = Math.max(1, input.width * 0.9);
-  const contentHeight = Math.max(1, input.height * 0.78);
+  const minFontSize = clamp(input.minFontSize ?? 1, 1, maxFontSize);
+  const maxLines = input.height >= maxFontSize * 1.65 ? 2 : 1;
+  const contentWidth = Math.max(1, input.width * 0.86);
+  const contentHeight = Math.max(1, input.height * 0.74);
 
   for (let size = Math.round(maxFontSize); size >= minFontSize; size--) {
     const maxCharsPerLine = Math.max(4, Math.floor(contentWidth / (size * 0.58)));
@@ -1252,7 +1311,12 @@ export function fitTextToRegion(
 }
 
 function wrapText(text: string, maxCharsPerLine: number, maxLines: number): string[] {
-  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const words = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .flatMap((word) => splitLongToken(word, maxCharsPerLine));
   if (words.length === 0) return [""];
   const lines: string[] = [];
   let current = "";
@@ -1278,6 +1342,18 @@ function wrapText(text: string, maxCharsPerLine: number, maxLines: number): stri
 function truncateToFit(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, Math.max(1, maxChars - 1)).trim()}…`;
+}
+
+function splitLongToken(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text];
+  const parts: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxChars) {
+    parts.push(`${remaining.slice(0, Math.max(1, maxChars - 1))}-`);
+    remaining = remaining.slice(Math.max(1, maxChars - 1));
+  }
+  if (remaining) parts.push(remaining);
+  return parts;
 }
 
 function estimatedTextWidth(text: string, fontSize: number): number {
@@ -1381,12 +1457,33 @@ function clampRegion(region: { x: number; y: number; w: number; h: number }) {
 
 /** Tạo thư mục tạm cho một lần chạy remix. */
 export async function makeWorkDir(): Promise<string> {
+  void cleanupStaleWorkDirs();
   return mkdtemp(path.join(tmpdir(), "remix-"));
 }
 
 /** Dọn thư mục tạm — luôn gọi trong finally. */
 export async function cleanupWorkDir(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true }).catch(() => {});
+}
+
+async function cleanupStaleWorkDirs(): Promise<void> {
+  const ttlHours = Number(process.env.TEMP_MEDIA_TTL_HOURS ?? "12");
+  if (!Number.isFinite(ttlHours) || ttlHours <= 0) return;
+
+  const staleBefore = Date.now() - ttlHours * 60 * 60 * 1000;
+  const tempRoot = tmpdir();
+  const entries = await readdir(tempRoot, { withFileTypes: true }).catch(() => []);
+
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith("remix-"))
+      .map(async (entry) => {
+        const fullPath = path.join(tempRoot, entry.name);
+        const info = await stat(fullPath).catch(() => null);
+        if (!info || info.mtimeMs > staleBefore) return;
+        await rm(fullPath, { recursive: true, force: true }).catch(() => {});
+      }),
+  );
 }
 
 /** Ghi buffer thành file trong workDir và trả path. */

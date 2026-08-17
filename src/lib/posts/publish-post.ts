@@ -119,7 +119,11 @@ export async function publishTarget(
   if (!post) return await fail(db, target.id, "post not found");
   if (!account) return await fail(db, target.id, "social account not found");
 
-  if (account.status === "revoked" || account.status === "expired") {
+  if (
+    account.status === "revoked" ||
+    account.status === "expired" ||
+    account.status === "needs_reauth"
+  ) {
     return await fail(db, target.id, `account status=${account.status}`, true);
   }
 
@@ -157,7 +161,7 @@ export async function publishTarget(
     if (isAuth) {
       await db
         .from("social_accounts")
-        .update({ status: "expired" })
+        .update({ status: "needs_reauth" })
         .eq("id", account.id);
     }
     // Re-throw rate-limit errors so BullMQ retries with backoff.

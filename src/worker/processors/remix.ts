@@ -3,6 +3,7 @@ import pino from "pino";
 import { QUEUE_NAMES, createRedisConnection } from "@/lib/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runRemixJob, resumeAfterHeyGen, type RunRemixResult } from "@/lib/remix/remix-service";
+import { getWorkerConcurrency } from "@/worker/config";
 
 /**
  * Remix worker processor (SPEC §7 — Content Remix).
@@ -86,7 +87,7 @@ export function createRemixWorker(): Worker<RemixJobData, RunRemixResult> {
     {
       connection: createRedisConnection(),
       // ffmpeg là CPU-bound: giữ 1 để không tranh CPU trên VPS nhỏ.
-      concurrency: Number(process.env.REMIX_CONCURRENCY ?? "1"),
+      concurrency: getWorkerConcurrency(QUEUE_NAMES.remix),
       // Video dài có thể chạy lâu; cho phép tới 10 phút mỗi job.
       lockDuration: 10 * 60 * 1000,
     },

@@ -2,10 +2,12 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { ColorFieldWithOpacity } from "@/components/ui/color-field-with-opacity";
 import { TrimSlider } from "@/components/remix/trim-slider";
 import { RatioPicker } from "@/components/remix/ratio-picker";
 import { SubtitleConfig, defaultSubtitleSettings, type SubtitleSettings } from "@/components/remix/subtitle-config";
 import { BlurRegionPicker, type BlurRegion } from "@/components/remix/blur-region-picker";
+import { VoiceSelector } from "@/components/remix/voice-selector";
 import { buildFacebookCopyrightPreflight } from "@/lib/remix/copyright-preflight";
 
 type OnScreenTextPreset = "meme" | "pop" | "bubble" | "neon" | "clean";
@@ -28,6 +30,7 @@ const ON_SCREEN_TEXT_PRESETS: Record<OnScreenTextPreset, {
 
 interface VideoEditorProps {
   source: string;
+  processedAudioSource?: string;
   initialOptions?: Record<string, any>;
   onSave: (options: Record<string, any>) => void;
   onCancel: () => void;
@@ -48,12 +51,31 @@ interface TextOnScreenOverlay {
   start: number;
   end: number;
   text: string;
+  source?: "ocr_auto" | "manual";
+  status?: "pending" | "approved" | "disabled";
+  ocrTrackId?: string;
+  sourceText?: string;
   position: { x: number; y: number };
+  box?: { x: number; y: number; w: number; h: number };
+  eraseBox?: { x: number; y: number; w: number; h: number };
   fontFamily: string;
   fontSize: number;
   fontColor: string;
   bgColor: string;
+  backgroundStyle?: "solid" | "blur";
+  backgroundOpacity?: number;
+  outlineColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  sizeMode?: "auto_fit" | "fixed";
   animation: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
+}
+
+interface ManualBlurRegion extends BlurRegion {
+  id: string;
+  startSec: number;
+  endSec: number;
+  label?: string;
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -81,7 +103,70 @@ function autoSplitSegments(duration: number, interval = 15): ScriptSegment[] {
   return segs;
 }
 
-export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: VideoEditorProps) {
+function clamp01(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function defaultOverlayBox(position?: { x: number; y: number }) {
+  const x = clamp01(position?.x ?? 0.5);
+  const y = clamp01(position?.y ?? 0.15);
+  const w = 0.42;
+  const h = 0.1;
+  return {
+    x: Math.max(0, Math.min(1 - w, x - w / 2)),
+    y: Math.max(0, Math.min(1 - h, y - h / 2)),
+    w,
+    h,
+  };
+}
+
+function normalizeOverlay(raw: TextOnScreenOverlay): TextOnScreenOverlay {
+  const box = raw.box ?? defaultOverlayBox(raw.position);
+  return {
+    ...raw,
+    source: raw.source ?? (raw.id.startsWith("ai_") || raw.id.startsWith("plan_") ? "ocr_auto" : "manual"),
+    status: raw.status ?? (raw.source === "ocr_auto" || raw.id.startsWith("ai_") || raw.id.startsWith("plan_") ? "pending" : "approved"),
+    box: {
+      x: clamp01(box.x),
+      y: clamp01(box.y),
+      w: Math.max(0.04, Math.min(1 - clamp01(box.x), box.w || 0.42)),
+      h: Math.max(0.03, Math.min(1 - clamp01(box.y), box.h || 0.1)),
+    },
+    eraseBox: raw.eraseBox
+      ? {
+          x: clamp01(raw.eraseBox.x),
+          y: clamp01(raw.eraseBox.y),
+          w: Math.max(0.04, Math.min(1 - clamp01(raw.eraseBox.x), raw.eraseBox.w || 0.42)),
+          h: Math.max(0.03, Math.min(1 - clamp01(raw.eraseBox.y), raw.eraseBox.h || 0.1)),
+        }
+      : undefined,
+    backgroundStyle: raw.backgroundStyle ?? "solid",
+    backgroundOpacity: Number.isFinite(raw.backgroundOpacity) ? Math.max(0, Math.min(1, raw.backgroundOpacity!)) : 0.72,
+    outlineColor: raw.outlineColor ?? "#000000",
+    bold: raw.bold ?? true,
+    sizeMode: raw.sizeMode ?? "fixed",
+    position: raw.position ?? {
+      x: (box.x ?? 0) + (box.w ?? 0.42) / 2,
+      y: (box.y ?? 0) + (box.h ?? 0.1) / 2,
+    },
+  };
+}
+
+function normalizeBlurRegion(raw: Partial<ManualBlurRegion>, duration: number, idx = 0): ManualBlurRegion {
+  return {
+    id: raw.id || genId(),
+    x: clamp01(raw.x ?? 0.18),
+    y: clamp01(raw.y ?? 0.72),
+    w: Math.max(0.04, Math.min(1 - clamp01(raw.x ?? 0.18), raw.w ?? 0.64)),
+    h: Math.max(0.03, Math.min(1 - clamp01(raw.y ?? 0.72), raw.h ?? 0.12)),
+    startSec: Math.max(0, raw.startSec ?? 0),
+    endSec: Math.max(raw.startSec ?? 0.1, raw.endSec ?? (duration || 5)),
+    label: raw.label || `Blur ${idx + 1}`,
+  };
+}
+
+export function VideoEditor({ source, processedAudioSource, initialOptions = {}, onSave, onCancel }: VideoEditorProps) {
   const initialTextStyle = initialOptions.onScreenTextStyle ?? {};
   const initialSubtitle = initialOptions.subtitleConfig ?? {};
   const initialWatermark = initialOptions.watermarkConfig ?? {};
@@ -133,6 +218,7 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
     outline: initialSubtitle.outline ?? initialOptions.subOutline ?? defaultSubtitleSettings.outline,
     borderStyle: initialSubtitle.borderStyle ?? initialOptions.subBorderStyle ?? defaultSubtitleSettings.borderStyle,
     position: initialSubtitle.position || initialOptions.subPosition || defaultSubtitleSettings.position,
+    customY: initialSubtitle.customY ?? initialOptions.subCustomY ?? defaultSubtitleSettings.customY,
     animation: initialSubtitle.animation || initialOptions.subtitleAnimation || defaultSubtitleSettings.animation,
   });
 
@@ -176,6 +262,12 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
     initialTextStyle.color || initialOptions.textColor || "#FFFFFF",
   );
   const [textBgColor, setTextBgColor] = useState<string>(initialTextStyle.bgColor || "#000000");
+  const [textBackgroundStyle, setTextBackgroundStyle] = useState<"solid" | "blur">(
+    initialTextStyle.backgroundStyle === "blur" ? "blur" : "solid",
+  );
+  const [textBackgroundOpacity, setTextBackgroundOpacity] = useState<number>(
+    Number.isFinite(initialTextStyle.backgroundOpacity) ? initialTextStyle.backgroundOpacity : 0.72,
+  );
   const [textOutlineColor, setTextOutlineColor] = useState<string>(
     initialTextStyle.outlineColor || "#000000",
   );
@@ -183,13 +275,49 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
 
   // ── Custom Text Overlays ──────────────────────────────────────────────────────
   const [textOverlays, setTextOverlays] = useState<TextOnScreenOverlay[]>(
-    initialOptions.textOnScreenOverlays || []
+    (initialOptions.textOnScreenOverlays || []).map(normalizeOverlay)
   );
   const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
-  const [draggingOverlayId, setDraggingOverlayId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'script' | 'watermark' | 'text_overlay'>('script');
+  const [selectedOverlayIds, setSelectedOverlayIds] = useState<Set<string>>(new Set());
+  const [previewAudioMode, setPreviewAudioMode] = useState<"source" | "processed">("source");
+  const [manualBlurRegions, setManualBlurRegions] = useState<ManualBlurRegion[]>(
+    (initialOptions.manualBlurRegions || []).map((r: Partial<ManualBlurRegion>, idx: number) =>
+      normalizeBlurRegion(r, Number(initialOptions.trimSeconds) || 5, idx),
+    )
+  );
+  const [editingBlurId, setEditingBlurId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'trim_ratio' | 'voice' | 'script' | 'text_overlay' | 'blur_regions' | 'watermark'>('trim_ratio');
+
+  // ── Voice / Dub ───────────────────────────────────────────────────────────────
+  const [voiceName, setVoiceName] = useState<string>(initialOptions.voiceName ?? 'vi-VN-WaveNet-A');
+  const [targetLanguage, setTargetLanguage] = useState<'vi' | 'en'>(
+    initialOptions.targetLanguage === 'en' ? 'en' : 'vi'
+  );
+  const [dubMode, setDubMode] = useState<string>(initialOptions.dubMode ?? 'none');
+  const [bgVolume, setBgVolume] = useState<number>(
+    Number.isFinite(initialOptions.bgVolume) ? initialOptions.bgVolume : 0.3
+  );
+
+  // ── Presets (loaded from API for dropdowns) ───────────────────────────────────
+  const [remixPresets, setRemixPresets] = useState<Array<Record<string, any>>>([]);
+  useEffect(() => {
+    fetch('/api/remix/presets', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => setRemixPresets(d.presets ?? []))
+      .catch(() => {});
+  }, []);
+
+  const [interaction, setInteraction] = useState<
+    | null
+    | { kind: 'move-overlay'; id: string; offsetX: number; offsetY: number }
+    | { kind: 'resize-overlay'; id: string; handle: 'nw' | 'ne' | 'sw' | 'se' }
+    | { kind: 'move-blur'; id: string; offsetX: number; offsetY: number }
+    | { kind: 'resize-blur'; id: string; handle: 'nw' | 'ne' | 'sw' | 'se' }
+    | { kind: 'subtitle-y' }
+  >(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const processedAudioRef = useRef<HTMLAudioElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
 
   // ─── Effects ─────────────────────────────────────────────────────────────────
@@ -246,12 +374,16 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
 
   const handleSave = () => {
     const trimSeconds = trimEnd - trimStart;
-    const combinedScript = scriptSegments.filter(s => s.text.trim()).map(s => s.text.trim()).join(' ');
+    const combinedScript = scriptSegments.filter(s => s.text.trim()).map(s => s.text.trim()).join('\n');
+    const scriptWasEdited = scriptSegments.some(s => s.isEdited);
+    const savedScriptInputMode = scriptInputMode === "manual_script" || scriptWasEdited
+      ? "manual_script"
+      : scriptInputMode;
     const preflight = buildFacebookCopyrightPreflight({
       options: {
         ...initialOptions,
         muteOriginal: initialOptions.muteOriginal,
-        scriptInputMode,
+        scriptInputMode: savedScriptInputMode,
         watermarkConfig: watermarkEnabled
           ? { enabled: true, type: watermarkType, text: watermarkText.trim() || undefined,
               imageMediaId: watermarkMedia?.id || initialWatermark.imageMediaId || initialOptions.logoMediaId,
@@ -269,22 +401,32 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
       ...initialOptions,
       trimStart, trimSeconds,
       vertical: outputRatio === '9:16', outputRatio,
-      scriptInputMode,
-      manualScript: scriptInputMode === "manual_script" ? combinedScript : undefined,
-      editedScript: scriptInputMode === "manual_script" ? combinedScript : initialOptions.editedScript,
+      // Voice / Dub
+      voiceName,
+      targetLanguage,
+      dubMode,
+      dubVi: dubMode !== 'none',
+      bgVolume,
+      // Script
+      scriptInputMode: savedScriptInputMode,
+      manualScript: savedScriptInputMode === "manual_script" ? combinedScript : initialOptions.manualScript,
+      editedScript: savedScriptInputMode === "manual_script" ? combinedScript : initialOptions.editedScript,
       scriptSegments: scriptSegments.length > 0 ? scriptSegments : undefined,
       vietsub,
       subtitleConfig: vietsub ? subtitleSettings : initialOptions.subtitleConfig,
       subtitleAnimation: subtitleSettings.animation,
       subtitlePreset: subtitleSettings.preset,
       subHighlightColor: subtitleSettings.highlightColor,
+      subPosition: subtitleSettings.position,
+      subCustomY: subtitleSettings.customY,
       translateOnScreenText,
       textOverlay: translateOnScreenText ? textOverlay.trim() : "",
       onScreenTextStyle: translateOnScreenText
         ? { preset: onScreenTextPreset, font: textFont, size: textFontSize, color: textColor,
-            bgColor: textBgColor, outlineColor: textOutlineColor, bold: textBold }
+            bgColor: textBgColor, backgroundStyle: textBackgroundStyle, backgroundOpacity: textBackgroundOpacity, outlineColor: textOutlineColor, bold: textBold }
         : undefined,
       textOnScreenOverlays: textOverlays.length > 0 ? textOverlays : undefined,
+      manualBlurRegions: manualBlurRegions.length > 0 ? manualBlurRegions : undefined,
       watermarkConfig: watermarkEnabled
         ? { enabled: true, type: watermarkType, text: watermarkText.trim() || undefined,
             imageMediaId: watermarkMedia?.id || initialWatermark.imageMediaId || initialOptions.logoMediaId,
@@ -336,19 +478,23 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
     setTextFontSize(style.size);
     setTextColor(style.color);
     setTextBgColor(style.bgColor);
+    setTextBackgroundStyle("solid");
+    setTextBackgroundOpacity(0.72);
     setTextOutlineColor(style.outlineColor);
     setTextBold(style.bold);
   };
 
-  const getAspectClass = () => {
+  const getFrameAspectClass = () => {
     switch (outputRatio) {
-      case '9:16': return 'aspect-[9/16] object-cover';
-      case '16:9': return 'aspect-video object-cover';
-      case '1:1': return 'aspect-square object-cover';
-      case '4:5': return 'aspect-[4/5] object-cover';
-      default: return 'aspect-video object-contain';
+      case '9:16': return 'aspect-[9/16]';
+      case '16:9': return 'aspect-video';
+      case '1:1': return 'aspect-square';
+      case '4:5': return 'aspect-[4/5]';
+      default: return 'aspect-video';
     }
   };
+
+  const getVideoFitClass = () => outputRatio === 'original' ? 'object-contain' : 'object-cover';
 
   const updateSegment = (index: number, patch: Partial<ScriptSegment>) => {
     setScriptSegments(prev => prev.map((s, i) => i === index ? { ...s, ...patch, isEdited: true } : s));
@@ -382,17 +528,55 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
   };
 
   const addTextOverlay = () => {
+    const box = { x: 0.29, y: 0.08, w: 0.42, h: 0.1 };
     const newOverlay: TextOnScreenOverlay = {
       id: genId(), start: Math.floor(currentTime), end: Math.min(Math.floor(currentTime) + 5, duration || 10),
-      text: 'Text mới', position: { x: 0.1, y: 0.1 },
-      fontFamily: 'Be Vietnam Pro', fontSize: 32, fontColor: '#FFFFFF', bgColor: '#000000CC', animation: 'fade_in',
+      text: 'Text mới', position: { x: box.x + box.w / 2, y: box.y + box.h / 2 }, box,
+      fontFamily: 'Be Vietnam Pro', fontSize: 32, fontColor: '#FFFFFF', bgColor: '#000000CC', backgroundStyle: 'solid', backgroundOpacity: 0.72, animation: 'fade_in',
     };
     setTextOverlays(prev => [...prev, newOverlay]);
     setEditingOverlayId(newOverlay.id);
   };
 
   const updateOverlay = (id: string, patch: Partial<TextOnScreenOverlay>) => {
-    setTextOverlays(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
+    setTextOverlays(prev => prev.map(o => o.id === id ? normalizeOverlay({ ...o, ...patch }) : o));
+  };
+
+  const toggleOverlaySelection = (id: string) => {
+    setSelectedOverlayIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const setAllOverlaySelection = (checked: boolean) => {
+    setSelectedOverlayIds(checked ? new Set(textOverlays.map(o => o.id)) : new Set());
+  };
+
+  const applyStyleToSelected = () => {
+    if (selectedOverlayIds.size === 0) return;
+    setTextOverlays(prev => prev.map(overlay => selectedOverlayIds.has(overlay.id)
+      ? normalizeOverlay({
+          ...overlay,
+          fontFamily: textFont,
+          fontSize: textFontSize,
+          fontColor: textColor,
+          bgColor: textBgColor,
+          outlineColor: textOutlineColor,
+          bold: textBold,
+          italic: overlay.italic,
+          status: overlay.status === "disabled" ? "approved" : overlay.status,
+        })
+      : overlay));
+  };
+
+  const updateSelectedOverlayStatus = (status: TextOnScreenOverlay["status"]) => {
+    if (selectedOverlayIds.size === 0) return;
+    setTextOverlays(prev => prev.map(overlay => selectedOverlayIds.has(overlay.id)
+      ? normalizeOverlay({ ...overlay, status })
+      : overlay));
   };
 
   const deleteOverlay = (id: string) => {
@@ -400,17 +584,159 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
     if (editingOverlayId === id) setEditingOverlayId(null);
   };
 
-  const handleOverlayDragEnd = (id: string, e: React.DragEvent<HTMLDivElement>) => {
-    const container = videoContainerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-    updateOverlay(id, { position: { x, y } });
-    setDraggingOverlayId(null);
+  const addBlurRegion = (seed?: Partial<ManualBlurRegion>) => {
+    const next = normalizeBlurRegion({
+      ...seed,
+      id: genId(),
+      startSec: seed?.startSec ?? Math.max(0, Math.floor(currentTime)),
+      endSec: seed?.endSec ?? Math.min(Math.max(1, Math.floor(currentTime) + 5), duration || 5),
+      label: seed?.label,
+    }, duration, manualBlurRegions.length);
+    setManualBlurRegions(prev => [...prev, next]);
+    setEditingBlurId(next.id);
+    setActiveTab('blur_regions');
   };
 
-  const activeOverlays = textOverlays.filter(o => currentTime >= o.start && currentTime <= o.end);
+  const updateBlurRegion = (id: string, patch: Partial<ManualBlurRegion>) => {
+    setManualBlurRegions(prev => prev.map((region, idx) =>
+      region.id === id ? normalizeBlurRegion({ ...region, ...patch }, duration, idx) : region,
+    ));
+  };
+
+  const deleteBlurRegion = (id: string) => {
+    setManualBlurRegions(prev => prev.filter(region => region.id !== id));
+    if (editingBlurId === id) setEditingBlurId(null);
+  };
+
+  const duplicateBlurRegion = (id: string) => {
+    const region = manualBlurRegions.find(item => item.id === id);
+    if (!region) return;
+    addBlurRegion({ ...region, id: undefined, label: `${region.label ?? 'Blur'} copy` });
+  };
+
+  const importAiZones = () => {
+    const imported = textOverlays
+      .map((overlay, idx) => normalizeBlurRegion({
+        ...(overlay.box ?? defaultOverlayBox(overlay.position)),
+        startSec: overlay.start,
+        endSec: overlay.end,
+        label: `AI text ${idx + 1}`,
+      }, duration, idx));
+    const watermarkZone = coverOriginalWatermark
+      ? [normalizeBlurRegion({
+          ...oldWatermarkRegion,
+          startSec: 0,
+          endSec: duration || 5,
+          label: 'Watermark cũ',
+        }, duration, imported.length)]
+      : [];
+    setManualBlurRegions(prev => [...prev, ...imported, ...watermarkZone]);
+    setActiveTab('blur_regions');
+  };
+
+  const normFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = videoContainerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: clamp01((e.clientX - rect.left) / rect.width),
+      y: clamp01((e.clientY - rect.top) / rect.height),
+    };
+  };
+
+  const resizeBox = (
+    box: { x: number; y: number; w: number; h: number },
+    point: { x: number; y: number },
+    handle: 'nw' | 'ne' | 'sw' | 'se',
+  ) => {
+    const minW = 0.05;
+    const minH = 0.035;
+    let left = box.x;
+    let top = box.y;
+    let right = box.x + box.w;
+    let bottom = box.y + box.h;
+    if (handle.includes('n')) top = Math.min(bottom - minH, point.y);
+    if (handle.includes('s')) bottom = Math.max(top + minH, point.y);
+    if (handle.includes('w')) left = Math.min(right - minW, point.x);
+    if (handle.includes('e')) right = Math.max(left + minW, point.x);
+    left = clamp01(left);
+    top = clamp01(top);
+    right = clamp01(right);
+    bottom = clamp01(bottom);
+    return {
+      x: Math.min(left, right - minW),
+      y: Math.min(top, bottom - minH),
+      w: Math.max(minW, right - left),
+      h: Math.max(minH, bottom - top),
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!interaction) return;
+    const point = normFromPointer(e);
+    if (!point) return;
+    if (interaction.kind === 'move-overlay') {
+      const overlay = textOverlays.find(item => item.id === interaction.id);
+      if (!overlay) return;
+      const box = overlay.box ?? defaultOverlayBox(overlay.position);
+      const nextBox = {
+        ...box,
+        x: Math.max(0, Math.min(1 - box.w, point.x - interaction.offsetX)),
+        y: Math.max(0, Math.min(1 - box.h, point.y - interaction.offsetY)),
+      };
+      updateOverlay(interaction.id, {
+        box: nextBox,
+        position: { x: nextBox.x + nextBox.w / 2, y: nextBox.y + nextBox.h / 2 },
+      });
+    } else if (interaction.kind === 'resize-overlay') {
+      const overlay = textOverlays.find(item => item.id === interaction.id);
+      if (!overlay) return;
+      const nextBox = resizeBox(overlay.box ?? defaultOverlayBox(overlay.position), point, interaction.handle);
+      updateOverlay(interaction.id, {
+        box: nextBox,
+        position: { x: nextBox.x + nextBox.w / 2, y: nextBox.y + nextBox.h / 2 },
+      });
+    } else if (interaction.kind === 'move-blur') {
+      const region = manualBlurRegions.find(item => item.id === interaction.id);
+      if (!region) return;
+      updateBlurRegion(interaction.id, {
+        x: Math.max(0, Math.min(1 - region.w, point.x - interaction.offsetX)),
+        y: Math.max(0, Math.min(1 - region.h, point.y - interaction.offsetY)),
+      });
+    } else if (interaction.kind === 'resize-blur') {
+      const region = manualBlurRegions.find(item => item.id === interaction.id);
+      if (!region) return;
+      updateBlurRegion(interaction.id, resizeBox(region, point, interaction.handle));
+    } else if (interaction.kind === 'subtitle-y') {
+      setSubtitleSettings(prev => ({ ...prev, position: 'custom', customY: Math.max(0.05, Math.min(0.9, point.y)) }));
+      setActiveTab('script');
+    }
+  };
+
+  const beginMoveOverlay = (id: string, e: React.PointerEvent<HTMLDivElement>) => {
+    const point = normFromPointer(e);
+    const overlay = textOverlays.find(item => item.id === id);
+    if (!point || !overlay) return;
+    const box = overlay.box ?? defaultOverlayBox(overlay.position);
+    setEditingOverlayId(id);
+    setActiveTab('text_overlay');
+    setInteraction({ kind: 'move-overlay', id, offsetX: point.x - box.x, offsetY: point.y - box.y });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const beginMoveBlur = (id: string, e: React.PointerEvent<HTMLDivElement>) => {
+    const point = normFromPointer(e);
+    const region = manualBlurRegions.find(item => item.id === id);
+    if (!point || !region) return;
+    setEditingBlurId(id);
+    setActiveTab('blur_regions');
+    setInteraction({ kind: 'move-blur', id, offsetX: point.x - region.x, offsetY: point.y - region.y });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const activeOverlays = textOverlays.filter(o => o.status !== "disabled" && currentTime >= o.start && currentTime <= o.end);
+
+  // Sub text đang active theo currentTime (dùng cho subtitle preview)
+  const activeSubtitleSeg = scriptSegments.find(s => s.text?.trim() && currentTime >= s.start && currentTime <= s.end);
 
   const FONT_OPTIONS = ["Anton", "Oswald", "Be Vietnam Pro", "Montserrat", "Nunito", "Baloo 2", "Inter", "Impact", "Arial", "Noto Sans"];
   const ANIMATION_OPTIONS: Array<{ value: TextOnScreenOverlay['animation']; label: string }> = [
@@ -428,6 +754,28 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
         <div className="flex items-center justify-between p-4 bg-muted/30 border-b">
           <h3 className="font-semibold text-lg">Video Editor</h3>
           <div className="flex gap-2">
+            {processedAudioSource && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setPreviewAudioMode((mode) => {
+                    const next = mode === "source" ? "processed" : "source";
+                    const video = videoRef.current;
+                    const audio = processedAudioRef.current;
+                    if (video) video.muted = next === "processed";
+                    audio?.pause();
+                    if (next === "processed" && video && audio && !video.paused) {
+                      audio.currentTime = video.currentTime;
+                      void audio.play().catch(() => {});
+                    }
+                    return next;
+                  });
+                }}
+              >
+                Audio: {previewAudioMode === "source" ? "Gốc" : "Đã xử lý"}
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={onCancel}>Huỷ</Button>
             <Button size="sm" onClick={handleSave}>Lưu & Áp dụng</Button>
           </div>
@@ -437,18 +785,40 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
           <div className="flex-1 p-6 flex items-center justify-center bg-zinc-950">
             <div
               ref={videoContainerRef}
-              className="relative h-full w-full flex items-center justify-center"
-              onDragOver={(e) => e.preventDefault()}
+              className={`relative max-h-full max-w-full overflow-hidden rounded-lg bg-black shadow-xl ring-1 ring-white/10 ${getFrameAspectClass()}`}
+              style={{
+                height: outputRatio === '9:16' || outputRatio === '4:5' ? '100%' : undefined,
+                width: outputRatio === '16:9' || outputRatio === '1:1' || outputRatio === 'original' ? '100%' : undefined,
+              }}
+              onPointerMove={handlePointerMove}
+              onPointerUp={() => setInteraction(null)}
+              onPointerCancel={() => setInteraction(null)}
             >
                <video
                 ref={videoRef}
                 src={source}
                 controls
-                className={`max-h-full max-w-full rounded-lg shadow-xl ring-1 ring-white/10 ${getAspectClass()}`}
+                muted={previewAudioMode === "processed" && Boolean(processedAudioSource)}
+                className={`absolute inset-0 h-full w-full ${getVideoFitClass()}`}
+                onPlay={() => {
+                  if (previewAudioMode === "processed" && processedAudioRef.current && videoRef.current) {
+                    processedAudioRef.current.currentTime = videoRef.current.currentTime;
+                    void processedAudioRef.current.play().catch(() => {});
+                  }
+                }}
+                onPause={() => processedAudioRef.current?.pause()}
+                onSeeking={() => {
+                  if (processedAudioRef.current && videoRef.current) {
+                    processedAudioRef.current.currentTime = videoRef.current.currentTime;
+                  }
+                }}
                 onTimeUpdate={() => {
                   if (videoRef.current) {
                     const t = videoRef.current.currentTime;
                     setCurrentTime(t);
+                    if (previewAudioMode === "processed" && processedAudioRef.current && Math.abs(processedAudioRef.current.currentTime - t) > 0.35) {
+                      processedAudioRef.current.currentTime = t;
+                    }
                     if (t > trimEnd) {
                       videoRef.current.pause();
                       videoRef.current.currentTime = trimStart;
@@ -456,6 +826,9 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                   }
                 }}
               />
+              {processedAudioSource && (
+                <audio ref={processedAudioRef} src={processedAudioSource} preload="metadata" />
+              )}
               {watermarkEnabled && (
                 <div
                   className="pointer-events-none absolute rounded px-2 py-1 text-xs font-bold text-white shadow"
@@ -473,46 +846,150 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                 </div>
               )}
               {activeOverlays.map(overlay => (
+                (() => {
+                  const box = overlay.box ?? defaultOverlayBox(overlay.position);
+                  return (
                 <div
                   key={overlay.id}
-                  draggable
-                  onDragStart={() => setDraggingOverlayId(overlay.id)}
-                  onDragEnd={(e) => handleOverlayDragEnd(overlay.id, e)}
+                  onPointerDown={(e) => beginMoveOverlay(overlay.id, e)}
                   onClick={() => { setActiveTab('text_overlay'); setEditingOverlayId(overlay.id); }}
-                  className={`absolute cursor-move rounded px-2 py-1 text-sm font-semibold select-none transition-all ${
+                  className={`absolute cursor-move rounded border px-2 py-1 text-sm font-semibold select-none transition-all ${
                     editingOverlayId === overlay.id ? 'ring-2 ring-blue-400' : 'hover:ring-1 hover:ring-white/50'
-                  } ${draggingOverlayId === overlay.id ? 'opacity-40' : 'opacity-100'}`}
+                  }`}
                   style={{
-                    left: `${overlay.position.x * 100}%`,
-                    top: `${overlay.position.y * 100}%`,
+                    left: `${box.x * 100}%`,
+                    top: `${box.y * 100}%`,
+                    width: `${box.w * 100}%`,
+                    height: `${box.h * 100}%`,
                     fontFamily: overlay.fontFamily,
                     fontSize: `${Math.min(overlay.fontSize, 36)}px`,
+                    fontWeight: overlay.bold ? 800 : 400,
+                    fontStyle: overlay.italic ? 'italic' : 'normal',
                     color: overlay.fontColor,
-                    backgroundColor: overlay.bgColor,
-                    transform: 'translate(-50%, -50%)',
+                    WebkitTextStroke: overlay.outlineColor && overlay.outlineColor !== '#000000' && overlay.outlineColor !== 'transparent'
+                      ? `1px ${overlay.outlineColor}`
+                      : undefined,
+                    backgroundColor:
+                      overlay.backgroundStyle === "blur"
+                        ? `rgba(15,23,42,${overlay.backgroundOpacity ?? 0.72})`
+                        : overlay.bgColor,
+                    backdropFilter:
+                      overlay.backgroundStyle === "blur"
+                        ? `blur(${Math.max(6, Math.round(overlay.fontSize * 0.18))}px)`
+                        : undefined,
+                    WebkitBackdropFilter:
+                      overlay.backgroundStyle === "blur"
+                        ? `blur(${Math.max(6, Math.round(overlay.fontSize * 0.18))}px)`
+                        : undefined,
+                    borderColor: editingOverlayId === overlay.id ? '#60a5fa' : 'rgba(255,255,255,0.28)',
                   }}
                 >
-                  {overlay.text}
+                  <span className="flex h-full w-full items-center justify-center text-center leading-tight">
+                    {overlay.text}
+                  </span>
+                  {editingOverlayId === overlay.id && (['nw', 'ne', 'sw', 'se'] as const).map(handle => (
+                    <span
+                      key={handle}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        setInteraction({ kind: 'resize-overlay', id: overlay.id, handle });
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                      }}
+                      className={`absolute h-3 w-3 rounded-sm border border-white bg-blue-400 ${
+                        handle === 'nw' ? '-left-1.5 -top-1.5 cursor-nwse-resize' :
+                        handle === 'ne' ? '-right-1.5 -top-1.5 cursor-nesw-resize' :
+                        handle === 'sw' ? '-left-1.5 -bottom-1.5 cursor-nesw-resize' :
+                        '-right-1.5 -bottom-1.5 cursor-nwse-resize'
+                      }`}
+                    />
+                  ))}
                 </div>
+                  );
+                })()
               ))}
+              {vietsub && activeSubtitleSeg && (
+                <div
+                  onPointerDown={(e) => {
+                    setInteraction({ kind: 'subtitle-y' });
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  className="absolute left-1/2 z-20 cursor-ns-resize select-none rounded px-3 py-1 text-center leading-tight ring-1 ring-white/20"
+                  style={{
+                    top: `${(subtitleSettings.position === 'custom' ? (subtitleSettings.customY ?? 0.78) : subtitleSettings.position === 'top' ? 0.12 : 0.78) * 100}%`,
+                    transform: 'translate(-50%, -50%)',
+                    fontFamily: subtitleSettings.font,
+                    fontSize: `${Math.min(subtitleSettings.size, 36)}px`,
+                    color: subtitleSettings.color,
+                    backgroundColor: subtitleSettings.borderStyle === 3 ? subtitleSettings.bgColor : 'rgba(0,0,0,0.35)',
+                    WebkitTextStroke: subtitleSettings.borderStyle === 1 ? `${subtitleSettings.outline}px ${subtitleSettings.bgColor}` : undefined,
+                    fontWeight: subtitleSettings.bold ? 800 : 500,
+                    fontStyle: subtitleSettings.italic ? 'italic' : 'normal',
+                  }}
+                  title="Kéo lên/xuống để chỉnh vị trí phụ đề"
+                >
+                  {activeSubtitleSeg.text}
+                </div>
+              )}
+              {manualBlurRegions.map(region => {
+                const active = currentTime >= region.startSec && currentTime <= region.endSec;
+                return (
+                  <div
+                    key={region.id}
+                    onPointerDown={(e) => beginMoveBlur(region.id, e)}
+                    onClick={() => { setActiveTab('blur_regions'); setEditingBlurId(region.id); }}
+                    className={`absolute z-10 cursor-move select-none border-2 ${
+                      editingBlurId === region.id ? 'border-purple-300 bg-purple-500/35' : 'border-purple-500/80 bg-purple-500/20'
+                    } ${active ? 'opacity-100' : 'opacity-45'}`}
+                    style={{
+                      left: `${region.x * 100}%`,
+                      top: `${region.y * 100}%`,
+                      width: `${region.w * 100}%`,
+                      height: `${region.h * 100}%`,
+                    }}
+                  >
+                    <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] text-white">
+                      {region.label}
+                    </span>
+                    {editingBlurId === region.id && (['nw', 'ne', 'sw', 'se'] as const).map(handle => (
+                      <span
+                        key={handle}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          setInteraction({ kind: 'resize-blur', id: region.id, handle });
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                        }}
+                        className={`absolute h-3 w-3 rounded-sm border border-white bg-purple-400 ${
+                          handle === 'nw' ? '-left-1.5 -top-1.5 cursor-nwse-resize' :
+                          handle === 'ne' ? '-right-1.5 -top-1.5 cursor-nesw-resize' :
+                          handle === 'sw' ? '-left-1.5 -bottom-1.5 cursor-nesw-resize' :
+                          '-right-1.5 -bottom-1.5 cursor-nwse-resize'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           </div>
           
           <div className="w-full lg:w-[500px] border-t lg:border-t-0 lg:border-l border-border flex flex-col min-h-0 bg-muted/10">
-            <div className="flex border-b border-border overflow-x-auto">
+            <div className="flex gap-0.5 overflow-x-auto border-b border-border bg-muted/30 px-2 scrollbar-thin">
               {([
+                { id: 'trim_ratio', label: '✂ Trim & Ratio' },
+                { id: 'voice', label: '🎤 Voice' },
                 { id: 'script', label: '📝 Script & Phụ đề' },
-                { id: 'watermark', label: '💧 Watermark' },
                 { id: 'text_overlay', label: '🖊 Text on Screen' },
+                { id: 'blur_regions', label: '▧ Blur Regions' },
+                { id: 'watermark', label: '💧 Watermark' },
               ] as const).map(tab => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`whitespace-nowrap px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+                  className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-xs font-medium transition-colors border-b-2 ${
                     activeTab === tab.id
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                      ? 'border-primary text-primary bg-card rounded-t-[6px]'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
                 >
                   {tab.label}
@@ -521,21 +998,21 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {activeTab === 'script' && (
-                <>
+              {activeTab === 'trim_ratio' && (
+                <div className="space-y-6">
                   <div className="space-y-4">
                     <div className="flex justify-between items-center border-b pb-2">
                       <h4 className="font-semibold text-base">Cắt Video (Trim)</h4>
                     </div>
-                    <TrimSlider 
-                      duration={duration} 
-                      start={trimStart} 
-                      end={trimEnd} 
+                    <TrimSlider
+                      duration={duration}
+                      start={trimStart}
+                      end={trimEnd}
                       onChange={(s, e) => {
                         setTrimStart(s);
                         setTrimEnd(e);
                         if (videoRef.current) videoRef.current.currentTime = s;
-                      }} 
+                      }}
                     />
                   </div>
                   <div className="space-y-4">
@@ -544,10 +1021,134 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                     </div>
                     <RatioPicker value={outputRatio} onChange={setOutputRatio} />
                   </div>
+                </div>
+              )}
+              {activeTab === 'voice' && (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h4 className="font-semibold text-base">🎤 Voice & Lồng tiếng</h4>
+                  </div>
+
+                  {/* Language */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">Ngôn ngữ dịch</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTargetLanguage('vi')}
+                        className={`flex-1 rounded-md border px-3 py-2 text-sm transition-all ${
+                          targetLanguage === 'vi' ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-background hover:bg-muted'
+                        }`}
+                      >
+                        🇻🇳 Tiếng Việt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTargetLanguage('en')}
+                        className={`flex-1 rounded-md border px-3 py-2 text-sm transition-all ${
+                          targetLanguage === 'en' ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-background hover:bg-muted'
+                        }`}
+                      >
+                        🇬🇧 English
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Voice selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">Giọng đọc TTS</label>
+                    <VoiceSelector value={voiceName} onChange={setVoiceName} />
+                  </div>
+
+                  {/* Dub mode */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">Chế độ lồng tiếng</label>
+                    <select
+                      value={dubMode}
+                      onChange={(e) => setDubMode(e.target.value)}
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="none">Không lồng tiếng (chỉ phụ đề)</option>
+                      <option value="full">Thay toàn bộ audio</option>
+                      <option value="preserve_bgm">Giữ nhạc nền</option>
+                      <option value="heygen">HeyGen lip-sync</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      {dubMode === 'none' && 'Chỉ đọc phụ đề burn-in, không thay audio gốc.'}
+                      {dubMode === 'full' && 'Thay toàn bộ audio gốc bằng giọng TTS đã chọn.'}
+                      {dubMode === 'preserve_bgm' && 'Giữ nhạc nền gốc, chỉ thay phần lời.'}
+                      {dubMode === 'heygen' && 'Sử dụng HeyGen để lồng tiếng với lip-sync.'}
+                    </p>
+                  </div>
+
+                  {/* BG Volume */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Âm lượng nhạc nền {Math.round(bgVolume * 100)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={bgVolume}
+                      onChange={(e) => setBgVolume(Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Điều chỉnh âm lượng nhạc nền so với giọng đọc.
+                    </p>
+                  </div>
+
+                  <div className="rounded-md bg-blue-500/10 border border-blue-500/30 p-3 text-xs text-blue-400 space-y-1">
+                    <p className="font-semibold">ℹ️ Sau khi lưu & áp dụng:</p>
+                    <p>Nếu bạn đã chỉnh script ở tab Script, AI sẽ đọc lại script đó bằng giọng đã chọn.</p>
+                    <p>Nếu lần generate đầu không bật voice, bây giờ có thể bật thêm tại đây.</p>
+                  </div>
+                </div>
+              )}
+              {activeTab === 'script' && (
+                <>
                   <div className="space-y-4">
                     <div className="flex justify-between items-center border-b pb-2">
                       <h4 className="font-semibold text-base">Script & Phụ đề</h4>
                     </div>
+                    {remixPresets.length > 0 && (
+                      <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">🎬 Theo preset:</span>
+                        <select
+                          defaultValue=""
+                          onChange={(e) => {
+                            const p = remixPresets.find(x => x.id === e.target.value);
+                            if (!p) return;
+                            setVietsub(Boolean(p.auto_vietsub));
+                            setSubtitleSettings({
+                              ...defaultSubtitleSettings,
+                              preset: p.subtitle_preset ?? defaultSubtitleSettings.preset,
+                              font: p.sub_font ?? defaultSubtitleSettings.font,
+                              size: p.sub_font_size ?? defaultSubtitleSettings.size,
+                              color: p.sub_color ?? defaultSubtitleSettings.color,
+                              bgColor: p.sub_bg_color ?? defaultSubtitleSettings.bgColor,
+                              highlightColor: p.sub_highlight_color ?? defaultSubtitleSettings.highlightColor,
+                              bold: p.sub_bold ?? defaultSubtitleSettings.bold,
+                              italic: p.sub_italic ?? defaultSubtitleSettings.italic,
+                              outline: p.sub_outline ?? defaultSubtitleSettings.outline,
+                              borderStyle: p.sub_border_style ?? defaultSubtitleSettings.borderStyle,
+                              position: p.sub_position ?? defaultSubtitleSettings.position,
+                              customY: p.sub_custom_y ?? defaultSubtitleSettings.customY,
+                              animation: p.subtitle_animation ?? defaultSubtitleSettings.animation,
+                            });
+                            (e.target as HTMLSelectElement).value = '';
+                          }}
+                          className="flex-1 h-8 rounded border border-input bg-background px-2 text-xs"
+                        >
+                          <option value="">— Áp dụng phụ đề theo preset —</option>
+                          {remixPresets.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -568,6 +1169,32 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                       >
                         Script nhập tay
                       </button>
+                    </div>
+                    <div className="space-y-3 rounded-md border border-border bg-background p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h5 className="text-sm font-semibold">Format script & phụ đề</h5>
+                          <p className="text-xs text-muted-foreground">
+                            Chỉnh segment script bên dưới, style/vị trí phụ đề ở block này.
+                          </p>
+                        </div>
+                        <label className="flex shrink-0 items-center gap-2 text-sm">
+                          <input type="checkbox" checked={vietsub} onChange={(e) => setVietsub(e.target.checked)} />
+                          Burn-in phụ đề
+                        </label>
+                      </div>
+                      {vietsub ? (
+                        <SubtitleConfig
+                          value={subtitleSettings}
+                          onChange={setSubtitleSettings}
+                          title="Style phụ đề"
+                          sampleText="TikTok nhả từng từ"
+                        />
+                      ) : (
+                        <div className="rounded-md border border-dashed border-input px-3 py-2 text-xs text-muted-foreground">
+                          Bật burn-in để chỉnh font, màu, hiệu ứng nhả chữ và vị trí phụ đề.
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -697,19 +1324,9 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                         </button>
                       )}
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={vietsub} onChange={(e) => setVietsub(e.target.checked)} />
-                      Burn-in phụ đề
-                    </label>
-                    {vietsub && (
-                      <SubtitleConfig
-                        value={subtitleSettings}
-                        onChange={setSubtitleSettings}
-                        title="Style phụ đề"
-                        sampleText="TikTok nhả từng từ"
-                      />
-                    )}
                   </div>
+                  {/* Facebook copyright preflight — tạm ẩn */}
+                  {false && (
                   <div className="space-y-3 rounded-md border border-border bg-background p-4">
                     <div className="flex items-center justify-between">
                       <h4 className="font-semibold text-base">Facebook copyright preflight</h4>
@@ -726,7 +1343,110 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                       ))}
                     </div>
                   </div>
+                  )}
                 </>
+              )}
+              {activeTab === 'blur_regions' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h4 className="font-semibold text-base">Blur text on-screen</h4>
+                    <Button size="sm" variant="outline" onClick={() => addBlurRegion()}>+ Thêm vùng</Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Kéo vùng tím trên preview để đổi vị trí, kéo các góc để resize. Mỗi vùng có thời gian bắt đầu/kết thúc riêng.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={importAiZones}
+                      className="rounded-md border border-dashed border-input px-3 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary"
+                    >
+                      Import vùng AI/text
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addBlurRegion({ x: 0, y: 0.82, w: 1, h: 0.18, label: 'Bottom subtitle' })}
+                      className="rounded-md border border-input px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+                    >
+                      + Dưới cùng 18%
+                    </button>
+                  </div>
+                  {manualBlurRegions.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-input py-8 text-center text-sm text-muted-foreground">
+                      Chưa có vùng blur thủ công.
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {manualBlurRegions.map((region) => (
+                      <div
+                        key={region.id}
+                        className={`rounded-lg border bg-background transition-colors ${
+                          editingBlurId === region.id ? 'border-primary bg-primary/5' : 'border-input'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setEditingBlurId(editingBlurId === region.id ? null : region.id)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left"
+                        >
+                          <span className="text-sm font-medium">{region.label}</span>
+                          <span className="font-mono text-xs text-muted-foreground">{fmt(region.startSec)} - {fmt(region.endSec)}</span>
+                        </button>
+                        {editingBlurId === region.id && (
+                          <div className="space-y-3 border-t border-border/50 p-3">
+                            <input
+                              value={region.label ?? ''}
+                              onChange={(e) => updateBlurRegion(region.id, { label: e.target.value })}
+                              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              placeholder="Tên vùng blur"
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className="space-y-1">
+                                <span className="text-xs text-muted-foreground">Bắt đầu</span>
+                                <input type="number" min="0" max={duration || 999} step="0.5" value={region.startSec}
+                                  onChange={(e) => updateBlurRegion(region.id, { startSec: Number(e.target.value) })}
+                                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="text-xs text-muted-foreground">Kết thúc</span>
+                                <input type="number" min="0" max={duration || 999} step="0.5" value={region.endSec}
+                                  onChange={(e) => updateBlurRegion(region.id, { endSec: Number(e.target.value) })}
+                                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                />
+                              </label>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {([
+                                ['x', 'X'],
+                                ['y', 'Y'],
+                                ['w', 'Width'],
+                                ['h', 'Height'],
+                              ] as const).map(([key, label]) => (
+                                <label key={key} className="space-y-1">
+                                  <span className="text-xs text-muted-foreground">{label} {region[key].toFixed(2)}</span>
+                                  <input
+                                    type="range"
+                                    min={key === 'w' || key === 'h' ? 0.03 : 0}
+                                    max="1"
+                                    step="0.01"
+                                    value={region[key]}
+                                    onChange={(e) => updateBlurRegion(region.id, { [key]: Number(e.target.value) } as Partial<ManualBlurRegion>)}
+                                    className="w-full"
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="outline" onClick={() => duplicateBlurRegion(region.id)}>Duplicate</Button>
+                              <Button size="sm" variant="destructive" onClick={() => deleteBlurRegion(region.id)}>Xóa</Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
               {activeTab === 'watermark' && (
                 <div className="space-y-4">
@@ -735,6 +1455,36 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                   </div>
                   <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={watermarkEnabled} onChange={(e) => setWatermarkEnabled(e.target.checked)} />
+                  {remixPresets.length > 0 && (
+                    <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">💧 Theo preset:</span>
+                      <select
+                        defaultValue=""
+                        onChange={(e) => {
+                          const p = remixPresets.find(x => x.id === e.target.value);
+                          if (!p) return;
+                          const wm = p.watermark_defaults ?? {};
+                          if (!wm.enabled) {
+                            setWatermarkEnabled(false);
+                          } else {
+                            setWatermarkEnabled(true);
+                            setWatermarkType(wm.type === 'image' ? 'image' : 'text');
+                            setWatermarkText(wm.text ?? '');
+                            setWatermarkOpacity(wm.opacity ?? 0.9);
+                            setWatermarkScale(wm.scale ?? 0.15);
+                            setWatermarkPosition(wm.position ?? 'bottom-right');
+                          }
+                          (e.target as HTMLSelectElement).value = '';
+                        }}
+                        className="flex-1 h-8 rounded border border-input bg-background px-2 text-xs"
+                      >
+                        <option value="">— Áp watermark theo preset —</option>
+                        {remixPresets.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                     Chèn watermark mới
                   </label>
                   {!watermarkEnabled && (
@@ -831,10 +1581,70 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                     <h4 className="font-semibold text-base">Text on Screen</h4>
                     <Button size="sm" variant="outline" onClick={addTextOverlay}>+ Thêm Text</Button>
                   </div>
+                  {remixPresets.length > 0 && (
+                    <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">🎨 Style theo preset (tất cả):</span>
+                      <select
+                        defaultValue=""
+                        onChange={(e) => {
+                          const p = remixPresets.find(x => x.id === e.target.value);
+                          if (!p) return;
+                          setTextOverlays(prev => prev.map(o => ({
+                            ...o,
+                            fontFamily: p.on_screen_text_font ?? o.fontFamily,
+                            fontSize: p.on_screen_text_size ?? o.fontSize,
+                            fontColor: p.on_screen_text_color ?? o.fontColor,
+                            bgColor: p.on_screen_text_bg_color ?? o.bgColor,
+                            outlineColor: p.on_screen_text_outline_color ?? o.outlineColor,
+                            bold: p.on_screen_text_bold ?? o.bold,
+                            italic: p.on_screen_text_italic ?? o.italic,
+                            backgroundStyle: p.on_screen_text_background_style ?? o.backgroundStyle,
+                            backgroundOpacity: p.on_screen_text_background_opacity ?? o.backgroundOpacity,
+                          })));
+                          (e.target as HTMLSelectElement).value = '';
+                        }}
+                        className="flex-1 h-8 rounded border border-input bg-background px-2 text-xs"
+                      >
+                        <option value="">— Áp style lên tất cả overlay —</option>
+                        {remixPresets.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <p className="text-xs text-muted-foreground">
                     💡 Drag text trên video preview để đặt vị trí. Click text để chọn và chỉnh sửa.
                   </p>
+
+                  {textOverlays.length > 0 && (
+                    <div className="rounded-md border border-border bg-background p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selectedOverlayIds.size > 0 && selectedOverlayIds.size === textOverlays.length}
+                            onChange={(e) => setAllOverlaySelection(e.target.checked)}
+                          />
+                          Chọn tất cả ({selectedOverlayIds.size}/{textOverlays.length})
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" disabled={selectedOverlayIds.size === 0} onClick={applyStyleToSelected}>
+                            Apply style
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={selectedOverlayIds.size === 0} onClick={() => updateSelectedOverlayStatus("approved")}>
+                            Approve
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={selectedOverlayIds.size === 0} onClick={() => updateSelectedOverlayStatus("disabled")}>
+                            Disable
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        OCR auto mặc định pending. Chỉ overlay approved/manual mới được render khi Lưu & Áp dụng.
+                      </p>
+                    </div>
+                  )}
 
                   {textOverlays.length === 0 && (
                     <div className="text-center py-8 border border-dashed border-input rounded-lg">
@@ -862,6 +1672,12 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                       >
                         <div className="flex items-center justify-between px-3 py-2">
                           <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedOverlayIds.has(overlay.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={() => toggleOverlaySelection(overlay.id)}
+                            />
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); seekTo(overlay.start); }}
@@ -872,9 +1688,27 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                             </button>
                             <span
                               className="text-xs px-2 py-0.5 rounded font-medium truncate max-w-[120px]"
-                              style={{ color: overlay.fontColor, backgroundColor: overlay.bgColor }}
+                              style={{
+                                fontFamily: overlay.fontFamily,
+                                fontWeight: overlay.bold ? 800 : 500,
+                                fontStyle: overlay.italic ? 'italic' : 'normal',
+                                color: overlay.fontColor,
+                                backgroundColor:
+                                  overlay.backgroundStyle === "blur"
+                                    ? `rgba(15,23,42,${overlay.backgroundOpacity ?? 0.72})`
+                                    : overlay.bgColor,
+                                backdropFilter: overlay.backgroundStyle === "blur" ? "blur(8px)" : undefined,
+                                WebkitBackdropFilter: overlay.backgroundStyle === "blur" ? "blur(8px)" : undefined,
+                              }}
                             >
                               {overlay.text}
+                            </span>
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] ${
+                              overlay.status === "approved" ? "bg-emerald-500/15 text-emerald-400" :
+                              overlay.status === "disabled" ? "bg-zinc-500/15 text-zinc-400" :
+                              "bg-amber-500/15 text-amber-400"
+                            }`}>
+                              {overlay.status ?? "pending"}
                             </span>
                           </div>
                           <button
@@ -897,6 +1731,18 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                                 className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                               />
                             </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-muted-foreground">Trạng thái render</label>
+                              <select
+                                value={overlay.status ?? "pending"}
+                                onChange={(e) => updateOverlay(overlay.id, { status: e.target.value as TextOnScreenOverlay["status"] })}
+                                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                              >
+                                <option value="pending">Pending - chỉ preview/chờ duyệt</option>
+                                <option value="approved">Approved - render vào video</option>
+                                <option value="disabled">Disabled - bỏ qua</option>
+                              </select>
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
                                 <label className="text-xs text-muted-foreground">Bắt đầu (giây)</label>
@@ -918,20 +1764,34 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                               </div>
                             </div>
                             <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="text-xs text-muted-foreground">X {overlay.position.x.toFixed(2)}</label>
-                                <input type="range" min="0" max="1" step="0.01" value={overlay.position.x}
-                                  onChange={(e) => updateOverlay(overlay.id, { position: { ...overlay.position, x: Number(e.target.value) } })}
-                                  className="w-full"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-xs text-muted-foreground">Y {overlay.position.y.toFixed(2)}</label>
-                                <input type="range" min="0" max="1" step="0.01" value={overlay.position.y}
-                                  onChange={(e) => updateOverlay(overlay.id, { position: { ...overlay.position, y: Number(e.target.value) } })}
-                                  className="w-full"
-                                />
-                              </div>
+                              {(() => {
+                                const box = overlay.box ?? defaultOverlayBox(overlay.position);
+                                return ([
+                                  ['x', 'X'],
+                                  ['y', 'Y'],
+                                  ['w', 'Width'],
+                                  ['h', 'Height'],
+                                ] as const).map(([key, label]) => (
+                                  <div key={key} className="space-y-1">
+                                    <label className="text-xs text-muted-foreground">{label} {box[key].toFixed(2)}</label>
+                                    <input
+                                      type="range"
+                                      min={key === 'w' || key === 'h' ? 0.03 : 0}
+                                      max="1"
+                                      step="0.01"
+                                      value={box[key]}
+                                      onChange={(e) => {
+                                        const nextBox = { ...box, [key]: Number(e.target.value) };
+                                        updateOverlay(overlay.id, {
+                                          box: nextBox,
+                                          position: { x: nextBox.x + nextBox.w / 2, y: nextBox.y + nextBox.h / 2 },
+                                        });
+                                      }}
+                                      className="w-full"
+                                    />
+                                  </div>
+                                ));
+                              })()}
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
@@ -944,29 +1804,122 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                                   {FONT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
                                 </select>
                               </div>
+                              {remixPresets.length > 0 && (
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="text-xs text-muted-foreground">🎨 Áp style theo preset (chỉ line này)</label>
+                                  <select
+                                    defaultValue=""
+                                    onChange={(e) => {
+                                      const p = remixPresets.find(x => x.id === e.target.value);
+                                      if (!p) return;
+                                      updateOverlay(overlay.id, {
+                                        fontFamily: p.on_screen_text_font ?? overlay.fontFamily,
+                                        fontSize: p.on_screen_text_size ?? overlay.fontSize,
+                                        fontColor: p.on_screen_text_color ?? overlay.fontColor,
+                                        bgColor: p.on_screen_text_bg_color ?? overlay.bgColor,
+                                        outlineColor: p.on_screen_text_outline_color ?? overlay.outlineColor,
+                                        bold: p.on_screen_text_bold ?? overlay.bold,
+                                        italic: p.on_screen_text_italic ?? overlay.italic,
+                                        backgroundStyle: p.on_screen_text_background_style ?? overlay.backgroundStyle,
+                                        backgroundOpacity: p.on_screen_text_background_opacity ?? overlay.backgroundOpacity,
+                                      });
+                                      (e.target as HTMLSelectElement).value = '';
+                                    }}
+                                    className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+                                  >
+                                    <option value="">— Chọn preset —</option>
+                                    {remixPresets.map(p => (
+                                      <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                               <div className="space-y-1">
                                 <label className="text-xs text-muted-foreground">Cỡ chữ {overlay.fontSize}px</label>
-                                <input type="range" min="12" max="72" value={overlay.fontSize}
+                                <input type="range" min="1" max="72" value={overlay.fontSize}
                                   onChange={(e) => updateOverlay(overlay.id, { fontSize: Number(e.target.value) })}
                                   className="w-full mt-2"
                                 />
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="120"
+                                  value={overlay.fontSize}
+                                  onChange={(e) => updateOverlay(overlay.id, { fontSize: Number(e.target.value) })}
+                                  className="mt-2 h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                />
                               </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <label className="space-y-1">
-                                <span className="text-xs text-muted-foreground">Màu chữ</span>
-                                <input type="color" value={overlay.fontColor}
-                                  onChange={(e) => updateOverlay(overlay.id, { fontColor: e.target.value })}
-                                  className="h-9 w-full rounded border border-input bg-background p-1"
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                              <ColorFieldWithOpacity
+                                label="Màu chữ"
+                                value={overlay.fontColor}
+                                onChange={(next) => updateOverlay(overlay.id, { fontColor: next })}
+                                fallback="#FFFFFF"
+                              />
+                              <ColorFieldWithOpacity
+                                label="Màu nền"
+                                value={overlay.bgColor}
+                                onChange={(next) => updateOverlay(overlay.id, { bgColor: next })}
+                                fallback="#000000"
+                              />
+                              <ColorFieldWithOpacity
+                                label="Màu viền"
+                                value={overlay.outlineColor || 'transparent'}
+                                onChange={(next) => updateOverlay(overlay.id, { outlineColor: next })}
+                                fallback="transparent"
+                              />
+                            </div>
+                            <div className="flex items-center gap-4 py-1">
+                              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={overlay.bold ?? false}
+                                  onChange={(e) => updateOverlay(overlay.id, { bold: e.target.checked })}
+                                  className="rounded border-input bg-background"
                                 />
+                                <strong>In đậm (Bold)</strong>
                               </label>
-                              <label className="space-y-1">
-                                <span className="text-xs text-muted-foreground">Màu nền</span>
-                                <input type="color" value={overlay.bgColor.slice(0, 7)}
-                                  onChange={(e) => updateOverlay(overlay.id, { bgColor: e.target.value })}
-                                  className="h-9 w-full rounded border border-input bg-background p-1"
+                              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={overlay.italic ?? false}
+                                  onChange={(e) => updateOverlay(overlay.id, { italic: e.target.checked })}
+                                  className="rounded border-input bg-background"
                                 />
+                                <em>In nghiêng (Italic)</em>
                               </label>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <div className="space-y-1">
+                                <label className="text-xs text-muted-foreground">Kiểu nền</label>
+                                <select
+                                  value={overlay.backgroundStyle ?? "solid"}
+                                  onChange={(e) => updateOverlay(overlay.id, { backgroundStyle: e.target.value as "solid" | "blur" })}
+                                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                                >
+                                  <option value="solid">Solid</option>
+                                  <option value="blur">Blur background</option>
+                                </select>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-xs font-medium text-muted-foreground">Opacity nền</label>
+                                  <span className="rounded bg-muted px-1.5 py-0.5 text-2xs tabular text-foreground">
+                                    {Math.round((overlay.backgroundOpacity ?? 0.72) * 100)}%
+                                  </span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.01"
+                                  value={overlay.backgroundOpacity ?? 0.72}
+                                  onChange={(e) => updateOverlay(overlay.id, { backgroundOpacity: Number(e.target.value) })}
+                                  className="range-slider w-full"
+                                  aria-label="Background opacity"
+                                />
+                              </div>
                             </div>
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground">Animation</label>
@@ -984,13 +1937,51 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                                 style={{
                                   fontFamily: overlay.fontFamily,
                                   fontSize: `${Math.min(overlay.fontSize, 40)}px`,
+                                  fontWeight: overlay.bold ? 800 : 400,
+                                  fontStyle: overlay.italic ? 'italic' : 'normal',
                                   color: overlay.fontColor,
-                                  backgroundColor: overlay.bgColor,
+                                  WebkitTextStroke: overlay.outlineColor && overlay.outlineColor !== '#000000' && overlay.outlineColor !== 'transparent'
+                                    ? `1px ${overlay.outlineColor}`
+                                    : undefined,
+                                  backgroundColor:
+                                    overlay.backgroundStyle === "blur"
+                                      ? `rgba(15,23,42,${overlay.backgroundOpacity ?? 0.72})`
+                                      : overlay.bgColor,
+                                  backdropFilter: overlay.backgroundStyle === "blur" ? "blur(10px)" : undefined,
+                                  WebkitBackdropFilter: overlay.backgroundStyle === "blur" ? "blur(10px)" : undefined,
                                 }}
                               >
                                 {overlay.text || 'Preview'}
                               </span>
                             </div>
+                            {selectedOverlayIds.size > 0 && !selectedOverlayIds.has(overlay.id) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTextOverlays(prev => prev.map(o =>
+                                    selectedOverlayIds.has(o.id)
+                                      ? normalizeOverlay({
+                                          ...o,
+                                          fontFamily: overlay.fontFamily,
+                                          fontSize: overlay.fontSize,
+                                          fontColor: overlay.fontColor,
+                                          bgColor: overlay.bgColor,
+                                          backgroundStyle: overlay.backgroundStyle,
+                                          backgroundOpacity: overlay.backgroundOpacity,
+                                          outlineColor: overlay.outlineColor,
+                                          bold: overlay.bold,
+                                          italic: overlay.italic,
+                                          animation: overlay.animation,
+                                        })
+                                      : o
+                                  ));
+                                }}
+                                className="w-full rounded-md border border-dashed border-primary/40 py-1.5 text-xs text-primary hover:bg-primary/10 transition-colors"
+                              >
+                                📋 Apply style này lên {selectedOverlayIds.size} overlay đã chọn
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1004,8 +1995,8 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                         className="w-full rounded-md border border-dashed border-input py-2 text-sm text-muted-foreground hover:text-primary hover:border-primary transition-colors"
                         onClick={() => {
                           const suggestions: TextOnScreenOverlay[] = [
-                            { id: genId(), start: 0, end: 4, text: '🎯 Xem ngay!', position: { x: 0.5, y: 0.1 }, fontFamily: 'Montserrat', fontSize: 36, fontColor: '#FFF200', bgColor: '#FF2A6D', animation: 'scale_in' },
-                            { id: genId(), start: 5, end: 10, text: '👆 Link bio', position: { x: 0.5, y: 0.85 }, fontFamily: 'Be Vietnam Pro', fontSize: 28, fontColor: '#FFFFFF', bgColor: '#00000088', animation: 'fade_in' },
+                            normalizeOverlay({ id: genId(), start: 0, end: 4, text: 'Xem ngay!', position: { x: 0.5, y: 0.1 }, box: { x: 0.28, y: 0.05, w: 0.44, h: 0.1 }, fontFamily: 'Montserrat', fontSize: 36, fontColor: '#FFF200', bgColor: '#FF2A6D', animation: 'scale_in' }),
+                            normalizeOverlay({ id: genId(), start: 5, end: 10, text: 'Link bio', position: { x: 0.5, y: 0.85 }, box: { x: 0.32, y: 0.8, w: 0.36, h: 0.09 }, fontFamily: 'Be Vietnam Pro', fontSize: 28, fontColor: '#FFFFFF', bgColor: '#00000088', backgroundStyle: 'blur', backgroundOpacity: 0.58, animation: 'fade_in' }),
                           ];
                           setTextOverlays(prev => [...prev, ...suggestions]);
                         }}
@@ -1076,26 +2067,65 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs text-muted-foreground">Cỡ {textFontSize}px</label>
-                            <input type="range" min="16" max="72" value={textFontSize}
+                            <input type="range" min="1" max="72" value={textFontSize}
                               onChange={(e) => setTextFontSize(Number(e.target.value))}
                               className="w-full mt-2 accent-primary"
                             />
+                            <input
+                              type="number"
+                              min="1"
+                              max="120"
+                              value={textFontSize}
+                              onChange={(e) => setTextFontSize(Number(e.target.value))}
+                              className="mt-2 h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                            />
                           </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                           {[
                             { label: "Chữ", value: textColor, setter: setTextColor },
                             { label: "Nền", value: textBgColor, setter: setTextBgColor },
                             { label: "Viền", value: textOutlineColor, setter: setTextOutlineColor },
                           ].map(({ label, value, setter }) => (
-                            <label key={label} className="space-y-1">
-                              <span className="block text-xs text-muted-foreground">{label}</span>
-                              <input type="color" value={value}
-                                onChange={(e) => setter(e.target.value)}
-                                className="h-8 w-full rounded border border-input bg-background p-0.5"
-                              />
-                            </label>
+                            <ColorFieldWithOpacity
+                              key={label}
+                              label={label}
+                              value={value}
+                              onChange={setter}
+                              fallback={label === "Chữ" ? "#FFFFFF" : "#000000"}
+                            />
                           ))}
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Kiểu nền</label>
+                            <select
+                              value={textBackgroundStyle}
+                              onChange={(e) => setTextBackgroundStyle(e.target.value as "solid" | "blur")}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            >
+                              <option value="solid">Solid</option>
+                              <option value="blur">Blur background</option>
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-medium text-muted-foreground">Opacity nền</label>
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-2xs tabular text-foreground">
+                                {Math.round(textBackgroundOpacity * 100)}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.01"
+                              value={textBackgroundOpacity}
+                              onChange={(e) => setTextBackgroundOpacity(Number(e.target.value))}
+                              className="range-slider w-full"
+                              aria-label="Text background opacity"
+                            />
+                          </div>
                         </div>
                         <label className="flex items-center gap-2 text-xs">
                           <input type="checkbox" checked={textBold} onChange={(e) => setTextBold(e.target.checked)} />
@@ -1108,7 +2138,9 @@ export function VideoEditor({ source, initialOptions = {}, onSave, onCancel }: V
                               fontFamily: textFont,
                               fontSize: `${Math.min(textFontSize, 36)}px`,
                               color: textColor,
-                              backgroundColor: textBgColor,
+                              backgroundColor: textBackgroundStyle === "blur" ? `rgba(15,23,42,${textBackgroundOpacity})` : textBgColor,
+                              backdropFilter: textBackgroundStyle === "blur" ? "blur(10px)" : undefined,
+                              WebkitBackdropFilter: textBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                               WebkitTextStroke: `1px ${textOutlineColor}`,
                               fontWeight: textBold ? 800 : 500,
                             }}

@@ -19,6 +19,7 @@ const presetSchema = z.object({
   subBorderStyle: z.coerce.number().int().min(0).max(4).optional(),
   subPosition: z.enum(['top', 'bottom', 'auto', 'custom']).optional(),
   subCustomY: z.coerce.number().min(0.05).max(0.9).optional(),
+  subBackgroundBlur: z.boolean().optional(),
   subtitlePreset: z.enum(["tiktok_bold", "meme", "pop", "bubble", "neon", "clean"]).optional(),
   subtitleAnimation: z.enum(["static", "word_highlight", "reveal_words"]).optional(),
   subHighlightColor: z.string().optional(),
@@ -47,8 +48,12 @@ const presetSchema = z.object({
   onScreenTextSizeMode: z.enum(["auto_fit", "fixed"]).optional(),
   onScreenTextColor: z.string().optional(),
   onScreenTextBgColor: z.string().optional(),
+  onScreenTextBackgroundStyle: z.enum(["solid", "blur"]).optional(),
+  onScreenTextBackgroundOpacity: z.coerce.number().min(0).max(1).optional(),
   onScreenTextOutlineColor: z.string().optional(),
+  onScreenTextOutlineWidth: z.coerce.number().min(0).max(10).optional(),
   onScreenTextBold: z.boolean().optional(),
+  onScreenTextItalic: z.boolean().optional(),
   autoDub: z.boolean().optional(),
   dubMode: z.enum(['none', 'full', 'preserve_bgm', 'heygen']).optional(),
 });
@@ -72,6 +77,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.subItalic !== undefined) updateData.sub_italic = body.subItalic;
     if (body.subOutline !== undefined) updateData.sub_outline = body.subOutline;
     if (body.subBorderStyle !== undefined) updateData.sub_border_style = body.subBorderStyle;
+    if (body.subBackgroundBlur !== undefined) updateData.sub_background_blur = body.subBackgroundBlur;
     if (body.subPosition !== undefined) updateData.sub_position = body.subPosition;
     if (body.subCustomY !== undefined) updateData.sub_custom_y = body.subCustomY;
     if (body.subtitlePreset !== undefined) updateData.subtitle_preset = body.subtitlePreset;
@@ -97,8 +103,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.onScreenTextSizeMode !== undefined) updateData.on_screen_text_size_mode = body.onScreenTextSizeMode;
     if (body.onScreenTextColor !== undefined) updateData.on_screen_text_color = body.onScreenTextColor;
     if (body.onScreenTextBgColor !== undefined) updateData.on_screen_text_bg_color = body.onScreenTextBgColor;
+    if (body.onScreenTextBackgroundStyle !== undefined) updateData.on_screen_text_background_style = body.onScreenTextBackgroundStyle;
+    if (body.onScreenTextBackgroundOpacity !== undefined) updateData.on_screen_text_background_opacity = body.onScreenTextBackgroundOpacity;
     if (body.onScreenTextOutlineColor !== undefined) updateData.on_screen_text_outline_color = body.onScreenTextOutlineColor;
+    if (body.onScreenTextOutlineWidth !== undefined) updateData.on_screen_text_outline_width = body.onScreenTextOutlineWidth;
     if (body.onScreenTextBold !== undefined) updateData.on_screen_text_bold = body.onScreenTextBold;
+    if (body.onScreenTextItalic !== undefined) updateData.on_screen_text_italic = body.onScreenTextItalic;
     if (body.autoDub !== undefined) updateData.auto_dub = body.autoDub;
     if (body.dubMode !== undefined) {
       updateData.dub_mode = body.dubMode;

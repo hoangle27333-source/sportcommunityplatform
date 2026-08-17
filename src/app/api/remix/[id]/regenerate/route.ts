@@ -1,9 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import pino from 'pino';
 import { z } from 'zod';
 import { requireEditor, AuthError } from '@/lib/auth/require-user';
 import { enqueue, QUEUE_NAMES } from '@/lib/queue';
+import { requiresVoicePipelineForRemix } from '@/lib/remix/preflight';
+import {
+  getRemixServiceHealth,
+  requireVoicePipelineV2ForLocalization,
+} from '@/lib/remix/service-health';
 
 export const dynamic = 'force-dynamic';
+const logger = pino({ name: 'api:remix-regenerate' });
 
 const regenSchema = z.object({
   editedScript: z.string().optional(),
@@ -18,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Get existing job to update options
     const { data: job, error: getError } = await db
       .from('remix_jobs')
-      .select('options')
+      .select('output_kind, options')
       .eq('id', id)
       .single();
       
@@ -29,8 +36,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const newOptions: Record<string, unknown> = { 
       ...(job.options as Record<string, unknown>), 
       regenerateOnly: true,
-      ...(body.editedScript !== undefined ? { editedScript: body.editedScript } : {}),
+      ...(body.editedScript !== undefined
+        ? {
+            scriptInputMode: 'manual_script',
+            manualScript: body.editedScript,
+            editedScript: body.editedScript,
+            generatedScript: body.editedScript,
+          }
+        : {}),
     };
+
+    const needsVoicePipeline = requiresVoicePipelineForRemix({
+      outputKind: String(job.output_kind ?? 'video') as 'video' | 'image' | 'caption',
+      ...(newOptions as Record<string, unknown>),
+    });
+    if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
+      const health = await getRemixServiceHealth();
+      if (!health.voicePipeline.reachable) {
+        logger.warn({ id, health }, 'voice pipeline unavailable for remix regenerate');
+        return NextResponse.json(
+          {
+            error:
+              "Voice Pipeline V2 chưa sẵn sàng trong profile hiện tại. " +
+              `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc bật media sidecars trước khi regenerate job này.`,
+            preflight: health,
+          },
+          { status: 503 },
+        );
+      }
+    }
     
     const { error: updateError } = await db
       .from('remix_jobs')

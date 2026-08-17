@@ -22,6 +22,7 @@ interface RemixJobDetail {
   result_hashtags: string[] | null;
   error: string | null;
   iteration: number;
+  folder_id: string | null;
   campaign_id: string | null;
   post_id: string | null;
   approved_at: string | null;
@@ -49,7 +50,7 @@ export async function GET(
       .select(
         "id, source_type, source_url, source_media_id, output_kind, prompt, options, " +
           "status, plan, result_media_id, result_caption, result_hashtags, error, " +
-          "iteration, campaign_id, post_id, approved_at, created_at, updated_at",
+          "iteration, folder_id, campaign_id, post_id, approved_at, created_at, updated_at",
       )
       .eq("id", id)
       .maybeSingle<RemixJobDetail>();
@@ -61,7 +62,7 @@ export async function GET(
       return NextResponse.json({ error: "Không tìm thấy job." }, { status: 404 });
     }
 
-    // URL công khai của media kết quả để hiển thị preview.
+    // URL công khai của media kết quả để hiển thị preview output.
     let resultUrl: string | null = null;
     if (job.result_media_id) {
       const { data: media } = await db
@@ -72,6 +73,17 @@ export async function GET(
       resultUrl = media?.url ?? null;
     }
 
+    // URL media gốc để VideoEditor chỉnh trên source sạch, không dùng video đã burn-in.
+    let sourceUrlResolved: string | null = job.source_url ?? null;
+    if (job.source_media_id) {
+      const { data: media } = await db
+        .from("media_assets")
+        .select("url")
+        .eq("id", job.source_media_id)
+        .maybeSingle<{ url: string }>();
+      sourceUrlResolved = media?.url ?? sourceUrlResolved;
+    }
+
     const { data: revisions } = await db
       .from("remix_revisions")
       .select("id, iteration, feedback, result_caption, result_media_id, created_at")
@@ -79,7 +91,7 @@ export async function GET(
       .order("iteration", { ascending: true });
 
     return NextResponse.json({
-      job: { ...job, resultUrl },
+      job: { ...job, resultUrl, sourceUrlResolved },
       revisions: revisions ?? [],
     });
   } catch (e) {
@@ -111,6 +123,9 @@ export async function PATCH(
     }
     if (body.result_caption !== undefined) {
       updates.result_caption = body.result_caption;
+    }
+    if (body.folder_id !== undefined) {
+      updates.folder_id = body.folder_id;
     }
     if (body.title !== undefined || body.options !== undefined) {
       const { data: job } = await db

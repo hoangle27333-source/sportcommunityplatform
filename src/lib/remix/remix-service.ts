@@ -36,6 +36,8 @@ import { extractAudio, transcribeToSrt } from "./asr";
 import { planRemix } from "./planner";
 import { analyzeInspiration } from "./inspiration";
 import {
+  filterForegroundOnScreenTextTracks,
+  summarizeOnScreenTextFilter,
   detectOnScreenTextLayoutFromVideo,
   translateOnScreenTextFromVideo,
   translatePlannedOnScreenTextTracks,
@@ -200,6 +202,20 @@ export async function runRemixJob(
       if (job.source_type === "upload" || job.source_type === "own_link") {
         sourceBuffer = await loadOwnSource(db, job);
         sourcePath = await writeTemp(workDir, "source", sourceBuffer);
+        
+        // Upload downloaded social media video to Supabase so Video Editor can play it
+        if (job.source_type === "own_link" && !job.source_media_id) {
+          const stored = await uploadMediaAsset(db, {
+            buffer: sourceBuffer,
+            contentType: "video/mp4",
+            ext: "mp4",
+            type: "video",
+            generatedBy: "upload",
+            meta: { prompt: job.source_url ?? undefined },
+          });
+          await db.from("remix_jobs").update({ source_media_id: stored.id }).eq("id", jobId);
+          job.source_media_id = stored.id;
+        }
         // Chỉ probe khi đầu ra cần xử lý video.
         if (job.output_kind !== "caption") {
           videoInfo = await probeVideo(sourcePath).catch(() => null);
@@ -246,12 +262,16 @@ export async function runRemixJob(
       let usedVoicePipelineV2 = false;
       const isHeyGenMode = effectiveOptions.dubMode === 'heygen';
       const manualScript = sanitizeTranscriptText(effectiveOptions.manualScript ?? effectiveOptions.editedScript ?? "");
-      const usesManualScript = effectiveOptions.scriptInputMode === "manual_script" && Boolean(manualScript);
+      const usesManualScript = Boolean(manualScript) && (
+        effectiveOptions.scriptInputMode === "manual_script" ||
+        effectiveOptions.regenerateOnly === true
+      );
       if (usesManualScript && videoInfo) {
         const duration = effectiveOptions.trimSeconds && effectiveOptions.trimSeconds > 0
           ? effectiveOptions.trimSeconds
           : videoInfo.durationSec;
-        voiceCues = manualScriptToAlignedCues(manualScript, duration);
+        voiceCues = scriptSegmentsToAlignedCues(effectiveOptions.scriptSegments, duration);
+        if (!voiceCues.length) voiceCues = manualScriptToAlignedCues(manualScript, duration);
         if (!cuesLookTranslated(voiceCues, effectiveOptions.targetLanguage ?? 'vi')) {
           voiceCues = await translateAlignedCues(
             voiceCues.map((cue) => ({
@@ -321,48 +341,7 @@ export async function runRemixJob(
               console.log(`[remix:asr-debug] voiceCues[0] translatedText: ${voiceCues[0]?.translatedText?.slice(0, 60)}`);
               console.log(`[remix:asr-debug] asrTranslatedSrt[0] (50): ${asrTranslatedSrt?.slice(0, 80)}`);
             } catch (voiceErr) {
-              warnings.push(`Voice V2 fallback: ${(voiceErr as Error).message}. Dùng Gemini SRT legacy nên timing có thể kém chính xác.`);
-              const asrResult = await transcribeToSrt(audioPath, effectiveOptions.targetLanguage ?? 'vi');
-              if (asrResult.srt) {
-                asrTranslatedSrt = asrResult.srt;
-                const rawAsrCues = parseSrtCues(asrResult.srt, videoInfo?.durationSec);
-                // Step 1: Group incomplete sentence fragments into full sentences
-                let groupedCues = groupIntoCompleteSentences(
-                  rawAsrCues.map((cue) => ({
-                    startSec: cue.startSec,
-                    endSec: cue.endSec,
-                    sourceText: cue.text,
-                    translatedText: cue.text,
-                    confidence: 0.35 as number | undefined,
-                  }))
-                );
-                if (!cuesLookTranslated(groupedCues, effectiveOptions.targetLanguage ?? 'vi')) {
-                  groupedCues = await translateAlignedCues(
-                    groupedCues.map((cue) => ({
-                      ...cue,
-                      translatedText: undefined,
-                    })),
-                    effectiveOptions.targetLanguage ?? 'vi',
-                    effectiveOptions.protectedTerms ?? [],
-                  );
-                }
-                // Step 2: Realign grouped cue timings to actual speech from silencedetect
-                const speechSegsForFallback = await detectSpeechSegments(
-                  audioPath,
-                  videoInfo?.durationSec,
-                ).catch(() => []);
-                const alignedFallbackCues = speechSegsForFallback.length
-                  ? realignCuesToSpeech(groupedCues, speechSegsForFallback, videoInfo?.durationSec ?? 0)
-                  : groupedCues;
-                voiceCues = alignedFallbackCues;
-                asrTranslatedSrt = buildSrt(alignedCuesToSubtitleCues(voiceCues));
-                asrScriptVi = voiceCues.map((cue) => cue.translatedText ?? cue.sourceText).join("\n").trim();
-                warnings.push(`Gemini SRT fallback: ${rawAsrCues.length} cues thô → ${voiceCues.length} câu hoàn chỉnh (realign ${speechSegsForFallback.length} đoạn speech).`);
-                console.log(`[remix:asr-debug] Gemini fallback voiceCues[0] translatedText: ${voiceCues[0]?.translatedText?.slice(0, 60)}`);
-                console.log(`[remix:asr-debug] Gemini fallback asrTranslatedSrt (80): ${asrTranslatedSrt?.slice(0, 80)}`);
-              } else {
-                warnings.push(`ASR không nhận ra giọng nói: ${asrResult.error ?? 'lỗi không rõ'} — AI sẽ tự sinh nội dung phụ đề.`);
-              }
+              warnings.push(`Voice V2 thất bại: ${(voiceErr as Error).message}. Đã tắt chế độ fallback Gemini SRT — tiến trình tạo voice/phụ đề từ video gốc sẽ bị hủy bỏ.`);
             }
           } else {
             warnings.push('Không trích xuất được audio từ video (có thể video không có tiếng) — AI sẽ tự sinh nội dung phụ đề.');
@@ -381,9 +360,8 @@ export async function runRemixJob(
       }
 
       if (needsTranscription && !voiceCues.length && !asrTranslatedSrt) {
-        throw new RemixError(
-          422,
-          "Không tạo được transcript thực tế từ audio nguồn nên job đã dừng để tránh dùng script AI tự bịa cho subtitle hoặc TTS.",
+        warnings.push(
+          "Không tạo được transcript thực tế từ audio nguồn (video có thể không có giọng nói hoặc AI không nghe rõ). Đã tự động tắt phụ đề và lồng tiếng để tránh AI tự bịa nội dung.",
         );
       }
 
@@ -947,6 +925,36 @@ function manualScriptToAlignedCues(script: string, durationSec: number): Aligned
   });
 }
 
+function scriptSegmentsToAlignedCues(
+  segments: RemixOptions["scriptSegments"],
+  durationSec: number,
+): AlignedVoiceCue[] {
+  const duration = Math.max(0.2, durationSec || 0.2);
+  const cues: AlignedVoiceCue[] = [];
+  for (const segment of segments ?? []) {
+    const text = sanitizeTranscriptText(segment.text ?? "");
+    const startSec = clampNumeric(Number(segment.start), 0, Math.max(0, duration - 0.1));
+    const endSec = clampNumeric(Number(segment.end), startSec + 0.2, duration);
+    if (!text || endSec <= startSec) continue;
+    const words = text.split(/\s+/).filter(Boolean);
+    const slice = words.length ? (endSec - startSec) / words.length : 0;
+    cues.push({
+      startSec: roundCueTime(startSec),
+      endSec: roundCueTime(endSec),
+      sourceText: text,
+      translatedText: text,
+      confidence: segment.isEdited ? 1 : 0.95,
+      words: words.map((word, idx) => ({
+        word,
+        startSec: roundCueTime(startSec + slice * idx),
+        endSec: roundCueTime(idx === words.length - 1 ? endSec : startSec + slice * (idx + 1)),
+        confidence: segment.isEdited ? 1 : 0.95,
+      })),
+    });
+  }
+  return cues;
+}
+
 function stripSrtToPlainText(srt: string): string {
   return sanitizeTranscriptText(srt);
 }
@@ -1192,7 +1200,12 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       const voiceOverride = options.voiceName ?? process.env.TTS_VOICE_VI ?? 'vi-VN-WaveNet-A';
       
       // Phòng hờ AI Planner vẫn lén chèn timecode vào scriptVi
-      const cleanScriptForTts = sanitizeTranscriptText(plan.scriptVi ?? "");
+      let cleanScriptForTts = sanitizeTranscriptText(plan.scriptVi ?? "");
+      
+      // Thực sự block TTS nếu không có nguồn chữ hợp lệ
+      if (!hasRealAsrScript && !hasCueFallback && !options.manualScript) {
+        cleanScriptForTts = "";
+      }
 
       const trimOp = ops.find((o) => o.op === "trim") as Extract<VideoOp, { op: "trim" }> | undefined;
       const duration = trimOp ? trimOp.duration : (videoInfo?.durationSec ?? 30);
@@ -1443,6 +1456,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       options,
       planVoiceCues(plan),
     );
+    const filterSummary = summarizeOnScreenTextFilter(translations);
 
     if (filteredTranslations.length) {
       const textStyle = resolveOnScreenTextStyle(options.onScreenTextStyle);
@@ -1451,27 +1465,32 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       const trimEnd = trimOp ? trimOp.start + trimOp.duration : undefined;
 
       for (const translation of filteredTranslations) {
+        if (hasPersistedOcrOverlayForTranslation(options.textOnScreenOverlays, translation)) continue;
         const startSec = Math.max(0, translation.startSec - trimStart);
         const endSec = Math.max(startSec + 0.2, translation.endSec - trimStart);
         if (trimEnd !== undefined && translation.startSec > trimEnd) continue;
         if (translation.endSec < trimStart) continue;
         const replacementRegions = textReplacementRegions(translation.region);
-        onScreenTextBlurRegions.push({ ...replacementRegions.blur, startSec, endSec });
+        onScreenTextBlurRegions.push({ ...replacementRegions.erase, startSec, endSec });
         ops.push({
           op: "overlayText",
           text: translation.translatedText,
           startSec,
           endSec,
           region: replacementRegions.overlay,
+          eraseRegion: replacementRegions.erase,
           fitToRegion: true,
           sizeMode: textStyle.sizeMode,
           coverRegion: true,
-          minFontSize: 12,
+          minFontSize: 1,
           maxFontSize: textStyle.size,
+          fontSizeBoostPx: textStyle.sizeMode === "auto_fit" ? 3 : 0,
           font: textStyle.font,
           fontSize: textStyle.size,
           color: textStyle.color,
           bgColor: textStyle.bgColor,
+          backgroundStyle: textStyle.backgroundStyle,
+          backgroundOpacity: textStyle.backgroundOpacity,
           outlineColor: textStyle.outlineColor,
           boxOpacity: textStyle.boxOpacity,
           bold: textStyle.bold,
@@ -1488,21 +1507,34 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       // Lưu kết quả overlays vào options để video editor hiển thị cho user chỉnh sửa lần sau
       if (filteredTranslations.length) {
         const textStyle = resolveOnScreenTextStyle(options.onScreenTextStyle);
-        options.textOnScreenOverlays = filteredTranslations.map((translation, idx) => ({
-          id: `ai_${idx}_${Date.now()}`,
-          start: Math.max(0, translation.startSec),
-          end: translation.endSec,
-          text: translation.translatedText,
-          position: {
-            x: translation.region?.x ?? 0.5,
-            y: translation.region?.y ?? 0.1,
-          },
-          fontFamily: textStyle.font ?? 'Be Vietnam Pro',
-          fontSize: textStyle.size ?? 32,
-          fontColor: textStyle.color ?? '#FFFFFF',
-          bgColor: textStyle.bgColor ?? '#000000CC',
-          animation: 'fade_in' as const,
-        }));
+        options.textOnScreenOverlays = mergePersistedTextOnScreenOverlays(
+          options.textOnScreenOverlays,
+          filteredTranslations.map((translation, idx) => ({
+            id: `ai_${idx}_${Date.now()}`,
+            start: Math.max(0, translation.startSec),
+            end: translation.endSec,
+            text: translation.translatedText,
+            source: "ocr_auto" as const,
+            ocrTrackId: buildOcrTrackId(translation),
+            sourceText: translation.detectedText,
+            position: {
+              x: translation.region?.x ?? 0.5,
+              y: translation.region?.y ?? 0.1,
+            },
+            box: replacementRegionToOverlayBox(translation.region),
+            eraseBox: replacementRegionToEraseBox(translation.region),
+            fontFamily: textStyle.font ?? 'Be Vietnam Pro',
+            fontSize: textStyle.size ?? 32,
+            fontColor: textStyle.color ?? '#FFFFFF',
+            bgColor: textStyle.bgColor ?? '#000000CC',
+            backgroundStyle: textStyle.backgroundStyle,
+            backgroundOpacity: textStyle.backgroundOpacity,
+            outlineColor: textStyle.outlineColor ?? '#000000',
+            bold: textStyle.bold,
+            sizeMode: textStyle.sizeMode,
+            animation: 'fade_in' as const,
+          })),
+        );
       }
       plan.warnings.push(
         `Đã dịch ${filteredTranslations.length} text on-screen theo tone/mood: ${filteredTranslations[0]?.toneMood || "không rõ"}. ` +
@@ -1510,7 +1542,13 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       );
       const dropped = translations.length - filteredTranslations.length;
       if (dropped > 0) {
-        plan.warnings.push(`Đã bỏ ${dropped} OCR text slot nhiễu/không đủ bbox; OCR subtitle-like hợp lệ vẫn được giữ và subtitle voice sẽ tự né vùng này.`);
+        const reasons = Object.entries(filterSummary.dropReasons)
+          .filter(([, count]) => count > 0)
+          .map(([reason, count]) => `${reason}:${count}`)
+          .join(", ");
+        plan.warnings.push(
+          `Đã bỏ ${dropped} OCR text slot nhiễu/background${reasons ? ` (${reasons})` : ""}; OCR caption/overlay foreground hợp lệ vẫn được giữ.`,
+        );
       }
       const lowConfidence = filteredTranslations.filter((item) => item.confidence < 0.55);
       if (lowConfidence.length) {
@@ -1529,10 +1567,19 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
     }
   }
 
+  const customTextOverlayRegions = appendCustomTextOverlayOps({
+    ops,
+    options,
+    durationSec: videoInfo?.durationSec ?? 30,
+  });
+  if (customTextOverlayRegions.length) {
+    plan.warnings.push(`Đã áp dụng ${customTextOverlayRegions.length} text overlay chỉnh tay từ Video Editor.`);
+  }
+
   const subtitleMove = moveSubtitleAwayFromOcrRegions({
     ops,
     options,
-    ocrRegions: onScreenTextBlurRegions,
+    ocrRegions: [...onScreenTextBlurRegions, ...customTextOverlayRegions],
     videoHeight: videoInfo?.height ?? 1920,
     plan,
     durationSec: videoInfo?.durationSec ?? 30,
@@ -1546,13 +1593,22 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
     options.watermarkConfig?.coverOriginal
       ? (options.watermarkConfig.oldWatermarkRegions ?? [])
       : [];
+  const manualBlurRegions = (options.manualBlurRegions ?? [])
+    .map((region) => ({
+      x: clampNumber(region.x, 0, 0.98, 0),
+      y: clampNumber(region.y, 0, 0.98, 0),
+      w: clampNumber(region.w, 0.01, 1 - clampNumber(region.x, 0, 0.98, 0), 0.2),
+      h: clampNumber(region.h, 0.01, 1 - clampNumber(region.y, 0, 0.98, 0), 0.1),
+      startSec: Math.max(0, region.startSec ?? 0),
+      endSec: Math.max((region.startSec ?? 0) + 0.1, region.endSec ?? (videoInfo?.durationSec ?? 30)),
+    }));
 
   const outPath = await applyVideoOps({ 
     inputPath: sourcePath, 
     ops, 
     workDir,
     blurRegion: applyBlurRegion,
-    blurRegions: [...onScreenTextBlurRegions, ...watermarkCoverRegions],
+    blurRegions: [...onScreenTextBlurRegions, ...watermarkCoverRegions, ...manualBlurRegions],
   });
   
   // --- Intro/Outro: concat nếu preset đã cấu hình ---
@@ -1818,15 +1874,11 @@ function filterSubtitleLikeOnScreenTextTracks<T extends OnScreenTextTranslation>
   _options: RemixOptions,
   _voiceCues: Array<{ startSec: number; endSec: number }>,
 ): T[] {
-  return tracks.filter((track) => {
-    const area = track.region.w * track.region.h;
+  const foregroundTracks = filterForegroundOnScreenTextTracks(tracks);
+  return foregroundTracks.filter((track) => {
     const normalized = normalizeOverlayTextForFilter(track.detectedText);
-    const detections = onScreenTextDetectionCount(track);
-    if (normalized.length <= 2) return false;
-    if (area < 0.0012 || track.region.h < 0.018) return false;
-    if (normalized.length < 6 && detections < 2 && (track.confidence < 0.72 || area < 0.008)) return false;
-    if (detections < 2 && track.confidence < 0.58) return false;
     if (looksLikeFragmentOrOcrNoise(track.detectedText, track.translatedText)) return false;
+    if (normalized.length < 4 && !track.notes.some((note) => note.startsWith("foreground=dominant_overlay"))) return false;
     return true;
   });
 }
@@ -1871,6 +1923,8 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
   size: number;
   color: string;
   bgColor: string;
+  backgroundStyle: "solid" | "blur";
+  backgroundOpacity: number;
   outlineColor: string;
   boxOpacity: number;
   bold: boolean;
@@ -1885,27 +1939,191 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
     size: number;
     color: string;
     bgColor: string;
+    backgroundStyle: "solid" | "blur";
+    backgroundOpacity: number;
     outlineColor: string;
     boxOpacity: number;
     bold: boolean;
   }> = {
-    meme: { font: "Impact", size: 34, color: "#FFFFFF", bgColor: "#000000", outlineColor: "#000000", boxOpacity: 0.05, bold: true },
-    pop: { font: "Arial", size: 34, color: "#FFF200", bgColor: "#FF2A6D", outlineColor: "#101010", boxOpacity: 0.78, bold: true },
-    bubble: { font: "Arial", size: 32, color: "#111111", bgColor: "#FFFFFF", outlineColor: "#FFB703", boxOpacity: 0.9, bold: true },
-    neon: { font: "Arial", size: 32, color: "#00F5FF", bgColor: "#090A18", outlineColor: "#FF00E5", boxOpacity: 0.72, bold: true },
-    clean: { font: "Arial", size: 28, color: "#FFFFFF", bgColor: "#111827", outlineColor: "#111827", boxOpacity: 0.68, bold: false },
+    meme: { font: "Impact", size: 34, color: "#FFFFFF", bgColor: "#000000", backgroundStyle: "solid", backgroundOpacity: 0.05, outlineColor: "#000000", boxOpacity: 0.05, bold: true },
+    pop: { font: "Arial", size: 34, color: "#FFF200", bgColor: "#FF2A6D", backgroundStyle: "solid", backgroundOpacity: 0.78, outlineColor: "#101010", boxOpacity: 0.78, bold: true },
+    bubble: { font: "Arial", size: 32, color: "#111111", bgColor: "#FFFFFF", backgroundStyle: "solid", backgroundOpacity: 0.9, outlineColor: "#FFB703", boxOpacity: 0.9, bold: true },
+    neon: { font: "Arial", size: 32, color: "#00F5FF", bgColor: "#090A18", backgroundStyle: "solid", backgroundOpacity: 0.72, outlineColor: "#FF00E5", boxOpacity: 0.72, bold: true },
+    clean: { font: "Arial", size: 28, color: "#FFFFFF", bgColor: "#111827", backgroundStyle: "solid", backgroundOpacity: 0.68, outlineColor: "#111827", boxOpacity: 0.68, bold: false },
   };
   const base = defaults[preset] ?? defaults.meme;
   return {
     ...base,
     font: style?.font || base.font,
-    size: clampNumber(style?.size, 16, 72, base.size),
+    size: clampNumber(style?.size, 1, 120, base.size),
     color: validHex(style?.color) ? style!.color! : base.color,
     bgColor: validHex(style?.bgColor) ? style!.bgColor! : base.bgColor,
+    backgroundStyle: style?.backgroundStyle === "blur" ? "blur" : base.backgroundStyle,
+    backgroundOpacity: clampNumber(style?.backgroundOpacity, 0, 1, base.backgroundOpacity),
     outlineColor: validHex(style?.outlineColor) ? style!.outlineColor! : base.outlineColor,
     bold: style?.bold ?? base.bold,
     sizeMode: style?.sizeMode ?? "auto_fit",
+    boxOpacity: clampNumber(style?.backgroundOpacity, 0, 1, base.boxOpacity),
   };
+}
+
+function appendCustomTextOverlayOps(input: {
+  ops: VideoOp[];
+  options: RemixOptions;
+  durationSec: number;
+}): Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> {
+  const overlays = input.options.textOnScreenOverlays ?? [];
+  const regions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
+  for (const overlay of overlays) {
+    if (!overlay.text?.trim()) continue;
+    if (overlay.status === "disabled" || overlay.status === "pending") continue;
+    const region = normalizeTextOverlayRegion(overlay);
+    const eraseRegion = normalizeTextOverlayEraseRegion(overlay, region);
+    const startSec = Math.max(0, overlay.start ?? 0);
+    const endSec = Math.max(startSec + 0.1, overlay.end ?? input.durationSec);
+    input.ops.push({
+      op: "overlayText",
+      text: overlay.text.trim(),
+      startSec,
+      endSec,
+      region,
+      eraseRegion,
+      fitToRegion: true,
+      sizeMode: overlay.sizeMode ?? "fixed",
+      coverRegion: inferOverlaySource(overlay) === "ocr_auto",
+      minFontSize: 1,
+      maxFontSize: overlay.fontSize,
+      fontSizeBoostPx: inferOverlaySource(overlay) === "ocr_auto" && (overlay.sizeMode ?? "fixed") === "auto_fit" ? 3 : 0,
+      font: overlay.fontFamily,
+      fontSize: overlay.fontSize,
+      color: overlay.fontColor,
+      bgColor: overlay.bgColor,
+      backgroundStyle: overlay.backgroundStyle ?? "solid",
+      backgroundOpacity: clampNumber(overlay.backgroundOpacity, 0, 1, colorHasAlpha(overlay.bgColor) ? alphaFromHex(overlay.bgColor) : 0.72),
+      outlineColor: overlay.outlineColor ?? "#000000",
+      boxOpacity: clampNumber(overlay.backgroundOpacity, 0, 1, colorHasAlpha(overlay.bgColor) ? alphaFromHex(overlay.bgColor) : 0.72),
+      bold: overlay.bold ?? true,
+      animation: overlay.animation,
+    });
+    regions.push({ ...(inferOverlaySource(overlay) === "ocr_auto" ? eraseRegion : region), startSec, endSec });
+  }
+  return regions;
+}
+
+function normalizeTextOverlayRegion(
+  overlay: NonNullable<RemixOptions["textOnScreenOverlays"]>[number],
+): { x: number; y: number; w: number; h: number } {
+  const fallbackW = 0.42;
+  const fallbackH = 0.1;
+  const box = overlay.box ?? {
+    x: (overlay.position?.x ?? 0.5) - fallbackW / 2,
+    y: (overlay.position?.y ?? 0.15) - fallbackH / 2,
+    w: fallbackW,
+    h: fallbackH,
+  };
+  const x = clampNumber(box.x, 0, 0.98, 0.29);
+  const y = clampNumber(box.y, 0, 0.98, 0.08);
+  return {
+    x,
+    y,
+    w: clampNumber(box.w, 0.01, 1 - x, fallbackW),
+    h: clampNumber(box.h, 0.01, 1 - y, fallbackH),
+  };
+}
+
+function normalizeTextOverlayEraseRegion(
+  overlay: NonNullable<RemixOptions["textOnScreenOverlays"]>[number],
+  fallbackRegion: { x: number; y: number; w: number; h: number },
+): { x: number; y: number; w: number; h: number } {
+  const box = overlay.eraseBox ?? overlay.box;
+  if (!box) return fallbackRegion;
+  const x = clampNumber(box.x, 0, 0.98, fallbackRegion.x);
+  const y = clampNumber(box.y, 0, 0.98, fallbackRegion.y);
+  return {
+    x,
+    y,
+    w: clampNumber(box.w, 0.01, 1 - x, fallbackRegion.w),
+    h: clampNumber(box.h, 0.01, 1 - y, fallbackRegion.h),
+  };
+}
+
+function inferOverlaySource(
+  overlay: NonNullable<RemixOptions["textOnScreenOverlays"]>[number],
+): "ocr_auto" | "manual" {
+  if (overlay.source === "ocr_auto" || overlay.source === "manual") return overlay.source;
+  if (overlay.ocrTrackId || overlay.sourceText || overlay.id.startsWith("ai_") || overlay.id.startsWith("plan_")) {
+    return "ocr_auto";
+  }
+  return "manual";
+}
+
+function buildOcrTrackId(track: OnScreenTextTranslation): string {
+  const text = normalizeOverlayTextForFilter(track.detectedText).slice(0, 48) || "text";
+  return `${text}:${track.startSec.toFixed(2)}:${track.endSec.toFixed(2)}:${track.region.x.toFixed(3)}:${track.region.y.toFixed(3)}`;
+}
+
+function overlayLooksLikeSameTrack(
+  overlay: NonNullable<RemixOptions["textOnScreenOverlays"]>[number],
+  translation: OnScreenTextTranslation,
+): boolean {
+  if (inferOverlaySource(overlay) !== "ocr_auto") return false;
+  if (overlay.ocrTrackId && overlay.ocrTrackId === buildOcrTrackId(translation)) return true;
+  const overlayRegion = normalizeTextOverlayRegion(overlay);
+  const overlayText = normalizeOverlayTextForFilter(overlay.sourceText || overlay.text);
+  const translationText = normalizeOverlayTextForFilter(translation.detectedText);
+  const textSimilar =
+    overlayText === translationText ||
+    overlayText.includes(translationText) ||
+    translationText.includes(overlayText);
+  const overlapsInTime =
+    Math.max(overlay.start, translation.startSec) < Math.min(overlay.end, translation.endSec);
+  return textSimilar && overlapsInTime && regionIouForRemix(overlayRegion, translation.region) >= 0.45;
+}
+
+function hasPersistedOcrOverlayForTranslation(
+  overlays: RemixOptions["textOnScreenOverlays"] | undefined,
+  translation: OnScreenTextTranslation,
+): boolean {
+  return (overlays ?? []).some((overlay) => overlayLooksLikeSameTrack(overlay, translation));
+}
+
+function mergePersistedTextOnScreenOverlays(
+  persisted: RemixOptions["textOnScreenOverlays"] | undefined,
+  detected: NonNullable<RemixOptions["textOnScreenOverlays"]>,
+): NonNullable<RemixOptions["textOnScreenOverlays"]> {
+  const base = (persisted ?? []).filter((overlay) => overlay.text?.trim());
+  const merged = [...base];
+  for (const candidate of detected) {
+    const exists = merged.some((overlay) => overlayLooksLikeSameTrack(overlay, {
+      detectedText: candidate.sourceText || candidate.text,
+      translatedText: candidate.text,
+      region: candidate.box ?? normalizeTextOverlayRegion(candidate),
+      startSec: candidate.start,
+      endSec: candidate.end,
+      toneMood: "",
+      confidence: 1,
+      notes: [],
+    }));
+    if (!exists) merged.push(candidate);
+  }
+  return merged;
+}
+
+function replacementRegionToOverlayBox(region: { x: number; y: number; w: number; h: number }) {
+  return textReplacementRegions(region).overlay;
+}
+
+function replacementRegionToEraseBox(region: { x: number; y: number; w: number; h: number }) {
+  return textReplacementRegions(region).erase;
+}
+
+function colorHasAlpha(color: string | undefined): boolean {
+  return /^#[0-9a-fA-F]{8}$/.test(color ?? "");
+}
+
+function alphaFromHex(color: string | undefined): number {
+  if (!colorHasAlpha(color)) return 1;
+  return clampNumber(parseInt((color as string).slice(7, 9), 16) / 255, 0, 1, 1);
 }
 
 function resolveSubtitlePlacement(
@@ -2010,12 +2228,14 @@ function textReplacementRegions(
 ): {
   base: { x: number; y: number; w: number; h: number };
   blur: { x: number; y: number; w: number; h: number };
+  erase: { x: number; y: number; w: number; h: number };
   overlay: { x: number; y: number; w: number; h: number };
 } {
   const base = clampRegionSize(region, 1, 1);
   return {
     base,
     blur: padRegion(base, 0.006),
+    erase: padRegion(base, Math.max(0.008, Math.min(0.02, base.h * 0.35))),
     overlay: padRegion(base, 0.002),
   };
 }
@@ -2076,7 +2296,7 @@ async function removeLightBackground(buffer: Buffer): Promise<Buffer> {
 }
 
 function validHex(value: string | undefined): boolean {
-  return /^#[0-9a-fA-F]{6}$/.test(value ?? "");
+  return /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value ?? "");
 }
 
 function clampNumber(value: number | undefined, min: number, max: number, fallback: number): number {
@@ -2257,7 +2477,7 @@ async function loadOwnSource(
         if (profile.cookieMode?.type === "cookies") {
           ytOptions.cookies = profile.cookieMode.value;
         } else if (profile.cookieMode?.type === "browser") {
-          ytOptions["cookies-from-browser"] = profile.cookieMode.value;
+          ytOptions.cookiesFromBrowser = profile.cookieMode.value;
         }
 
         if (profile.extractorArgs) {
@@ -2323,15 +2543,11 @@ function buildYtDlpAttemptProfiles(input: {
   const explicitCookieMode = resolveExplicitCookieMode(input.envCookies, input.envCookiesFromBrowser);
   const attempts: YtDlpAttemptProfile[] = [];
 
-  if (!input.isYouTube) {
-    return input.formats.map((format) => ({ format, cookieMode: explicitCookieMode }));
-  }
-
   // 1. Try with cookies (if any)
   if (explicitCookieMode) {
     attempts.push(...input.formats.map((format) => ({ format, cookieMode: explicitCookieMode })));
   } else {
-    // 2. Try auto browsers if no explicit cookies
+    // 2. Try auto browsers if no explicit cookies (applies to Instagram, Facebook, YT, etc.)
     const autoBrowsers = (process.env.YTDL_AUTO_BROWSER_CANDIDATES ?? "chrome,safari,firefox")
       .split(",")
       .map((item) => item.trim())
@@ -2358,11 +2574,12 @@ function buildYtDlpAttemptProfiles(input: {
 
   // 3. FALLBACK: YouTube is heavily blocking downloads right now.
   // The android client WITHOUT cookies often bypasses 403 Forbidden.
-  // We append this as a last-resort fallback for YouTube.
-  attempts.push(...input.formats.map((format) => ({ 
-    format, 
-    extractorArgs: "youtube:player_client=android" 
-  })));
+  if (input.isYouTube) {
+    attempts.push(...input.formats.map((format) => ({ 
+      format, 
+      extractorArgs: "youtube:player_client=android" 
+    })));
+  }
 
   return attempts;
 }

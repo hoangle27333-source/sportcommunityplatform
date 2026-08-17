@@ -1,5 +1,6 @@
 import type { Worker } from "bullmq";
 import pino from "pino";
+import { writeFile } from "node:fs/promises";
 import {
   QUEUE_NAMES,
   createRedisConnection,
@@ -11,6 +12,8 @@ import { createContentGenWorker } from "./processors/content-gen";
 import { createEngagementWorker } from "./processors/engagement";
 import { createRemixWorker } from "./processors/remix";
 import { createPlaywrightWorker } from "./processors/playwright";
+import { shouldRunQueue } from "./config";
+import { observeQueue, type QueueObserver } from "./observability";
 
 /**
  * BullMQ worker entrypoint (SPEC §2, §5, §6, §7, §8).
@@ -20,6 +23,8 @@ import { createPlaywrightWorker } from "./processors/playwright";
  */
 
 const logger = pino({ name: "worker" });
+const HEARTBEAT_FILE = process.env.WORKER_HEARTBEAT_FILE ?? "/tmp/worker-heartbeat";
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 // Health/liveness connection so we surface Redis connectivity in the logs even
 // before a job arrives. Each Worker manages its own blocking connection.
@@ -28,14 +33,34 @@ connection.on("connect", () => logger.info("redis connected"));
 connection.on("error", (err) => logger.error({ err }, "redis error"));
 
 const workers: Worker[] = [];
+const observers: QueueObserver[] = [];
+let heartbeatTimer: NodeJS.Timeout | null = null;
 
 function registerWorkers() {
-  workers.push(createPublishWorker());
-  workers.push(createAnalyticsSyncWorker());
-  workers.push(createContentGenWorker());
-  workers.push(createEngagementWorker());
-  workers.push(createRemixWorker());
-  workers.push(createPlaywrightWorker());
+  if (shouldRunQueue(QUEUE_NAMES.publish)) {
+    workers.push(createPublishWorker());
+    observers.push(observeQueue(QUEUE_NAMES.publish));
+  }
+  if (shouldRunQueue(QUEUE_NAMES.analyticsSync)) {
+    workers.push(createAnalyticsSyncWorker());
+    observers.push(observeQueue(QUEUE_NAMES.analyticsSync));
+  }
+  if (shouldRunQueue(QUEUE_NAMES.contentGen)) {
+    workers.push(createContentGenWorker());
+    observers.push(observeQueue(QUEUE_NAMES.contentGen));
+  }
+  if (shouldRunQueue(QUEUE_NAMES.engagement)) {
+    workers.push(createEngagementWorker());
+    observers.push(observeQueue(QUEUE_NAMES.engagement));
+  }
+  if (shouldRunQueue(QUEUE_NAMES.remix)) {
+    workers.push(createRemixWorker());
+    observers.push(observeQueue(QUEUE_NAMES.remix));
+  }
+  if (shouldRunQueue(QUEUE_NAMES.playwright)) {
+    workers.push(createPlaywrightWorker());
+    observers.push(observeQueue(QUEUE_NAMES.playwright));
+  }
   logger.info({ queues: workers.map((w) => w.name) }, "workers registered");
 }
 
@@ -44,6 +69,7 @@ function registerWorkers() {
  * schedule by pattern+name, so registering on every boot is idempotent.
  */
 async function registerCron() {
+  if (!shouldRunQueue(QUEUE_NAMES.analyticsSync)) return;
   const pattern = process.env.ANALYTICS_SYNC_CRON ?? "0 */6 * * *";
   await scheduleRepeatable(
     QUEUE_NAMES.analyticsSync,
@@ -58,13 +84,30 @@ registerWorkers();
 registerCron().catch((err) =>
   logger.error({ err }, "failed to register cron jobs"),
 );
+void writeHeartbeat();
+heartbeatTimer = setInterval(() => {
+  void writeHeartbeat();
+}, HEARTBEAT_INTERVAL_MS);
 logger.info("worker started");
+
+async function writeHeartbeat() {
+  await writeFile(
+    HEARTBEAT_FILE,
+    JSON.stringify({
+      pid: process.pid,
+      updatedAt: new Date().toISOString(),
+      queues: workers.map((w) => w.name),
+    }),
+  );
+}
 
 // Keep the process alive until a signal arrives, draining workers cleanly so
 // in-flight jobs finish (or are re-queued) rather than being lost.
 async function shutdown(signal: string) {
   logger.info({ signal }, "shutting down worker");
   try {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    await Promise.all(observers.map((observer) => observer.close()));
     await Promise.all(workers.map((w) => w.close()));
     await connection.quit();
   } catch (err) {

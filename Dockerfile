@@ -51,3 +51,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.json ./
 COPY src ./src
 CMD ["npm", "run", "worker:start"]
+
+# ---- worker-playwright: worker + Chromium deps for optional browser jobs ---
+FROM worker AS worker-playwright
+RUN npx playwright install --with-deps chromium

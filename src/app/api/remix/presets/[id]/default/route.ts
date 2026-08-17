@@ -7,8 +7,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { db, user } = await requireEditor();
     const { id } = await params;
-    
-    // reset all to false for this org_id
+
+    const { data: targetPreset, error: targetError } = await db
+      .from('remix_presets')
+      .select('id')
+      .eq('id', id)
+      .eq('org_id', user.id)
+      .maybeSingle();
+
+    if (targetError) return NextResponse.json({ error: targetError.message }, { status: 500 });
+    if (!targetPreset) return NextResponse.json({ error: 'Preset không tồn tại hoặc bạn không có quyền truy cập.' }, { status: 404 });
+
     const { error: resetError } = await db
       .from('remix_presets')
       .update({ is_default: false })

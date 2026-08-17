@@ -1,48 +1,79 @@
 "use client";
 
 import * as React from "react";
-import { Sidebar } from "./sidebar";
+import { cn } from "@/lib/utils/cn";
+import {
+  DesktopSidebar,
+  MobileSidebar,
+  useSidebarCollapsed,
+} from "./sidebar";
 import { Topbar } from "./topbar";
-import { UserMenu } from "./user-menu";
-import type { NavCounts, Role } from "./nav";
+import { CommandPalette } from "@/components/ui/command-palette";
+import type { Role, NavCounts } from "./nav";
 
 /**
- * Client wrapper that owns the mobile drawer state shared by the topbar trigger
- * and the sidebar. Everything data-dependent (role, counts, identity) is
- * resolved on the server and passed in as plain props.
+ * DashboardShell — redesign v2
  *
- * Layout: fixed 240px rail on lg+, content offset by the same token
- * (`lg:pl-rail`) so the rail never overlaps the scroll container.
+ * Manages: desktop sidebar collapsed state, mobile drawer, command palette.
+ * Main content area shifts with sidebar width via CSS transition.
  */
 export function DashboardShell({
   role,
-  counts,
   name,
   email,
+  counts,
   children,
 }: {
   role: Role;
-  counts?: NavCounts;
   name: string;
   email: string;
+  counts: NavCounts;
   children: React.ReactNode;
 }) {
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const close = React.useCallback(() => setMenuOpen(false), []);
+  const { collapsed, toggle } = useSidebarCollapsed();
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [commandOpen, setCommandOpen] = React.useState(false);
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar role={role} counts={counts} open={menuOpen} onClose={close} />
+      {/* Desktop sidebar */}
+      <DesktopSidebar
+        role={role}
+        counts={counts}
+        collapsed={collapsed}
+        onToggle={toggle}
+      />
 
-      <div className="flex min-h-screen flex-col lg:pl-rail">
+      {/* Mobile drawer */}
+      <MobileSidebar
+        role={role}
+        counts={counts}
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+      />
+
+      {/* ⌘K Command Palette */}
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+      />
+
+      {/* Main area */}
+      <div
+        className={cn(
+          "flex flex-col transition-all duration-200 ease-spring",
+          "md:ml-16", // collapsed default matches rail-collapsed
+          !collapsed && "md:ml-60",
+        )}
+      >
         <Topbar
-          onOpenMenu={() => setMenuOpen(true)}
-          right={<UserMenu name={name} email={email} role={role} />}
+          role={role}
+          name={name}
+          email={email}
+          onMobileMenuOpen={() => setMobileOpen(true)}
+          onCommandOpen={() => setCommandOpen(true)}
         />
-        <main
-          id="main"
-          className="flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6"
-        >
+        <main className="flex-1 p-4 sm:p-6">
           {children}
         </main>
       </div>

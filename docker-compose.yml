@@ -8,6 +8,7 @@
 
 services:
   postgres:
+    profiles: ["local-db"]
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -25,9 +26,21 @@ services:
       retries: 5
 
   redis:
+    profiles: ["core", "media-heavy"]
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--maxmemory",
+        "${REDIS_MAXMEMORY:-512mb}",
+        "--maxmemory-policy",
+        "${REDIS_MAXMEMORY_POLICY:-noeviction}"
+      ]
     volumes:
       - redisdata:/data
     ports:
@@ -39,6 +52,7 @@ services:
       retries: 5
 
   web:
+    profiles: ["core"]
     build:
       context: .
       dockerfile: Dockerfile
@@ -54,13 +68,21 @@ services:
         condition: service_healthy
     ports:
       - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    mem_limit: 1g
+    cpus: 1.0
 
   # NOTE — Playwright / Chromium:
   # The worker now includes the Playwright Chromium browser (unofficial seeding module).
   # On Linux VPS, the Dockerfile worker stage must run: npx playwright install --with-deps chromium
   # Add `cap_add: [SYS_ADMIN]` if running headless in Docker.
   # For the connect-flow (visible browser), run PLAYWRIGHT_HEADLESS=false on the HOST, not in Docker.
-  worker:
+  worker-core:
+    profiles: ["core"]
     build:
       context: .
       dockerfile: Dockerfile
@@ -71,8 +93,36 @@ services:
         required: false
     environment:
       REDIS_URL: redis://redis:6379
-      COMFYUI_URL: http://comfyui:8188
+      WORKER_GROUP: core
+      WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
       PLAYWRIGHT_HEADLESS: "true"   # headless=true in Docker; connect flow runs on host
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const fs=require('node:fs'); try { const stat=fs.statSync('/tmp/worker-heartbeat'); process.exit(Date.now()-stat.mtimeMs < 90000 ? 0 : 1); } catch { process.exit(1); }\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    mem_limit: 1g
+    cpus: 1.0
+
+  worker-remix:
+    profiles: ["media-heavy"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REDIS_URL: redis://redis:6379
+      WORKER_GROUP: remix
+      WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
+      COMFYUI_URL: http://comfyui:8188
+      PLAYWRIGHT_HEADLESS: "true"
       ON_SCREEN_TEXT_ENGINE: ${ON_SCREEN_TEXT_ENGINE:-gemini}
       PADDLEOCR_SERVICE_URL: http://ocr:8080
       PADDLEOCR_TIMEOUT_MS: ${PADDLEOCR_TIMEOUT_MS:-120000}
@@ -81,15 +131,50 @@ services:
       VOICE_PIPELINE_TIMEOUT_MS: ${VOICE_PIPELINE_TIMEOUT_MS:-300000}
       VOICE_ALIGNMENT_PROVIDER: ${VOICE_ALIGNMENT_PROVIDER:-whisperx}
       VOICE_REQUIRE_V2_FOR_LOCALIZATION: ${VOICE_REQUIRE_V2_FOR_LOCALIZATION:-true}
-    cap_add:
-      - SYS_ADMIN  # required by Chromium sandbox in Docker
     depends_on:
       redis:
         condition: service_healthy
       voice-pipeline:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const fs=require('node:fs'); try { const stat=fs.statSync('/tmp/worker-heartbeat'); process.exit(Date.now()-stat.mtimeMs < 90000 ? 0 : 1); } catch { process.exit(1); }\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    mem_limit: 2g
+    cpus: 2.0
+
+  worker-playwright:
+    profiles: ["media-heavy"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker-playwright
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REDIS_URL: redis://redis:6379
+      WORKER_GROUP: playwright
+      WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
+      ENABLE_PLAYWRIGHT_WORKER: "true"
+      PLAYWRIGHT_HEADLESS: "true"
+    cap_add:
+      - SYS_ADMIN
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const fs=require('node:fs'); try { const stat=fs.statSync('/tmp/worker-heartbeat'); process.exit(Date.now()-stat.mtimeMs < 90000 ? 0 : 1); } catch { process.exit(1); }\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    mem_limit: 1500m
+    cpus: 1.5
 
   ocr:
+    profiles: ["media-heavy"]
     build:
       context: .
       dockerfile: Dockerfile.ocr
@@ -104,8 +189,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    mem_limit: 1500m
+    cpus: 1.5
 
   voice-pipeline:
+    profiles: ["media-heavy"]
     build:
       context: .
       dockerfile: Dockerfile.voice
@@ -126,11 +214,14 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    mem_limit: 2g
+    cpus: 2.0
 
   # ComfyUI — self-hosted image generation (SPEC §7.2).
   # GPU access requires the NVIDIA Container Toolkit on the host; uncomment the
   # deploy block below on a GPU VPS. Without a GPU it runs (slowly) on CPU.
   comfyui:
+    profiles: ["media-heavy"]
     image: ${COMFYUI_IMAGE:-yanwk/comfyui-boot:latest}
     restart: unless-stopped
     ports:
@@ -138,6 +229,8 @@ services:
     volumes:
       - comfyui_models:/root/ComfyUI/models
       - comfyui_output:/root/ComfyUI/output
+    mem_limit: 4g
+    cpus: 2.0
     # deploy:
     #   resources:
     #     reservations:

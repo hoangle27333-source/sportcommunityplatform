@@ -9,6 +9,8 @@ import {
   actionShare,
 } from "@/lib/playwright/browser-actions";
 import { runConnectFlow } from "@/lib/playwright/connect-flow";
+import { getWorkerConcurrency } from "@/worker/config";
+import { processScrapeTrackedAccount } from "@/worker/scrape-tracked-account";
 
 /**
  * Playwright worker processor.
@@ -33,23 +35,33 @@ export interface PlaywrightConnectJobData {
   accountName: string;
 }
 
+export interface PlaywrightScrapeTrackedJobData {
+  type?: undefined; // no 'type' field — dispatched by trackedAccountId presence
+  trackedAccountId: string;
+}
+
 export type PlaywrightJobData =
   | PlaywrightSeedingJobData
-  | PlaywrightConnectJobData;
+  | PlaywrightConnectJobData
+  | PlaywrightScrapeTrackedJobData;
 
 export function createPlaywrightWorker(): Worker<PlaywrightJobData> {
   const worker = new Worker<PlaywrightJobData>(
     QUEUE_NAMES.playwright,
     async (job: Job<PlaywrightJobData>) => {
-      if (job.data.type === "connect") {
-        return handleConnect(job.data);
+      // Route by job name first (most specific), then by data shape
+      if (job.name === "scrape-tracked-account") {
+        return processScrapeTrackedAccount(job);
       }
-      return handleSeeding(job.data);
+      if ((job.data as PlaywrightConnectJobData).type === "connect") {
+        return handleConnect(job.data as PlaywrightConnectJobData);
+      }
+      return handleSeeding(job.data as PlaywrightSeedingJobData);
     },
     {
       connection: createRedisConnection(),
       // CRITICAL: concurrency=1 — only one browser at a time.
-      concurrency: 1,
+      concurrency: getWorkerConcurrency(QUEUE_NAMES.playwright),
     },
   );
 

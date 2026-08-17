@@ -2,69 +2,52 @@ import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * Form controls.
+ * Field — accessible form control primitives, redesign v2.
  *
- * Every control is label-associated (NFR5) — `Field` generates an id when the
- * caller doesn't pass one and wires label/description/error via
- * aria-describedby + aria-invalid, so screen readers announce the error text
- * rather than relying on the red border alone.
- *
- * Inputs stay at 16px on mobile (text-base md:text-sm) to stop iOS Safari from
- * auto-zooming the viewport on focus.
+ * Rounded 10px, Blue focus ring, consistent label/hint/error pattern.
+ * Render-prop pattern: Field wraps controls via children(props).
+ * Error messaging uses role="alert" + aria-live for screen readers.
  */
 
-const CONTROL = cn(
-  "w-full rounded border border-input bg-card px-2.5 py-2 text-base md:text-sm",
-  "text-foreground placeholder:text-muted-foreground/70",
-  "transition-colors duration-150",
-  "hover:border-ring/40",
-  "focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30",
-  "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
-  "aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-destructive/25",
-);
+// ─── Field wrapper ────────────────────────────────────────────────────────────
 
 export interface FieldProps {
   label: string;
-  /** Rendered under the control; also announced via aria-describedby. */
-  hint?: string;
-  error?: string | null;
-  required?: boolean;
-  /** Visually hide the label but keep it for assistive tech. */
+  /** Visually hidden label (still announced by screen readers). */
   srOnlyLabel?: boolean;
+  hint?: string;
+  error?: string;
+  required?: boolean;
   className?: string;
-  /** Receives the wiring to spread onto the control. */
   children: (props: {
     id: string;
-    "aria-invalid": boolean;
-    "aria-describedby": string | undefined;
-    className: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean;
+    "aria-required"?: boolean;
+    className?: string;
   }) => React.ReactNode;
-  id?: string;
 }
 
 export function Field({
   label,
+  srOnlyLabel,
   hint,
   error,
   required,
-  srOnlyLabel,
   className,
   children,
-  id: providedId,
 }: FieldProps) {
-  const autoId = React.useId();
-  const id = providedId ?? autoId;
+  const id = React.useId();
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
-  // Error takes precedence in the announcement order, but both are linked.
-  const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
+  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className={cn("space-y-1.5", className)}>
+    <div className={cn("flex flex-col gap-1.5", className)}>
       <label
         htmlFor={id}
         className={cn(
-          "block text-xs font-medium text-foreground",
+          "text-sm font-medium text-foreground",
           srOnlyLabel && "sr-only",
         )}
       >
@@ -78,119 +61,112 @@ export function Field({
 
       {children({
         id,
-        "aria-invalid": Boolean(error),
         "aria-describedby": describedBy,
-        className: CONTROL,
+        "aria-invalid": error ? true : undefined,
+        "aria-required": required,
       })}
 
-      {error ? (
-        <p id={errorId} role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      ) : hint ? (
+      {hint && !error && (
         <p id={hintId} className="text-xs text-muted-foreground">
           {hint}
         </p>
-      ) : null}
+      )}
+      {error && (
+        <p
+          id={errorId}
+          role="alert"
+          aria-live="polite"
+          className="text-xs text-destructive"
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+
+const INPUT_BASE = [
+  "w-full rounded-[10px] border border-input bg-card px-3 py-2",
+  "text-sm text-foreground placeholder:text-muted-foreground/60",
+  "transition-colors duration-150",
+  "hover:border-primary/40",
+  "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
+  "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
+  "aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-destructive/20",
+].join(" ");
 
 export const Input = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement>
->(function Input({ className, ...props }, ref) {
-  return <input ref={ref} className={cn(CONTROL, className)} {...props} />;
-});
+>(({ className, ...props }, ref) => (
+  <input ref={ref} className={cn(INPUT_BASE, className)} {...props} />
+));
+Input.displayName = "Input";
+
+// ─── Textarea ─────────────────────────────────────────────────────────────────
 
 export const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.TextareaHTMLAttributes<HTMLTextAreaElement>
->(function Textarea({ className, ...props }, ref) {
-  return (
-    <textarea
-      ref={ref}
-      className={cn(CONTROL, "min-h-24 resize-y leading-relaxed", className)}
-      {...props}
-    />
-  );
-});
+>(({ className, ...props }, ref) => (
+  <textarea
+    ref={ref}
+    className={cn(INPUT_BASE, "min-h-[80px] resize-y leading-relaxed", className)}
+    {...props}
+  />
+));
+Textarea.displayName = "Textarea";
+
+// ─── Select ───────────────────────────────────────────────────────────────────
 
 export const Select = React.forwardRef<
   HTMLSelectElement,
   React.SelectHTMLAttributes<HTMLSelectElement>
->(function Select({ className, children, ...props }, ref) {
-  return (
-    <select
-      ref={ref}
-      className={cn(CONTROL, "cursor-pointer pr-8", className)}
-      {...props}
-    >
-      {children}
-    </select>
-  );
-});
+>(({ className, ...props }, ref) => (
+  <select
+    ref={ref}
+    className={cn(INPUT_BASE, "cursor-pointer appearance-none pr-8", className)}
+    {...props}
+  />
+));
+Select.displayName = "Select";
 
-/**
- * Checkbox with a 44px-tall hit area (touch target rule) achieved by padding
- * the wrapping label rather than scaling the box itself.
- */
-export function Checkbox({
-  label,
-  description,
-  className,
-  ...props
-}: React.InputHTMLAttributes<HTMLInputElement> & {
-  label: React.ReactNode;
+// ─── Checkbox ─────────────────────────────────────────────────────────────────
+
+export interface CheckboxProps
+  extends React.InputHTMLAttributes<HTMLInputElement> {
+  label: string;
+  hint?: string;
+  /** Alias for hint — backward compatibility. */
   description?: string;
-}) {
-  const id = React.useId();
+}
+
+export function Checkbox({ label, hint, description, className, id: externalId, ...props }: CheckboxProps) {
+  const generatedId = React.useId();
+  const id = externalId ?? generatedId;
+  const helpText = hint ?? description;
   return (
     <label
-      htmlFor={props.id ?? id}
-      className={cn(
-        "flex cursor-pointer items-start gap-2.5 rounded px-1 py-2.5",
-        "transition-colors duration-150 hover:bg-muted/60",
-        props.disabled && "cursor-not-allowed opacity-60 hover:bg-transparent",
-        className,
-      )}
+      htmlFor={id}
+      className="flex cursor-pointer items-start gap-3 py-1"
     >
       <input
         type="checkbox"
-        id={props.id ?? id}
+        id={id}
         className={cn(
-          "mt-0.5 size-4 shrink-0 cursor-pointer rounded-sm border-input",
-          "text-primary accent-primary",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          "mt-0.5 h-4 w-4 shrink-0 rounded border-border",
+          "accent-primary cursor-pointer",
+          "focus-visible:ring-2 focus-visible:ring-primary/40",
+          className,
         )}
         {...props}
       />
-      <span className="min-w-0 text-sm leading-tight">
-        <span className="block text-foreground">{label}</span>
-        {description && (
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            {description}
-          </span>
-        )}
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        {helpText && <span className="text-xs text-muted-foreground">{helpText}</span>}
       </span>
     </label>
-  );
-}
-
-/** Inline label above a value — the read-only counterpart of Field. */
-export function ReadonlyField({
-  label,
-  children,
-  className,
-}: {
-  label: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn("space-y-1", className)}>
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="text-sm text-foreground">{children}</dd>
-    </div>
   );
 }

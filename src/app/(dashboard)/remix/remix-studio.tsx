@@ -12,8 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Status } from "@/components/ui/badge";
 import { Field, Input, Textarea, Select, Checkbox } from "@/components/ui/field";
+import { ColorFieldWithOpacity } from "@/components/ui/color-field-with-opacity";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Sparkles, Plus, X, Zap, ChevronDown } from "lucide-react";
+import { Sparkles, Plus, X, Zap, ChevronDown, Folder, FolderOpen, ChevronRight, Edit2, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 
@@ -26,6 +27,12 @@ import { RatioPicker } from '@/components/remix/ratio-picker';
 import { BlurRegionPicker, type BlurRegion } from '@/components/remix/blur-region-picker';
 import { requiresOcrServiceForRemix, requiresVoicePipelineForRemix } from "@/lib/remix/preflight";
 import { sanitizeTranscriptText } from "@/lib/remix/utils";
+import {
+  buildCaptionPromptFromPreset,
+  buildCaptionToneFromPreset,
+  captionPresetToManualInput,
+  type CaptionPresetManualInput,
+} from "@/lib/remix/caption-preset-options";
 
 type SourceType = "upload" | "own_link" | "inspiration";
 type OutputKind = "video" | "image" | "caption";
@@ -63,6 +70,7 @@ interface JobSummary {
   options: Record<string, any>;
   iteration: number;
   created_at: string;
+  folder_id?: string | null;
   is_auto_fix?: boolean;
   auto_fix_source_id?: string | null;
 }
@@ -102,7 +110,11 @@ interface JobDetail {
         region?: { x: number; y: number; w: number; h: number };
         confidence?: number;
       }>;
-      audio?: { mode?: string; voiceName?: string };
+      audio?: {
+        mode?: string;
+        voiceName?: string;
+        cues?: Array<{ id?: string; startSec?: number; endSec?: number; sourceText?: string; translatedText?: string }>;
+      };
       subtitles?: { enabled?: boolean; position?: string };
     };
     finalReview?: {
@@ -123,11 +135,23 @@ interface JobDetail {
   result_caption: string | null;
   result_hashtags: string[] | null;
   resultUrl: string | null;
+  sourceUrlResolved?: string | null;
   error: string | null;
   post_id: string | null;
   iteration: number;
+  folder_id?: string | null;
   is_auto_fix?: boolean;
   auto_fix_source_id?: string | null;
+}
+
+interface RemixFolderNode {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+  jobCount: number;
+  totalJobCount: number;
+  children: RemixFolderNode[];
 }
 
 interface RemixServiceHealth {
@@ -160,11 +184,57 @@ const SOURCE_TABS: { value: SourceType; label: string; hint: string }[] = [
     label: "Link của mình",
     hint: "Link bài đăng do chính bạn/Page bạn sở hữu. Hệ thống sẽ tải media về để biên tập.",
   },
-  {
-    value: "inspiration",
-    label: "Link tham khảo",
-    hint: "Bài của người khác. Hệ thống KHÔNG tải file gốc — chỉ phân tích công thức để làm nội dung mới từ asset của bạn.",
-  },
+];
+
+const CAPTION_PLATFORM_OPTIONS = [
+  "TikTok",
+  "Instagram Reels",
+  "Facebook Reels",
+  "YouTube Shorts",
+  "Facebook Page",
+  "LinkedIn",
+  "X/Twitter",
+  "Threads",
+];
+
+function emptyCaptionPresetState(): CaptionPresetManualInput {
+  return {
+    platforms: [],
+    toneAndVoice: "",
+    audience: "",
+    captionLength: "",
+    hookStyle: "",
+    cta: "",
+    requiredHashtags: [],
+    optionalHashtags: [],
+    bannedHashtags: [],
+    requiredKeywords: [],
+    bannedKeywords: [],
+    emojiStyle: "",
+    formatStyle: "",
+    brandRules: "",
+    sampleCaptions: "",
+    extraInstructions: "",
+  };
+}
+
+function tagsToText(values: string[] | undefined) {
+  return (values ?? []).join(", ");
+}
+
+function textToTags(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+const QUALITY_PRESETS = [
+  { label: "Siêu nét", desc: "Phim, TV — file lớn", crf: 14 },
+  { label: "Chất lượng cao", desc: "Upload web, archive", crf: 18 },
+  { label: "Chuẩn", desc: "TikTok / Reels / Shorts", crf: 22 },
+  { label: "Nén nhẹ", desc: "File nhỏ hơn, stream tốt", crf: 26 },
+  { label: "Nhỏ nhất", desc: "Tối ưu dung lượng", crf: 30 },
 ];
 
 export function RemixStudio({
@@ -177,7 +247,6 @@ export function RemixStudio({
   // --- form nguồn ---
   const [sourceType, setSourceType] = React.useState<SourceType>("upload");
   const [sourceUrl, setSourceUrl] = React.useState("");
-  const [ownershipConfirmed, setOwnershipConfirmed] = React.useState(false);
   const [uploadedMedia, setUploadedMedia] = React.useState<{
     id: string;
     url: string;
@@ -204,14 +273,22 @@ export function RemixStudio({
   const [dubMode, setDubMode] = React.useState<'none' | 'full' | 'preserve_bgm' | 'heygen'>('none');
   const [vertical, setVertical] = React.useState(true);
   const [outputRatio, setOutputRatio] = React.useState("9:16");
+  const [outputCrf, setOutputCrf] = React.useState<number>(28);
+  const [manualVideoTab, setManualVideoTab] = React.useState<"general" | "voice" | "subtitle" | "onscreen" | "watermark">("general");
   const [blurOriginalSub, setBlurOriginalSub] = React.useState(false);
   const [autoDetectSub, setAutoDetectSub] = React.useState(false);
   const [blurRegion, setBlurRegion] = React.useState<BlurRegion>({ x: 0, y: 0.82, w: 1, h: 0.18 });
-  const [brandLogo, setBrandLogo] = React.useState(false);
-  const [logoPosition, setLogoPosition] = React.useState("bottom-right");
-  const [colorGrade, setColorGrade] = React.useState(false);
+  const [watermarkMode, setWatermarkMode] = React.useState<"disabled" | "text" | "image">("disabled");
+  const [watermarkText, setWatermarkText] = React.useState("");
+  const [watermarkImageMediaId, setWatermarkImageMediaId] = React.useState("");
+  const [watermarkOpacity, setWatermarkOpacity] = React.useState("0.9");
+  const [watermarkScale, setWatermarkScale] = React.useState("0.15");
+  const [watermarkPosition, setWatermarkPosition] = React.useState("bottom-right");
+  const [watermarkPositionX, setWatermarkPositionX] = React.useState("0.5");
+  const [watermarkPositionY, setWatermarkPositionY] = React.useState("0.5");
   const [muteOriginal, setMuteOriginal] = React.useState(false);
-  const [trimSeconds, setTrimSeconds] = React.useState("");
+  const [trimStartInput, setTrimStartInput] = React.useState("");
+  const [trimEndInput, setTrimEndInput] = React.useState("");
   const [translateOnScreenText, setTranslateOnScreenText] = React.useState(false);
   const [onScreenTextHint, setOnScreenTextHint] = React.useState("");
   const [onScreenTextPreset, setOnScreenTextPreset] = React.useState<OnScreenTextPreset>("meme");
@@ -220,27 +297,80 @@ export function RemixStudio({
   const [onScreenTextSizeMode, setOnScreenTextSizeMode] = React.useState<OnScreenTextSizeMode>("auto_fit");
   const [onScreenTextColor, setOnScreenTextColor] = React.useState("#FFFFFF");
   const [onScreenTextBgColor, setOnScreenTextBgColor] = React.useState("#000000");
+  const [onScreenTextBackgroundStyle, setOnScreenTextBackgroundStyle] = React.useState<"solid" | "blur">("solid");
+  const [onScreenTextBackgroundOpacity, setOnScreenTextBackgroundOpacity] = React.useState(0.72);
   const [onScreenTextOutlineColor, setOnScreenTextOutlineColor] = React.useState("#000000");
   const [onScreenTextBold, setOnScreenTextBold] = React.useState(true);
-  const [pipelineMode, setPipelineMode] = React.useState<PipelineMode>("simple");
-  const [clipCount, setClipCount] = React.useState("3");
-  const [clipDurationSec, setClipDurationSec] = React.useState("30");
-  const [protectedTermsText, setProtectedTermsText] = React.useState("");
-
   // --- Caption & Image options ---
   const [captionPrompt, setCaptionPrompt] = React.useState("");
-  const [captionTone, setCaptionTone] = React.useState("");
   const [imageTranslate, setImageTranslate] = React.useState<"overlay" | "regenerate" | "none">("none");
+  const [captionPresetMode, setCaptionPresetMode] = React.useState<"preset" | "manual">("preset");
+  const [selectedCaptionPresetId, setSelectedCaptionPresetId] = React.useState("");
+  const [captionPresetDraft, setCaptionPresetDraft] = React.useState<CaptionPresetManualInput>(emptyCaptionPresetState());
 
   // --- job đang theo dõi ---
   const [jobId, setJobId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<JobDetail | null>(null);
   const [jobs, setJobs] = React.useState<JobSummary[]>(initialJobs);
+  const [folders, setFolders] = React.useState<RemixFolderNode[]>([]);
+  const [unfiledCount, setUnfiledCount] = React.useState(0);
+  const [selectedFolderId, setSelectedFolderId] = React.useState<string>("unfiled");
+  const [expandedFolders, setExpandedFolders] = React.useState<Record<string, boolean>>({});
+  const [movingFolderId, setMovingFolderId] = React.useState<string | null>(null);
+  const [moveFolderTargetId, setMoveFolderTargetId] = React.useState<string>("unfiled");
   const router = useRouter();
 
   React.useEffect(() => {
     setJobs(initialJobs);
   }, [initialJobs]);
+
+  const fetchFolders = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/remix/folders", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setFolders(data.folders ?? []);
+      setUnfiledCount(data.unfiledCount ?? 0);
+      setExpandedFolders((prev) => {
+        const next = { ...prev };
+        const mark = (nodes: RemixFolderNode[]) => {
+          for (const node of nodes) {
+            if (next[node.id] === undefined) next[node.id] = true;
+            if (node.children?.length) mark(node.children);
+          }
+        };
+        mark(data.folders ?? []);
+        return next;
+      });
+    } catch {
+      // ignore refresh errors
+    }
+  }, []);
+
+  const fetchJobs = React.useCallback(async (folderId: string) => {
+    try {
+      const res = await fetch(`/api/remix?folderId=${encodeURIComponent(folderId)}`, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("fetchJobs error", res.status, text);
+        setError(`Failed to fetch jobs: ${res.status} ${text}`);
+        return;
+      }
+      const data = await res.json();
+      setJobs(data.jobs ?? []);
+    } catch (e: any) {
+      console.error("fetchJobs exception", e);
+      setError(`Error fetching jobs: ${e.message}`);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void fetchFolders();
+  }, [fetchFolders]);
+
+  React.useEffect(() => {
+    void fetchJobs(selectedFolderId);
+  }, [fetchJobs, selectedFolderId]);
 
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -264,6 +394,7 @@ export function RemixStudio({
   const [showAutoDialog, setShowAutoDialog] = React.useState(false);
   const [batchUrls, setBatchUrls] = React.useState<string[]>([]);
   const [batchSubmitting, setBatchSubmitting] = React.useState(false);
+  const [autoGenerateFolderId, setAutoGenerateFolderId] = React.useState<string>("unfiled");
   const [selectedVoice, setSelectedVoice] = React.useState('vi-VN-WaveNet-A');
   const [voiceVolume, setVoiceVolume] = React.useState(2.0);
 
@@ -285,30 +416,147 @@ export function RemixStudio({
 
   // --- output mode: preset vs manual ---
   const [outputMode, setOutputMode] = React.useState<'preset' | 'manual'>('preset');
-  const [presets, setPresets] = React.useState<any[]>([]);
+  const [videoPresets, setVideoPresets] = React.useState<any[]>([]);
+  const [imagePresets, setImagePresets] = React.useState<any[]>([]);
+  const [captionPresets, setCaptionPresets] = React.useState<any[]>([]);
   const [selectedPresetId, setSelectedPresetId] = React.useState<string>('');
   const [presetsLoaded, setPresetsLoaded] = React.useState(false);
   const [serviceHealth, setServiceHealth] = React.useState<RemixServiceHealth | null>(null);
 
   const isVideoFlow = outputKind === "video";
+  const activePresets = outputKind === "image" ? imagePresets : outputKind === "caption" ? captionPresets : videoPresets;
 
   // Load presets when modal opens
   React.useEffect(() => {
     if (!presetsLoaded) {
-      fetch('/api/remix/presets', { cache: 'no-store' })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data?.presets) {
-            setPresets(data.presets);
-            // Auto-select default preset if exists
-            const def = data.presets.find((p: any) => p.is_default);
-            if (def) setSelectedPresetId(def.id);
+      Promise.all([
+        fetch('/api/remix/presets', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null),
+        fetch('/api/remix/image-presets', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null),
+        fetch('/api/remix/caption-presets', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null),
+      ])
+        .then(([videoData, imageData, captionData]) => {
+          const nextVideoPresets = videoData?.presets ?? [];
+          const nextImagePresets = imageData?.presets ?? [];
+          const nextCaptionPresets = captionData?.presets ?? [];
+          setVideoPresets(nextVideoPresets);
+          setImagePresets(nextImagePresets);
+          setCaptionPresets(nextCaptionPresets);
+          const source = outputKind === "image" ? nextImagePresets : outputKind === "caption" ? nextCaptionPresets : nextVideoPresets;
+          const def = source.find((p: any) => p.is_default);
+          if (def) setSelectedPresetId(def.id);
+          else if (source[0]?.id) setSelectedPresetId(source[0].id);
+          const captionDefault = nextCaptionPresets.find((p: any) => p.is_default) ?? nextCaptionPresets[0];
+          if (captionDefault) {
+            setSelectedCaptionPresetId(captionDefault.id);
+            setCaptionPresetDraft(captionPresetToManualInput(captionDefault));
           }
           setPresetsLoaded(true);
         })
         .catch(() => setPresetsLoaded(true));
     }
-  }, [presetsLoaded]);
+  }, [outputKind, presetsLoaded]);
+
+  React.useEffect(() => {
+    if (showAutoDialog) {
+      setAutoGenerateFolderId(selectedFolderId);
+    }
+  }, [showAutoDialog, selectedFolderId]);
+
+  React.useEffect(() => {
+    if (!presetsLoaded) return;
+    const source = outputKind === "image" ? imagePresets : outputKind === "video" ? videoPresets : captionPresets;
+    if (!source.some((preset: any) => preset.id === selectedPresetId)) {
+      const def = source.find((preset: any) => preset.is_default);
+      setSelectedPresetId(def?.id ?? source[0]?.id ?? "");
+    }
+  }, [outputKind, presetsLoaded, imagePresets, videoPresets, captionPresets, selectedPresetId]);
+
+  React.useEffect(() => {
+    if (!captionPresets.length) return;
+    if (!captionPresets.some((preset: any) => preset.id === selectedCaptionPresetId)) {
+      const def = captionPresets.find((preset: any) => preset.is_default) ?? captionPresets[0];
+      if (def) {
+        setSelectedCaptionPresetId(def.id);
+        setCaptionPresetDraft(captionPresetToManualInput(def));
+      }
+    }
+  }, [captionPresets, selectedCaptionPresetId]);
+
+  function applyPresetToManual(presetId: string) {
+    const p = activePresets.find((x: any) => x.id === presetId);
+    if (!p) return;
+    
+    // general
+    if (p.output_ratio) {
+      setOutputRatio(p.output_ratio);
+      setVertical(p.output_ratio === '9:16');
+    }
+    if (p.output_crf) setOutputCrf(p.output_crf);
+    
+    // voice & translate
+    if (p.target_language) setTargetLanguage(p.target_language as any);
+    if (p.dub_mode) {
+      setDubMode(p.dub_mode);
+      setDubVi(p.dub_mode !== 'none');
+    } else if (p.auto_dub) {
+      setDubMode('full');
+      setDubVi(true);
+    }
+    if (p.voice_name) setSelectedVoice(p.voice_name);
+    if (p.bg_volume !== undefined) setVoiceVolume(p.bg_volume);
+
+    // subtitle
+    if (p.auto_vietsub) setVietsub(true);
+    setSubtitleSettings(prev => ({
+      ...prev,
+      preset: p.subtitle_preset ?? defaultSubtitleSettings.preset,
+      font: p.sub_font ?? defaultSubtitleSettings.font,
+      size: p.sub_font_size ?? defaultSubtitleSettings.size,
+      color: p.sub_color ?? defaultSubtitleSettings.color,
+      bgColor: p.sub_bg_color ?? defaultSubtitleSettings.bgColor,
+      highlightColor: p.sub_highlight_color ?? defaultSubtitleSettings.highlightColor,
+      bold: p.sub_bold ?? defaultSubtitleSettings.bold,
+      italic: p.sub_italic ?? defaultSubtitleSettings.italic,
+      outline: p.sub_outline ?? defaultSubtitleSettings.outline,
+      borderStyle: p.sub_border_style ?? defaultSubtitleSettings.borderStyle,
+      position: p.sub_position ?? defaultSubtitleSettings.position,
+      customY: p.sub_custom_y ?? defaultSubtitleSettings.customY,
+      animation: p.subtitle_animation ?? defaultSubtitleSettings.animation,
+    }));
+    
+    if (p.blur_original_sub) {
+      setBlurOriginalSub(true);
+      if (p.blur_region) setBlurRegion(p.blur_region);
+      else setAutoDetectSub(true);
+    }
+    
+    // on screen text
+    if (p.translate_on_screen_text) setTranslateOnScreenText(true);
+    if (p.on_screen_text_preset) setOnScreenTextPreset(p.on_screen_text_preset);
+    if (p.on_screen_text_font) setOnScreenTextFont(p.on_screen_text_font);
+    if (p.on_screen_text_size) setOnScreenTextSize(String(p.on_screen_text_size));
+    if (p.on_screen_text_size_mode) setOnScreenTextSizeMode(p.on_screen_text_size_mode);
+    if (p.on_screen_text_color) setOnScreenTextColor(p.on_screen_text_color);
+    if (p.on_screen_text_bg_color) setOnScreenTextBgColor(p.on_screen_text_bg_color);
+    if (p.on_screen_text_outline_color) setOnScreenTextOutlineColor(p.on_screen_text_outline_color);
+    if (p.on_screen_text_bold !== null && p.on_screen_text_bold !== undefined) setOnScreenTextBold(p.on_screen_text_bold);
+    
+    // watermark
+    if (p.watermark_defaults && Object.keys(p.watermark_defaults).length) {
+      const w = p.watermark_defaults;
+      setWatermarkMode(w.type || 'disabled');
+      if (w.text) setWatermarkText(w.text);
+      if (w.imageMediaId) setWatermarkImageMediaId(w.imageMediaId);
+      if (w.opacity !== undefined) setWatermarkOpacity(String(w.opacity));
+      if (w.scale !== undefined) setWatermarkScale(String(w.scale));
+      if (w.position) setWatermarkPosition(w.position);
+      if (w.positionX !== undefined) setWatermarkPositionX(String(w.positionX));
+      if (w.positionY !== undefined) setWatermarkPositionY(String(w.positionY));
+    }
+    
+    // image mode
+    if (p.image_translate) setImageTranslate(p.image_translate);
+  }
 
   React.useEffect(() => {
     let cancelled = false;
@@ -335,8 +583,18 @@ export function RemixStudio({
   // Apply a preset's settings to manual form state
   const applyPreset = React.useCallback((p: any) => {
     if (!p) return;
+    if (outputKind === "caption") {
+      setSelectedCaptionPresetId(p.id ?? "");
+      setCaptionPresetMode("preset");
+      setCaptionPresetDraft(captionPresetToManualInput(p));
+      return;
+    }
     setOutputRatio(p.output_ratio || '9:16');
     setVertical(p.output_ratio === '9:16');
+    if (outputKind === "image") {
+      setImageTranslate((p.image_translate ?? "none") as "overlay" | "regenerate" | "none");
+      return;
+    }
     setTargetLanguage(p.target_language === 'en' ? 'en' : 'vi');
     setSelectedVoice(p.voice_name || 'vi-VN-WaveNet-A');
     setDubMode((p.dub_mode as 'none' | 'full' | 'preserve_bgm' | 'heygen') ?? (p.auto_dub ? 'full' : 'none'));
@@ -349,6 +607,8 @@ export function RemixStudio({
     setOnScreenTextSizeMode((p.on_screen_text_size_mode ?? 'auto_fit') as OnScreenTextSizeMode);
     setOnScreenTextColor(p.on_screen_text_color ?? '#FFFFFF');
     setOnScreenTextBgColor(p.on_screen_text_bg_color ?? '#000000');
+    setOnScreenTextBackgroundStyle((p.on_screen_text_background_style ?? 'solid') as "solid" | "blur");
+    setOnScreenTextBackgroundOpacity(Number.isFinite(p.on_screen_text_background_opacity) ? p.on_screen_text_background_opacity : 0.72);
     setOnScreenTextOutlineColor(p.on_screen_text_outline_color ?? '#000000');
     setOnScreenTextBold(p.on_screen_text_bold ?? true);
     setBlurOriginalSub(p.blur_original_sub ?? false);
@@ -369,7 +629,7 @@ export function RemixStudio({
       customY: p.sub_custom_y ?? defaultSubtitleSettings.customY,
       animation: p.subtitle_animation || defaultSubtitleSettings.animation,
     });
-  }, []);
+  }, [outputKind]);
 
   const applyOnScreenTextPreset = React.useCallback((preset: OnScreenTextPreset) => {
     const style = ON_SCREEN_TEXT_PRESETS[preset];
@@ -378,6 +638,8 @@ export function RemixStudio({
     setOnScreenTextSize(String(style.size));
     setOnScreenTextColor(style.color);
     setOnScreenTextBgColor(style.bgColor);
+    setOnScreenTextBackgroundStyle("solid");
+    setOnScreenTextBackgroundOpacity(0.72);
     setOnScreenTextOutlineColor(style.outlineColor);
     setOnScreenTextBold(style.bold);
   }, []);
@@ -521,6 +783,7 @@ export function RemixStudio({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Tải logo thất bại.");
       setUploadedLogo(data.asset);
+      setWatermarkImageMediaId(data.asset.id);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -546,37 +809,29 @@ export function RemixStudio({
       setError("Hãy dán link nguồn.");
       return;
     }
-    if (sourceType === "own_link" && !ownershipConfirmed) {
-      setError("Cần xác nhận đây là nội dung bạn sở hữu.");
-      return;
-    }
 
     setSubmitting(true);
     try {
       let options: Record<string, unknown> = {};
-      options.pipelineMode = pipelineMode;
-      const protectedTerms = protectedTermsText
-        .split(",")
-        .map((term) => term.trim())
-        .filter(Boolean);
-      if (protectedTerms.length) options.protectedTerms = protectedTerms;
-      if (pipelineMode === "clip_factory") {
-        const count = Number(clipCount);
-        const dur = Number(clipDurationSec);
-        if (Number.isFinite(count)) options.clipCount = count;
-        if (Number.isFinite(dur)) options.clipDurationSec = dur;
-      }
 
       // --- Khi dùng Preset mode: lấy options trực tiếp từ preset object ---
       if (outputMode === 'preset' && selectedPresetId) {
-        const p = presets.find((x: any) => x.id === selectedPresetId);
+        const p = activePresets.find((x: any) => x.id === selectedPresetId);
         if (p) {
+          if (outputKind === "caption") {
+            setSelectedCaptionPresetId(p.id ?? "");
+            setCaptionPresetDraft(captionPresetToManualInput(p));
+          }
           // Build options từ preset fields
-          options.outputRatio = p.output_ratio || '9:16';
-          options.vertical = p.output_ratio === '9:16';
-          options.targetLanguage = p.target_language || 'vi';
+          if (outputKind !== "caption") {
+            options.outputRatio = p.output_ratio || '9:16';
+            options.vertical = p.output_ratio === '9:16';
+          }
+          if (outputKind === "video") {
+            options.targetLanguage = p.target_language || 'vi';
+          }
           
-          if (p.auto_vietsub) {
+          if (outputKind === "video" && p.auto_vietsub) {
             options.vietsub = true;
             options.subtitleConfig = {
               preset: p.subtitle_preset ?? defaultSubtitleSettings.preset,
@@ -601,7 +856,7 @@ export function RemixStudio({
               else options.autoDetectSubtitleRegion = true;
             }
           }
-          if (p.translate_on_screen_text) {
+          if (outputKind === "video" && p.translate_on_screen_text) {
             options.translateOnScreenText = true;
             options.onScreenTextStyle = {
               preset: p.on_screen_text_preset ?? 'meme',
@@ -616,14 +871,15 @@ export function RemixStudio({
           }
           
           const dubMode = p.dub_mode || (p.auto_dub ? 'full' : 'none');
-          if (dubMode !== 'none') {
+          if (outputKind === "video" && dubMode !== 'none') {
             options.dubMode = dubMode;
             options.dubVi = true;
             options.voiceName = p.voice_name || 'vi-VN-WaveNet-A';
             if (p.bg_volume !== undefined) options.bgVolume = p.bg_volume;
           }
-          
-          if (p.color_grade) options.colorGrade = true;
+
+          if (p.image_translate) options.imageTranslate = p.image_translate;
+          if (p.editor_template) options.imageEditorTemplate = p.editor_template;
           if (p.intro_enabled && p.intro_media_id) {
             options.introEnabled = true;
             options.introMediaId = p.intro_media_id;
@@ -639,19 +895,21 @@ export function RemixStudio({
         }
       } else {
         // --- Manual mode: đọc từ form state như cũ ---
-        if (captionPrompt.trim()) options.captionPrompt = captionPrompt.trim();
-        if (captionTone) options.captionTone = captionTone;
-        
         if (outputKind === "video" || outputKind === "image") {
           options.outputRatio = outputRatio;
           if (vertical) options.vertical = true;
-          if (colorGrade) options.colorGrade = true;
-          if (brandLogo) {
-            options.brandLogo = true;
-            options.logoPosition = logoPosition;
-            if (uploadedLogo?.id) {
-              options.logoMediaId = uploadedLogo.id;
-            }
+          if (watermarkMode !== "disabled") {
+            options.watermarkConfig = {
+              enabled: true,
+              type: watermarkMode,
+              text: watermarkMode === "text" ? watermarkText.trim() || undefined : undefined,
+              imageMediaId: watermarkMode === "image" ? watermarkImageMediaId.trim() || undefined : undefined,
+              opacity: Number(watermarkOpacity),
+              scale: Number(watermarkScale),
+              position: watermarkPosition,
+              positionX: watermarkPosition === "custom" ? Number(watermarkPositionX) : undefined,
+              positionY: watermarkPosition === "custom" ? Number(watermarkPositionY) : undefined,
+            };
           }
         }
 
@@ -688,13 +946,25 @@ export function RemixStudio({
               sizeMode: onScreenTextSizeMode,
               color: onScreenTextColor,
               bgColor: onScreenTextBgColor,
+              backgroundStyle: onScreenTextBackgroundStyle,
+              backgroundOpacity: onScreenTextBackgroundOpacity,
               outlineColor: onScreenTextOutlineColor,
               bold: onScreenTextBold,
             };
             if (onScreenTextHint.trim()) options.textOverlay = onScreenTextHint.trim();
           }
-          const secs = Number(trimSeconds);
-          if (Number.isFinite(secs) && secs > 0) options.trimSeconds = secs;
+          const trimStart = Number(trimStartInput);
+          const trimEnd = Number(trimEndInput);
+          const hasTrimStart = Number.isFinite(trimStart) && trimStart >= 0;
+          const hasTrimEnd = Number.isFinite(trimEnd) && trimEnd > 0;
+          if (hasTrimStart || hasTrimEnd) {
+            if (!hasTrimStart || !hasTrimEnd || trimEnd <= trimStart) {
+              throw new Error("Khoảng cắt video không hợp lệ. Hãy nhập giây bắt đầu và giây kết thúc hợp lệ.");
+            }
+            options.trimStart = trimStart;
+            options.trimSeconds = trimEnd - trimStart;
+          }
+          if (outputCrf) options.outputCrf = outputCrf;
         }
         
         if (outputKind === "image") {
@@ -702,9 +972,22 @@ export function RemixStudio({
         }
       }
 
-      // Caption prompt & tone áp dụng ở cả 2 mode
+      const activeCaptionPreset =
+        captionPresetMode === "preset"
+          ? captionPresets.find((preset: any) => preset.id === selectedCaptionPresetId)
+          : null;
+      const effectiveCaptionPreset =
+        captionPresetMode === "manual"
+          ? captionPresetDraft
+          : captionPresetToManualInput(activeCaptionPreset);
+
       if (captionPrompt.trim()) options.captionPrompt = captionPrompt.trim();
-      if (captionTone) options.captionTone = captionTone;
+      const captionPresetPrompt = buildCaptionPromptFromPreset(effectiveCaptionPreset);
+      const captionPresetTone = buildCaptionToneFromPreset(effectiveCaptionPreset);
+      if (captionPresetPrompt) {
+        options.captionPrompt = [captionPrompt.trim(), captionPresetPrompt].filter(Boolean).join("\n");
+      }
+      if (captionPresetTone) options.captionTone = captionPresetTone;
       if (outputKind === "video" && scriptInputMode === 'manual_script' && manualScript.trim()) {
         options.scriptInputMode = 'manual_script';
         options.manualScript = manualScript.trim();
@@ -718,11 +1001,11 @@ export function RemixStudio({
           sourceType,
           sourceUrl: sourceType === "upload" ? undefined : sourceUrl.trim(),
           sourceMediaId: sourceType === "upload" ? uploadedMedia?.id : undefined,
-          ownershipConfirmed,
           outputKind,
-          prompt: prompt.trim() || undefined,
+          prompt: undefined,
           options,
           presetId: (outputMode === 'preset' && selectedPresetId) ? selectedPresetId : undefined,
+          folderId: selectedFolderId === "unfiled" ? null : selectedFolderId,
           campaignId: campaignId || undefined,
         }),
 
@@ -739,13 +1022,15 @@ export function RemixStudio({
           source_type: sourceType,
           output_kind: outputKind,
           status: "queued",
-          prompt: prompt.trim() || null,
+          prompt: null,
           options,
           iteration: 0,
           created_at: new Date().toISOString(),
+          folder_id: selectedFolderId === "unfiled" ? null : selectedFolderId,
         },
         ...prev,
       ]);
+      void fetchFolders();
       
       // Đóng modal sau khi tạo thành công
       setIsCreateModalOpen(false);
@@ -816,6 +1101,95 @@ export function RemixStudio({
     }
   }
 
+  function flattenFolders(nodes: RemixFolderNode[]): RemixFolderNode[] {
+    return nodes.flatMap((node) => [node, ...flattenFolders(node.children ?? [])]);
+  }
+
+  const allFolders = React.useMemo(() => flattenFolders(folders), [folders]);
+
+  async function handleCreateFolder(parentId: string | null = null) {
+    const name = window.prompt("Tên folder mới");
+    if (!name?.trim()) return;
+    try {
+      const res = await fetch("/api/remix/folders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), parentId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Tạo folder thất bại");
+      await fetchFolders();
+    } catch (error) {
+      alert((error as Error).message);
+    }
+  }
+
+  async function handleRenameFolder(folder: RemixFolderNode) {
+    const name = window.prompt("Đổi tên folder", folder.name);
+    if (!name?.trim() || name.trim() === folder.name) return;
+    try {
+      const res = await fetch(`/api/remix/folders/${folder.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Đổi tên folder thất bại");
+      await fetchFolders();
+    } catch (error) {
+      alert((error as Error).message);
+    }
+  }
+
+  async function handleMoveFolder(folder: RemixFolderNode, forcedParentId?: string | null) {
+    const parentId = forcedParentId !== undefined ? forcedParentId : null;
+    if (parentId === undefined) return;
+    try {
+      const res = await fetch(`/api/remix/folders/${folder.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Di chuyển folder thất bại");
+      setMovingFolderId(null);
+      await fetchFolders();
+    } catch (error) {
+      alert((error as Error).message);
+    }
+  }
+
+  async function handleDeleteFolder(folder: RemixFolderNode) {
+    const confirmed = window.confirm(`Xoá folder "${folder.name}", toàn bộ folder con và tất cả job bên trong?`);
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`/api/remix/folders/${folder.id}?deleteJobs=true`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Xoá folder thất bại");
+      if (selectedFolderId === folder.id) setSelectedFolderId("unfiled");
+      await Promise.all([fetchFolders(), fetchJobs(selectedFolderId === folder.id ? "unfiled" : selectedFolderId)]);
+    } catch (error) {
+      alert((error as Error).message);
+    }
+  }
+
+  async function handleMoveJobToFolder(targetJobId: string, folderId: string | null) {
+    try {
+      setJobs((prev) => prev.filter((job) => job.id !== targetJobId));
+      const res = await fetch(`/api/remix/${targetJobId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folder_id: folderId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Di chuyển job thất bại");
+      await Promise.all([fetchFolders(), fetchJobs(selectedFolderId)]);
+    } catch (error) {
+      alert((error as Error).message);
+      await fetchJobs(selectedFolderId);
+    }
+  }
+
   // --- Gửi phản hồi để sửa ---
   async function handleFeedback() {
     if (!jobId || !feedback.trim()) return;
@@ -842,15 +1216,19 @@ export function RemixStudio({
   async function handleRegenerate() {
     if (!jobId || !editedScript) return;
     setRegenerating(true);
+    setError(null);
     try {
-      await fetch(`/api/remix/${jobId}/regenerate`, {
+      const res = await fetch(`/api/remix/${jobId}/regenerate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ editedScript }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Tạo lại với script thất bại.");
       setDetail((d) => (d ? { ...d, status: "revising" } : d));
     } catch (e) {
       console.error(e);
+      setError((e as Error).message);
     } finally {
       setRegenerating(false);
     }
@@ -879,7 +1257,7 @@ export function RemixStudio({
   const running = detail ? RUNNING.has(detail.status) : Boolean(jobId && !detail);
   const activeSource = SOURCE_TABS.find((t) => t.value === sourceType)!;
   const selectedPreset = outputMode === "preset"
-    ? presets.find((p: any) => p.id === selectedPresetId)
+    ? activePresets.find((p: any) => p.id === selectedPresetId)
     : null;
   const currentRemixIntent = outputMode === "preset"
     ? {
@@ -903,6 +1281,101 @@ export function RemixStudio({
   const voicePipelineBlocked = false; // UI should not check worker's local services
   const ocrServiceBlocked = false;
   const createBlockedReason = null; // Do not block UI creation, let the worker handle it
+  const selectedFolder = allFolders.find((folder) => folder.id === selectedFolderId) ?? null;
+  const jobsCountLabel = selectedFolderId === "unfiled" ? unfiledCount : selectedFolder?.totalJobCount ?? jobs.length;
+
+  const renderFolderTree = (nodes: RemixFolderNode[], depth = 0): React.ReactNode =>
+    nodes.map((folder) => {
+      const expanded = expandedFolders[folder.id] ?? true;
+      const active = selectedFolderId === folder.id;
+      const isMoving = movingFolderId === folder.id;
+      const moveCandidates = allFolders.filter((item) => item.id !== folder.id);
+      return (
+        <div key={folder.id} className="space-y-1">
+          <div
+            className={`flex items-center gap-2 rounded-md border px-2 py-2 text-sm ${active ? "border-primary bg-primary/10" : "border-transparent hover:bg-muted/60"}`}
+            style={{ marginLeft: depth * 12 }}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData("application/x-remix-folder", folder.id);
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const jobTransfer = e.dataTransfer.getData("application/x-remix-job");
+              const folderTransfer = e.dataTransfer.getData("application/x-remix-folder");
+              if (jobTransfer) {
+                void handleMoveJobToFolder(jobTransfer, folder.id);
+              } else if (folderTransfer && folderTransfer !== folder.id) {
+                const movingFolder = allFolders.find((item) => item.id === folderTransfer);
+                if (movingFolder) void handleMoveFolder(movingFolder, folder.id);
+              }
+            }}
+          >
+            <button
+              type="button"
+              className="text-muted-foreground"
+              onClick={() => setExpandedFolders((prev) => ({ ...prev, [folder.id]: !expanded }))}
+            >
+              {folder.children?.length ? <ChevronRight className={`h-4 w-4 transition-transform ${expanded ? "rotate-90" : ""}`} /> : <span className="inline-block h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              onClick={() => setSelectedFolderId(folder.id)}
+            >
+              {expanded ? <FolderOpen className="h-4 w-4 text-primary" /> : <Folder className="h-4 w-4 text-primary" />}
+              <span className="truncate">{folder.name}</span>
+              <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{folder.totalJobCount}</span>
+            </button>
+            <div className="flex items-center gap-1">
+              <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => void handleCreateFolder(folder.id)}>+</button>
+              <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => void handleRenameFolder(folder)}>✎</button>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setMovingFolderId((current) => current === folder.id ? null : folder.id);
+                  setMoveFolderTargetId(folder.parent_id ?? "unfiled");
+                }}
+              >
+                ↕
+              </button>
+              <button type="button" className="text-destructive" onClick={() => void handleDeleteFolder(folder)}>×</button>
+            </div>
+          </div>
+          {isMoving && (
+            <div className="ml-7 rounded-md border border-border bg-muted/20 p-2" style={{ marginLeft: depth * 12 + 28 }}>
+              <div className="flex items-center gap-2">
+                <select
+                  value={moveFolderTargetId}
+                  onChange={(e) => setMoveFolderTargetId(e.target.value)}
+                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                >
+                  <option value="unfiled">Ra root</option>
+                  {moveCandidates.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleMoveFolder(folder, moveFolderTargetId === "unfiled" ? null : moveFolderTargetId)}
+                >
+                  Move
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setMovingFolderId(null)}>
+                  Huỷ
+                </Button>
+              </div>
+            </div>
+          )}
+          {expanded && folder.children?.length ? <div>{renderFolderTree(folder.children, depth + 1)}</div> : null}
+        </div>
+      );
+    });
   return (
     <div className="space-y-4">
       {/* ---------------- Header Toolbar ---------------- */}
@@ -933,25 +1406,83 @@ export function RemixStudio({
         </Alert>
       )}
 
-      {/* ---------------- Grid 2 Cột ---------------- */}
-      <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[350px_minmax(0,1fr)] items-start">
-        
-        {/* Cột trái: Danh sách Job */}
-        <Card className="h-[calc(100vh-16rem)] flex flex-col overflow-hidden">
-          <CardHeader className="py-4 border-b border-border/50 bg-muted/20">
-            <CardTitle className="text-sm font-medium">Lịch sử gần đây</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-y-auto p-0 divide-y divide-border">
-            {jobs.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                Chưa có job nào.
+      {/* ---------------- Grid 3 Cột ---------------- */}
+      <div className="grid items-start gap-6 xl:grid-cols-[260px_340px_minmax(0,1fr)]">
+        <Card className="h-[calc(100vh-16rem)] overflow-hidden">
+          <CardHeader className="border-b border-border/50 bg-muted/20 py-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-sm font-medium">Folders</CardTitle>
+                <CardDescription>Tổ chức job theo cây thư mục.</CardDescription>
               </div>
+              <Button size="sm" variant="outline" onClick={() => void handleCreateFolder(null)}>
+                <Plus className="mr-1 h-4 w-4" />
+                Folder
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2 overflow-y-auto p-3">
+            <button
+              type="button"
+              className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${selectedFolderId === "unfiled" ? "border-primary bg-primary/10" : "border-transparent hover:bg-muted/60"}`}
+              onClick={() => setSelectedFolderId("unfiled")}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const jobTransfer = e.dataTransfer.getData("application/x-remix-job");
+                if (jobTransfer) void handleMoveJobToFolder(jobTransfer, null);
+              }}
+            >
+              <Folder className="h-4 w-4 text-primary" />
+              <span>Inbox / Unfiled</span>
+              <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{unfiledCount}</span>
+            </button>
+            {renderFolderTree(folders)}
+          </CardContent>
+        </Card>
+
+        <Card className="h-[calc(100vh-16rem)] overflow-hidden">
+          <CardHeader className="border-b border-border/50 bg-muted/20 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-sm font-medium">{selectedFolderId === "unfiled" ? "Inbox / Unfiled" : selectedFolder?.name ?? "Folder"}</CardTitle>
+                <CardDescription>{jobsCountLabel} job</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                {selectedFolderId !== "unfiled" && (
+                  <Button size="sm" variant="outline" onClick={() => void handleCreateFolder(selectedFolderId)}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Child
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); }}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  Job
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent
+            className="divide-y divide-border overflow-y-auto p-0"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const jobTransfer = e.dataTransfer.getData("application/x-remix-job");
+              if (jobTransfer) {
+                void handleMoveJobToFolder(jobTransfer, selectedFolderId === "unfiled" ? null : selectedFolderId);
+              }
+            }}
+          >
+            {jobs.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">Chưa có job nào trong folder này.</div>
             ) : (
               jobs.map((j) => (
                 <div
                   key={j.id}
                   role="button"
                   tabIndex={0}
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData("application/x-remix-job", j.id)}
                   onClick={() => {
                     setJobId(j.id);
                     setDetail(null);
@@ -966,16 +1497,14 @@ export function RemixStudio({
                       setError(null);
                     }
                   }}
-                  className={`flex w-full cursor-pointer items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
-                    j.id === jobId ? "bg-muted/60 border-l-2 border-l-primary" : "border-l-2 border-l-transparent"
-                  }`}
+                  className={`flex w-full cursor-pointer items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${j.id === jobId ? "border-l-2 border-l-primary bg-muted/60" : "border-l-2 border-l-transparent"}`}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium" title={j.options?.title || j.prompt || ""}>
                       {editingJobId === j.id ? (
                         <input
                           type="text"
-                          className="w-full bg-background border border-primary px-2 py-1 rounded text-sm text-foreground focus:outline-none"
+                          className="w-full rounded border border-primary bg-background px-2 py-1 text-sm text-foreground focus:outline-none"
                           value={editingTitle}
                           autoFocus
                           onChange={(e) => setEditingTitle(e.target.value)}
@@ -987,46 +1516,42 @@ export function RemixStudio({
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                          <div className="flex items-center group/title gap-1.5 flex-wrap">
-                            <span>
-                              {j.options?.batch_id && <span className="inline-block mr-1.5 px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary font-bold">📦 Batch</span>}
-                              {(j.is_auto_fix || j.options?.is_auto_fix) && <span className="inline-flex items-center gap-1 mr-1.5 px-1.5 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-500 font-bold border border-blue-500/30">🤖 Auto-Fix</span>}
-                              {j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`}
-                            </span>
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            className="ml-2 opacity-0 group-hover/title:opacity-100 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`}</span>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground"
                             onClick={(e) => {
                               e.stopPropagation();
                               setEditingTitle(j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`);
                               setEditingJobId(j.id);
                             }}
-                            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setEditingTitle(j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`); setEditingJobId(j.id); } }}
                           >
-                            <svg className="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </span>
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            className="ml-1 opacity-0 group-hover/title:opacity-100 p-1 text-muted-foreground hover:text-destructive cursor-pointer"
-                            title="Xoá Job"
-                            onClick={(e) => handleDeleteJob(e, j.id)}
-                            onKeyDown={(e) => { if (e.key === "Enter") handleDeleteJob(e as unknown as React.MouseEvent<HTMLSpanElement>, j.id); }}
-                          >
-                            <svg className="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </span>
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       )}
                     </span>
-                    <span className="text-2xs text-muted-foreground block mt-1">
+                    <span className="mt-1 block text-2xs text-muted-foreground">
                       {new Date(j.created_at).toLocaleString("vi-VN")}
                       {j.iteration > 0 && ` · sửa ${j.iteration} lần`}
                     </span>
+                    <div className="mt-2 flex items-center gap-2">
+                      <select
+                        className="h-8 rounded border border-input bg-background px-2 text-xs"
+                        value={j.folder_id ?? "unfiled"}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => void handleMoveJobToFolder(j.id, e.target.value === "unfiled" ? null : e.target.value)}
+                      >
+                        <option value="unfiled">Inbox</option>
+                        {allFolders.map((folder) => (
+                          <option key={folder.id} value={folder.id}>{folder.name}</option>
+                        ))}
+                      </select>
+                      <button type="button" className="text-muted-foreground hover:text-destructive" onClick={(e) => handleDeleteJob(e, j.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </span>
                   <Status value={j.status} />
                 </div>
@@ -1035,7 +1560,6 @@ export function RemixStudio({
           </CardContent>
         </Card>
 
-        {/* Cột phải: Preview Kết quả */}
         <div className="space-y-4">
           <Card className="h-[calc(100vh-16rem)] flex flex-col overflow-hidden">
             <CardHeader className="py-4 border-b border-border/50 bg-muted/20 flex flex-row items-center justify-between">
@@ -1550,11 +2074,7 @@ export function RemixStudio({
                     <div key="link-section" className="space-y-3">
                       <Field
                         label="Link bài đăng"
-                        hint={
-                          sourceType === "inspiration"
-                            ? "Facebook, Instagram, TikTok, YouTube… Chỉ dùng để phân tích ý tưởng."
-                            : "Link tới bài của chính bạn — hệ thống sẽ tải media về để biên tập."
-                        }
+                        hint="Link tới bài của chính bạn — hệ thống sẽ tải media về để biên tập."
                         required
                       >
                         {(p) => (
@@ -1567,23 +2087,6 @@ export function RemixStudio({
                           />
                         )}
                       </Field>
-
-                      {sourceType === "own_link" && (
-                        <Checkbox
-                          label="Tôi xác nhận đây là nội dung tôi/tổ chức tôi sở hữu"
-                          description="Bắt buộc — hệ thống chỉ biên tập nội dung bạn có quyền sử dụng."
-                          checked={ownershipConfirmed}
-                          onChange={(e) => setOwnershipConfirmed(e.target.checked)}
-                        />
-                      )}
-
-                      {sourceType === "inspiration" && (
-                        <Alert tone="info">
-                          Chế độ tham khảo không tải file gốc. AI đúc kết công thức
-                          (hook, cấu trúc, nhịp) rồi áp lên asset của bạn. Nếu muốn ra
-                          video, hãy tải thêm file nguồn của mình ở tab “Tải file lên”.
-                        </Alert>
-                      )}
                     </div>
                   )}
                 </div>
@@ -1615,88 +2118,41 @@ export function RemixStudio({
                   ))}
                 </div>
 
-                <div className="space-y-3 bg-muted/20 p-4 rounded-lg border border-border/50">
-                  <Field
-                    label="Production pipeline"
-                    hint="Lưu proposal/scene/edit/QA artifacts vào plan để dễ review."
-                  >
-                    {(p) => (
-                      <select
-                        {...p}
-                        value={pipelineMode}
-                        onChange={(e) => setPipelineMode(e.target.value as PipelineMode)}
-                        className={`${p.className} bg-background`}
-                      >
-                        <option value="simple">Simple remix</option>
-                        <option value="localization_dub">Localization & Dub</option>
-                        <option value="hybrid">Hybrid overlay</option>
-                        <option value="clip_factory">Clip Factory</option>
-                      </select>
-                    )}
-                  </Field>
-
-                  {pipelineMode === "clip_factory" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Field label="Số clip đề xuất">
-                        {(p) => (
-                          <input
-                            {...p}
-                            type="number"
-                            min={1}
-                            max={10}
-                            value={clipCount}
-                            onChange={(e) => setClipCount(e.target.value)}
-                            className={`${p.className} bg-background`}
-                          />
-                        )}
-                      </Field>
-                      <Field label="Thời lượng mỗi clip (giây)">
-                        {(p) => (
-                          <input
-                            {...p}
-                            type="number"
-                            min={5}
-                            max={180}
-                            value={clipDurationSec}
-                            onChange={(e) => setClipDurationSec(e.target.value)}
-                            className={`${p.className} bg-background`}
-                          />
-                        )}
-                      </Field>
-                    </div>
-                  )}
-
-                  {(pipelineMode === "localization_dub" || pipelineMode === "clip_factory") && (
-                    <Field
-                      label="Protected terms"
-                      hint="Cách nhau bằng dấu phẩy; hệ thống sẽ ghi rõ trong plan để người review kiểm tra."
-                    >
-                      {(p) => (
-                        <input
-                          {...p}
-                          value={protectedTermsText}
-                          onChange={(e) => setProtectedTermsText(e.target.value)}
-                          placeholder="Tên sân, tên thương hiệu, gói hội viên..."
-                          className={`${p.className} bg-background`}
-                        />
-                      )}
-                    </Field>
-                  )}
-                </div>
-
                 {/* PRESET MODE */}
                 {outputMode === 'preset' && (
                   <div className="space-y-3 bg-muted/20 p-4 rounded-lg border border-border/50">
                     <div>
-                      <label className="text-sm font-medium mb-1.5 block">Chọn Preset</label>
-                      {presets.length === 0 ? (
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <label className="text-sm font-medium">Chọn Preset</label>
+                        <Field label="Loại đầu ra" srOnlyLabel>
+                          {(p) => (
+                            <select
+                              {...p}
+                              value={outputKind || 'video'}
+                              onChange={(e) => {
+                                const nextOutputKind = e.target.value as OutputKind;
+                                setOutputKind(nextOutputKind);
+                                const nextSource = nextOutputKind === "image" ? imagePresets : nextOutputKind === "video" ? videoPresets : [];
+                                const def = nextSource.find((item: any) => item.is_default);
+                                setSelectedPresetId(def?.id ?? nextSource[0]?.id ?? "");
+                              }}
+                              className="h-9 min-w-[170px] rounded-md border border-input bg-background px-3 text-sm"
+                            >
+                              <option value="video">Video</option>
+                              <option value="image">Ảnh</option>
+                              <option value="caption">Chỉ caption + hashtag</option>
+                            </select>
+                          )}
+                        </Field>
+                      </div>
+                      {activePresets.length === 0 ? (
                         <div className="text-sm text-muted-foreground py-3 text-center">
                           Chưa có preset nào.{' '}
                           <a href="/remix/presets" target="_blank" className="text-primary underline">Tạo preset</a>
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {presets.map((p: any) => (
+                          {activePresets.map((p: any) => (
                             <label
                               key={p.id}
                               onClick={() => { setSelectedPresetId(p.id); applyPreset(p); }}
@@ -1718,10 +2174,19 @@ export function RemixStudio({
                                 </div>
                                 <div className="text-xs text-muted-foreground mt-0.5 flex gap-2 flex-wrap">
                                   <span>{p.output_ratio || '9:16'}</span>
-                                  {p.auto_vietsub && <span>• Chữ lồng tiếng</span>}
-                                  {p.translate_on_screen_text && <span>• Dịch text on-screen</span>}
-                                  <span>• {p.dub_mode === 'heygen' ? '✨ HeyGen AI' : p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc nền' : p.dub_mode === 'full' ? '🎙️ Lồng tiếng' : '🔇 Gốc'}</span>
-                                  <span>• {p.dub_mode === 'heygen' ? 'Clone giọng' : p.voice_name?.split('-').slice(0, 3).join('-') || 'WaveNet-A'}</span>
+                                  {outputKind === "video" && p.auto_vietsub && <span>• Chữ lồng tiếng</span>}
+                                  {outputKind === "video" && p.translate_on_screen_text && <span>• Dịch text on-screen</span>}
+                                  {outputKind === "video" ? (
+                                    <>
+                                      <span>• {p.dub_mode === 'heygen' ? '✨ HeyGen AI' : p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc nền' : p.dub_mode === 'full' ? '🎙️ Lồng tiếng' : '🔇 Gốc'}</span>
+                                      <span>• {p.dub_mode === 'heygen' ? 'Clone giọng' : p.voice_name?.split('-').slice(0, 3).join('-') || 'WaveNet-A'}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>• {p.image_translate || 'No translate'}</span>
+                                      <span>• {p.editor_template && Object.keys(p.editor_template).length ? 'Template editor' : 'No template'}</span>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </label>
@@ -1731,40 +2196,35 @@ export function RemixStudio({
                     </div>
 
                     {selectedPresetId && (() => {
-                      const p = presets.find((x: any) => x.id === selectedPresetId);
+                      const p = activePresets.find((x: any) => x.id === selectedPresetId);
                       if (!p) return null;
                       return (
                         <div className="mt-2 p-3 rounded-md bg-background border border-border/60 text-xs text-muted-foreground space-y-1">
                           <p className="font-medium text-foreground text-sm mb-1.5">Chi tiết preset đã chọn</p>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                             <span>Tỉ lệ: <strong className="text-foreground">{p.output_ratio}</strong></span>
-                            <span>Ngôn ngữ: <strong className="text-foreground">{p.target_language === 'en' ? '🇺🇸 EN' : '🇻🇳 VI'}</strong></span>
-                            <span>Chữ lồng tiếng: <strong className="text-foreground">{p.auto_vietsub ? '✅ Bật' : '—'}</strong></span>
-                            <span>Text on-screen: <strong className="text-foreground">{p.translate_on_screen_text ? '✅ Dịch' : '—'}</strong></span>
-                            <span>Lồng tiếng: <strong className="text-foreground">
-                              {p.dub_mode === 'heygen' ? '✨ HeyGen' : p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc' : p.dub_mode === 'full' ? '🎙️ Full' : '🔇 Tắt'}
-                            </strong></span>
-                            <span>Giọng: <strong className="text-foreground">{p.dub_mode === 'heygen' ? 'Clone thật' : p.voice_name?.replace('vi-VN-', '').replace('en-US-', '') || '—'}</strong></span>
-                            <span>CRF: <strong className="text-foreground">{p.output_crf}</strong></span>
+                            {outputKind === "video" ? (
+                              <>
+                                <span>Ngôn ngữ: <strong className="text-foreground">{p.target_language === 'en' ? '🇺🇸 EN' : '🇻🇳 VI'}</strong></span>
+                                <span>Chữ lồng tiếng: <strong className="text-foreground">{p.auto_vietsub ? '✅ Bật' : '—'}</strong></span>
+                                <span>Text on-screen: <strong className="text-foreground">{p.translate_on_screen_text ? '✅ Dịch' : '—'}</strong></span>
+                                <span>Lồng tiếng: <strong className="text-foreground">
+                                  {p.dub_mode === 'heygen' ? '✨ HeyGen' : p.dub_mode === 'preserve_bgm' ? '🎵 Giữ nhạc' : p.dub_mode === 'full' ? '🎙️ Full' : '🔇 Tắt'}
+                                </strong></span>
+                                <span>Giọng: <strong className="text-foreground">{p.dub_mode === 'heygen' ? 'Clone thật' : p.voice_name?.replace('vi-VN-', '').replace('en-US-', '') || '—'}</strong></span>
+                                <span>CRF: <strong className="text-foreground">{p.output_crf}</strong></span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Image translate: <strong className="text-foreground">{p.image_translate || 'none'}</strong></span>
+                                <span>Color grade: <strong className="text-foreground">{p.color_grade ? '✅' : '—'}</strong></span>
+                                <span>Template editor: <strong className="text-foreground">{p.editor_template && Object.keys(p.editor_template).length ? 'Đã lưu' : '—'}</strong></span>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
                     })()}
-
-                    <Field label="Loại đầu ra">
-                      {(p) => (
-                        <select
-                          {...p}
-                          value={outputKind || 'video'}
-                          onChange={(e) => setOutputKind(e.target.value as OutputKind)}
-                          className={`${p.className} bg-background`}
-                        >
-                          <option value="video">Video</option>
-                          <option value="image">Ảnh</option>
-                          <option value="caption">Chỉ caption + hashtag</option>
-                        </select>
-                      )}
-                    </Field>
 
                     <a href="/remix/presets" target="_blank" className="text-xs text-primary hover:underline flex items-center gap-1">
                       ⚙️ Quản lý Preset
@@ -1775,108 +2235,156 @@ export function RemixStudio({
                 {/* MANUAL MODE */}
                 {outputMode === 'manual' && (
                 <div className="space-y-4 bg-muted/20 p-4 rounded-lg border border-border/50">
-                  <Field label="Loại đầu ra">
-                    {(p) => (
-                      <select
-                        {...p}
-                        value={outputKind || "video"}
-                        onChange={(e) => setOutputKind(e.target.value as OutputKind)}
-                        className={`${p.className} bg-background`}
-                      >
-                        <option value="video">Video (reel dọc, có sub/lồng tiếng)</option>
-                        <option value="image">Ảnh (trích frame / chỉnh sửa)</option>
-                        <option value="caption">Chỉ caption + hashtag</option>
-                      </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Field label="Loại đầu ra">
+                      {(p) => (
+                        <select
+                          {...p}
+                          value={outputKind || "video"}
+                          onChange={(e) => setOutputKind(e.target.value as OutputKind)}
+                          className={`${p.className} bg-background`}
+                        >
+                          <option value="video">Video (reel dọc, có sub/lồng tiếng)</option>
+                          <option value="image">Ảnh (trích frame / chỉnh sửa)</option>
+                          <option value="caption">Chỉ caption + hashtag</option>
+                        </select>
+                      )}
+                    </Field>
+                    
+                    {(outputKind === "video" || outputKind === "image") && (
+                      <Field label="Áp dụng Preset (Tuỳ chọn)">
+                        {(p) => (
+                          <select
+                            {...p}
+                            className={`${p.className} bg-background`}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                applyPresetToManual(e.target.value);
+                                e.target.value = ""; // reset after applying
+                              }
+                            }}
+                          >
+                            <option value="">-- Chọn Preset để nạp thông số --</option>
+                            {activePresets.map((preset: any) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </Field>
                     )}
-                  </Field>
+                  </div>
 
                   {(outputKind === "video" || outputKind === "image") && (
-                    <div className="space-y-2 pt-2 border-t border-border/50">
-                      <div className="space-y-2 pb-2">
-                        <label className="text-sm font-medium">Tỉ lệ khung hình</label>
-                        <RatioPicker 
-                          value={outputRatio} 
-                          onChange={(val) => {
-                            setOutputRatio(val);
-                            setVertical(val === '9:16');
-                          }} 
-                        />
+                    <div className="space-y-4 pt-2 border-t border-border/50">
+                      <div className="flex border-b border-border mb-4 overflow-x-auto">
+                        <button type="button" onClick={() => setManualVideoTab("general")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "general" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Chung</button>
+                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("voice")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "voice" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Lồng tiếng</button>}
+                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("subtitle")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "subtitle" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Phụ đề</button>}
+                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("onscreen")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "onscreen" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Text on-screen</button>}
+                        <button type="button" onClick={() => setManualVideoTab("watermark")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "watermark" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Watermark</button>
                       </div>
-                      <Checkbox
-                        label="Chỉnh màu nhẹ"
-                        description="Tăng tương phản/độ bão hoà cho nhất quán thương hiệu."
-                        checked={colorGrade}
-                        onChange={(e) => setColorGrade(e.target.checked)}
-                      />
-                      <Checkbox
-                        label="Chèn logo thương hiệu"
-                        description="Watermark từ logo đã tải lên."
-                        checked={brandLogo}
-                        onChange={(e) => setBrandLogo(e.target.checked)}
-                      />
-                      {brandLogo && (
-                        <div className="pl-7 pt-1 space-y-3">
-                          <Field label="Tải lên Logo" hint="Khuyên dùng ảnh PNG nền trong suốt.">
-                            {(p) => (
-                              <input
-                                {...p}
-                                type="file"
-                                accept="image/png,image/jpeg"
-                                disabled={uploadingLogo}
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) void handleUploadLogo(f);
-                                }}
-                              />
-                            )}
-                          </Field>
-                          {uploadingLogo && (
-                            <p className="text-xs text-muted-foreground">Đang tải lên logo…</p>
-                          )}
-                          {uploadedLogo && (
-                            <p className="text-xs text-success">
-                              Đã tải lên logo thành công.
-                            </p>
-                          )}
-                          <Field label="Vị trí logo">
-                            {(p) => (
-                              <select
-                                {...p}
-                                value={logoPosition || "bottom-right"}
-                                onChange={(e) => setLogoPosition(e.target.value)}
-                                className={`${p.className} bg-background`}
-                              >
-                                <option value="bottom-right">Dưới phải</option>
-                                <option value="bottom-left">Dưới trái</option>
-                                <option value="top-right">Trên phải</option>
-                                <option value="top-left">Trên trái</option>
-                              </select>
-                            )}
-                          </Field>
+
+                      <div className={manualVideoTab === "general" ? "block space-y-4" : "hidden"}>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Tỉ lệ khung hình</label>
+                          <RatioPicker 
+                            value={outputRatio} 
+                            onChange={(val) => {
+                              setOutputRatio(val);
+                              setVertical(val === '9:16');
+                            }} 
+                          />
                         </div>
-                      )}
-                      
-                      {outputKind === "image" && (
-                        <div className="px-1 pt-3">
-                          <Field label="Dịch chữ trên ảnh (Beta)">
-                            {(p) => (
-                              <select
-                                {...p}
-                                value={imageTranslate || "none"}
-                                onChange={(e) => setImageTranslate(e.target.value as any)}
-                                className={`${p.className} bg-background`}
-                              >
-                                <option value="none">Không dịch</option>
-                                <option value="overlay">Chèn đè text (500đ / 20 credits)</option>
-                                <option value="regenerate">Tạo ảnh mới hoàn toàn (1500đ / 50 credits)</option>
-                              </select>
-                            )}
-                          </Field>
-                        </div>
-                      )}
+                        {/* End of Ratio Picker block in general tab */}
+                        
+                        {outputKind === "video" && (
+                          <>
+                            <Checkbox
+                              label="Bỏ audio gốc"
+                              description="Dùng khi chỉ cần hình + phụ đề."
+                              checked={muteOriginal}
+                              onChange={(e) => setMuteOriginal(e.target.checked)}
+                            />
+                            <div className="px-1 pt-3">
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <Field label="Dùng video từ giây">
+                                  {(p) => (
+                                    <input
+                                      {...p}
+                                      type="number"
+                                      min={0}
+                                      value={trimStartInput || ""}
+                                      onChange={(e) => setTrimStartInput(e.target.value)}
+                                      placeholder="0"
+                                      className={`${p.className} bg-background`}
+                                    />
+                                  )}
+                                </Field>
+                                <Field label="Đến giây">
+                                  {(p) => (
+                                    <input
+                                      {...p}
+                                      type="number"
+                                      min={1}
+                                      max={600}
+                                      value={trimEndInput || ""}
+                                      onChange={(e) => setTrimEndInput(e.target.value)}
+                                      placeholder="30"
+                                      className={`${p.className} bg-background`}
+                                    />
+                                  )}
+                                </Field>
+                              </div>
+                            </div>
+                            <div className="px-1 pt-3">
+                              <label className="text-xs font-medium text-foreground mb-2 block">Chất lượng video (CRF)</label>
+                              <div className="space-y-1.5">
+                                {QUALITY_PRESETS.map(preset => {
+                                  const isActive = outputCrf === preset.crf;
+                                  return (
+                                    <button
+                                      key={preset.crf}
+                                      type="button"
+                                      onClick={() => setOutputCrf(preset.crf)}
+                                      className={`w-full flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-all ${
+                                        isActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-background hover:bg-muted"
+                                      }`}
+                                    >
+                                      <span className="font-medium">{preset.label}</span>
+                                      <span className={`text-xs ${isActive ? "text-primary/80" : "text-muted-foreground"}`}>{preset.desc}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="mt-1.5 text-xs text-muted-foreground">Mức đã chọn tương đương CRF {outputCrf} (thấp = chất lượng cao hơn)</p>
+                            </div>
+                          </>
+                        )}
+                        {outputKind === "image" && (
+                          <div className="px-1 pt-3">
+                            <Field label="Dịch chữ trên ảnh (Beta)">
+                              {(p) => (
+                                <select
+                                  {...p}
+                                  value={imageTranslate || "none"}
+                                  onChange={(e) => setImageTranslate(e.target.value as any)}
+                                  className={`${p.className} bg-background`}
+                                >
+                                  <option value="none">Không dịch</option>
+                                  <option value="overlay">Chèn đè text (500đ / 20 credits)</option>
+                                  <option value="regenerate">Tạo ảnh mới hoàn toàn (1500đ / 50 credits)</option>
+                                </select>
+                              )}
+                            </Field>
+                          </div>
+                        )}
+                      </div>
 
                       {outputKind === "video" && (
-                        <div className="space-y-4 pt-2 border-t border-border/50">
+                        <>
+                          <div className={manualVideoTab === "voice" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
                           <div className="bg-muted/30 p-3 rounded-md border border-border/60">
                             <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">Ngôn ngữ dịch & lồng tiếng</label>
                             <div className="flex gap-1 bg-background/80 border border-input p-1 rounded-md w-fit shadow-sm">
@@ -1927,6 +2435,10 @@ export function RemixStudio({
                                 />
                               )}
                             </div>
+                          </div>
+                          </div>
+
+                          <div className={manualVideoTab === "subtitle" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
                             <Checkbox
                               label={`Hiện text lồng tiếng ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'} trên video`}
                               description="Hiển thị lời thoại đã dịch/lồng tiếng trực tiếp trên video."
@@ -1958,6 +2470,9 @@ export function RemixStudio({
                                 />
                               </div>
                             )}
+                          </div>
+
+                          <div className={manualVideoTab === "voice" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
                             <Checkbox
                               label={`Lồng tiếng ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'} (AI Dubbing)`}
                               description="Thay audio bằng giọng đọc AI."
@@ -2046,7 +2561,9 @@ export function RemixStudio({
                               </div>
                             )}
                           </div>
-                          <Checkbox
+                          
+                          <div className={manualVideoTab === "onscreen" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
+                            <Checkbox
                             label={`Dịch text on-screen sang ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'}`}
                             description="AI đọc chữ đang có trong frame gốc, review tone/mood rồi chuyển ngữ tự nhiên theo ngữ cảnh."
                             checked={translateOnScreenText}
@@ -2109,50 +2626,75 @@ export function RemixStudio({
                                       </select>
                                     )}
                                   </Field>
-                                  <Field label="Cách tính kích cỡ">
+                                  <Field label="Cỡ chữ / Size mode">
                                     {(p) => (
-                                      <select
-                                        {...p}
-                                        value={onScreenTextSizeMode}
-                                        onChange={(e) => setOnScreenTextSizeMode(e.target.value as OnScreenTextSizeMode)}
-                                        className={`${p.className} bg-background`}
-                                      >
-                                        <option value="auto_fit">Auto theo text gốc</option>
-                                        <option value="fixed">Cố định theo preset</option>
-                                      </select>
-                                    )}
-                                  </Field>
-                                  <Field label="Kích cỡ">
-                                    {(p) => (
-                                      <input
-                                        {...p}
-                                        type="number"
-                                        min={16}
-                                        max={72}
-                                        value={onScreenTextSize}
-                                        onChange={(e) => setOnScreenTextSize(e.target.value)}
-                                        className={`${p.className} bg-background`}
-                                      />
+                                      <div className="flex gap-2">
+                                        <select
+                                          {...p}
+                                          value={onScreenTextSizeMode}
+                                          onChange={(e) => setOnScreenTextSizeMode(e.target.value as OnScreenTextSizeMode)}
+                                          className={`${p.className} flex-1 bg-background`}
+                                        >
+                                          <option value="auto_fit">Auto</option>
+                                          <option value="fixed">Fixed</option>
+                                        </select>
+                                        {onScreenTextSizeMode === "fixed" && (
+                                          <input
+                                            type="number"
+                                            min={16}
+                                            max={72}
+                                            value={onScreenTextSize}
+                                            onChange={(e) => setOnScreenTextSize(e.target.value)}
+                                            className={`${p.className} w-20 text-center bg-background`}
+                                            placeholder="Size"
+                                          />
+                                        )}
+                                      </div>
                                     )}
                                   </Field>
                                 </div>
 
-                                <div className="flex flex-wrap gap-4">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                   {[
                                     ["Màu chữ", onScreenTextColor, setOnScreenTextColor],
                                     ["Màu nền", onScreenTextBgColor, setOnScreenTextBgColor],
                                     ["Màu viền", onScreenTextOutlineColor, setOnScreenTextOutlineColor],
                                   ].map(([label, value, setter]) => (
-                                    <label key={String(label)} className="space-y-1">
-                                      <span className="block text-xs text-muted-foreground">{String(label)}</span>
-                                      <input
-                                        type="color"
-                                        value={String(value)}
-                                        onChange={(e) => (setter as (v: string) => void)(e.target.value)}
-                                        className="h-9 w-12 rounded border border-input bg-background p-1"
-                                      />
-                                    </label>
+                                    <ColorFieldWithOpacity
+                                      key={String(label)}
+                                      label={String(label)}
+                                      value={String(value)}
+                                      onChange={setter as (v: string) => void}
+                                      fallback={label === "Màu chữ" ? "#FFFFFF" : "#000000"}
+                                    />
                                   ))}
+                                </div>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                  <div>
+                                    <label className="mb-1 block text-xs text-muted-foreground">Kiểu nền</label>
+                                    <select
+                                      value={onScreenTextBackgroundStyle}
+                                      onChange={(e) => setOnScreenTextBackgroundStyle(e.target.value as "solid" | "blur")}
+                                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                    >
+                                      <option value="solid">Solid</option>
+                                      <option value="blur">Blur background</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-xs text-muted-foreground">Opacity nền {onScreenTextBackgroundOpacity.toFixed(2)}</label>
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="1"
+                                      step="0.01"
+                                      value={onScreenTextBackgroundOpacity}
+                                      onChange={(e) => setOnScreenTextBackgroundOpacity(Number(e.target.value))}
+                                      className="mt-2 w-full"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-4">
                                   <label className="flex items-center gap-2 text-sm">
                                     <input
                                       type="checkbox"
@@ -2170,7 +2712,9 @@ export function RemixStudio({
                                       fontFamily: onScreenTextFont,
                                       fontSize: `${Math.min(Number(onScreenTextSize) || 34, 42)}px`,
                                       color: onScreenTextColor,
-                                      backgroundColor: onScreenTextBgColor,
+                                      backgroundColor: onScreenTextBackgroundStyle === "blur" ? `rgba(15,23,42,${onScreenTextBackgroundOpacity})` : onScreenTextBgColor,
+                                      backdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
+                                      WebkitBackdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                                       WebkitTextStroke: `1px ${onScreenTextOutlineColor}`,
                                       fontWeight: onScreenTextBold ? 800 : 500,
                                     }}
@@ -2181,64 +2725,83 @@ export function RemixStudio({
                               </div>
                             </div>
                           )}
-                          <Checkbox
-                            label="Bỏ audio gốc"
-                            description="Dùng khi chỉ cần hình + phụ đề."
-                            checked={muteOriginal}
-                            onChange={(e) => setMuteOriginal(e.target.checked)}
-                          />
-                          <div className="px-1 pt-3">
-                            <Field
-                              label="Cắt còn (giây)"
-                              hint="Để trống nếu giữ nguyên độ dài."
-                            >
+                          </div>
+                        </>
+                      )}
+                      
+                      <div className={manualVideoTab === "watermark" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
+                        <Field label="Loại watermark">
+                          {(p) => (
+                            <select {...p} value={watermarkMode} onChange={(e) => setWatermarkMode(e.target.value as any)}>
+                              <option value="disabled">Không dùng</option>
+                              <option value="text">Text</option>
+                              <option value="image">Ảnh</option>
+                            </select>
+                          )}
+                        </Field>
+                        {watermarkMode === "text" && (
+                          <Field label="Nội dung text watermark">
+                            {(p) => <input {...p} value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} placeholder="@yourbrand" className={`${p.className} bg-background`} />}
+                          </Field>
+                        )}
+                        {watermarkMode === "image" && (
+                          <Field label="Tải lên hình watermark" hint="Ảnh PNG nền trong suốt">
+                            {(p) => (
+                              <input
+                                {...p}
+                                type="file"
+                                accept="image/png,image/jpeg"
+                                disabled={uploadingLogo}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) void handleUploadLogo(f);
+                                }}
+                              />
+                            )}
+                          </Field>
+                        )}
+                        {watermarkMode !== "disabled" && (
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <Field label="Opacity">
+                              {(p) => <input {...p} type="number" min={0} max={1} step="0.05" value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(e.target.value)} className={`${p.className} bg-background`} />}
+                            </Field>
+                            <Field label="Scale">
+                              {(p) => <input {...p} type="number" min={0.03} max={1} step="0.01" value={watermarkScale} onChange={(e) => setWatermarkScale(e.target.value)} className={`${p.className} bg-background`} />}
+                            </Field>
+                            <Field label="Vị trí">
                               {(p) => (
-                                <input
-                                  {...p}
-                                  type="number"
-                                  min={1}
-                                  max={600}
-                                  value={trimSeconds || ""}
-                                  onChange={(e) => setTrimSeconds(e.target.value)}
-                                  placeholder="30"
-                                  className={`${p.className} bg-background`}
-                                />
+                                <select {...p} value={watermarkPosition} onChange={(e) => setWatermarkPosition(e.target.value)} className={`${p.className} bg-background`}>
+                                  <option value="top-left">Top left</option>
+                                  <option value="top-right">Top right</option>
+                                  <option value="bottom-left">Bottom left</option>
+                                  <option value="bottom-right">Bottom right</option>
+                                  <option value="custom">Tùy chỉnh (X, Y)</option>
+                                </select>
                               )}
                             </Field>
                           </div>
-                        </div>
-                      )}
+                        )}
+                        {watermarkMode !== "disabled" && watermarkPosition === "custom" && (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label={`Vị trí X (${watermarkPositionX})`}>
+                              {(p) => <input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionX} onChange={(e) => setWatermarkPositionX(e.target.value)} className="w-full" />}
+                            </Field>
+                            <Field label={`Vị trí Y (${watermarkPositionY})`}>
+                              {(p) => <input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionY} onChange={(e) => setWatermarkPositionY(e.target.value)} className="w-full" />}
+                            </Field>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
                 )}
               </section>
 
-              {/* --- 3. Mô tả --- */}
-              {(outputKind === "video" || outputKind === "image") && (
-                <section className="space-y-4">
-                  <div>
-                    <h4 className="font-medium text-foreground">3. Mô tả chỉnh sửa (Tuỳ chọn)</h4>
-                    <p className="text-sm text-muted-foreground">Chỉ định rõ bạn muốn cắt ghép, chèn hiệu ứng, hay nội dung như thế nào.</p>
-                  </div>
-                  <Field label="Mô tả chi tiết" srOnlyLabel>
-                    {(p) => (
-                      <textarea
-                        {...p}
-                        className={`${p.className} min-h-24 resize-y leading-relaxed bg-background border-border/50`}
-                        value={prompt || ""}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Ví dụ: Làm reel 30s giới thiệu sân bóng mới, hook 3 giây đầu nhấn giá ưu đãi, cắt bỏ 5s cuối."
-                      />
-                    )}
-                  </Field>
-                </section>
-              )}
-
-              {/* --- 4. Caption --- */}
+              {/* --- 3. Caption --- */}
               <section className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-foreground">{outputKind === "caption" ? "3. Nội dung Bài đăng (Caption)" : "4. Nội dung Bài đăng (Caption)"}</h4>
+                  <h4 className="font-medium text-foreground">3. Nội dung Bài đăng (Caption)</h4>
                   <p className="text-sm text-muted-foreground">AI sẽ viết đoạn văn bản và hashtag để đính kèm lên bài đăng.</p>
                 </div>
                 
@@ -2255,47 +2818,170 @@ export function RemixStudio({
                     )}
                   </Field>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Field label="Tone & Voice (Giọng điệu)">
+                  <div className="space-y-3 rounded-lg border border-border bg-background p-4">
+                    <div className="flex gap-2">
+                      {([
+                        { value: "preset", label: "Dùng caption preset" },
+                        { value: "manual", label: "Tự điền preset thủ công" },
+                      ] as const).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setCaptionPresetMode(opt.value)}
+                          className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
+                            captionPresetMode === opt.value
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-background text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {captionPresetMode === "preset" ? (
+                      <div className="space-y-3">
+                        <Field label="Caption preset">
+                          {(p) => (
+                            <select
+                              {...p}
+                              value={selectedCaptionPresetId}
+                              onChange={(e) => {
+                                setSelectedCaptionPresetId(e.target.value);
+                                const preset = captionPresets.find((item: any) => item.id === e.target.value);
+                                if (preset) setCaptionPresetDraft(captionPresetToManualInput(preset));
+                              }}
+                              className={`${p.className} bg-background`}
+                            >
+                              <option value="">Chọn caption preset</option>
+                              {captionPresets.map((preset: any) => (
+                                <option key={preset.id} value={preset.id}>{preset.name}</option>
+                              ))}
+                            </select>
+                          )}
+                        </Field>
+                        {selectedCaptionPresetId && (() => {
+                          const preset = captionPresets.find((item: any) => item.id === selectedCaptionPresetId);
+                          if (!preset) return null;
+                          return (
+                            <div className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                              <p className="font-medium text-foreground">{preset.name}</p>
+                              <p className="mt-1">Platform: {(preset.platforms ?? []).join(", ") || "Chưa chọn"}</p>
+                              <p>Tone: {preset.tone_and_voice || "Chưa set"}</p>
+                              <p>CTA: {preset.cta || "Chưa set"}</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <Field label="Platform áp dụng">
+                          {(p) => (
+                            <select
+                              {...p}
+                              value=""
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                if (!next) return;
+                                setCaptionPresetDraft((prev) => ({
+                                  ...prev,
+                                  platforms: Array.from(new Set([...(prev.platforms ?? []), next])),
+                                }));
+                              }}
+                              className={`${p.className} bg-background`}
+                            >
+                              <option value="">Thêm platform</option>
+                              {CAPTION_PLATFORM_OPTIONS.map((platform) => (
+                                <option key={platform} value={platform}>{platform}</option>
+                              ))}
+                            </select>
+                          )}
+                        </Field>
+                        <div className="flex flex-wrap gap-2">
+                          {(captionPresetDraft.platforms ?? []).map((platform) => (
+                            <button
+                              key={platform}
+                              type="button"
+                              className="rounded-full border border-border bg-muted px-3 py-1 text-xs"
+                              onClick={() =>
+                                setCaptionPresetDraft((prev) => ({
+                                  ...prev,
+                                  platforms: (prev.platforms ?? []).filter((item) => item !== platform),
+                                }))
+                              }
+                            >
+                              {platform} ×
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <Field label="Tone & voice">
+                            {(p) => <input {...p} value={captionPresetDraft.toneAndVoice ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, toneAndVoice: e.target.value }))} className={`${p.className} bg-background`} placeholder="Năng động, gần gũi, thúc đẩy đặt sân" />}
+                          </Field>
+                          <Field label="Đối tượng mục tiêu">
+                            {(p) => <input {...p} value={captionPresetDraft.audience ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, audience: e.target.value }))} className={`${p.className} bg-background`} placeholder="Dân văn phòng, nhóm đá tối, đội phong trào" />}
+                          </Field>
+                          <Field label="Độ dài caption">
+                            {(p) => <input {...p} value={captionPresetDraft.captionLength ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, captionLength: e.target.value }))} className={`${p.className} bg-background`} placeholder="Ngắn / Vừa / Dài" />}
+                          </Field>
+                          <Field label="Kiểu mở đầu">
+                            {(p) => <input {...p} value={captionPresetDraft.hookStyle ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, hookStyle: e.target.value }))} className={`${p.className} bg-background`} placeholder="Question / Benefit / Urgency" />}
+                          </Field>
+                          <Field label="CTA">
+                            {(p) => <input {...p} value={captionPresetDraft.cta ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, cta: e.target.value }))} className={`${p.className} bg-background`} placeholder="Inbox để giữ sân tối nay" />}
+                          </Field>
+                          <Field label="Emoji style">
+                            {(p) => <input {...p} value={captionPresetDraft.emojiStyle ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, emojiStyle: e.target.value }))} className={`${p.className} bg-background`} placeholder="Không dùng / Ít / Vừa phải" />}
+                          </Field>
+                          <Field label="Hashtag bắt buộc">
+                            {(p) => <textarea {...p} value={tagsToText(captionPresetDraft.requiredHashtags)} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, requiredHashtags: textToTags(e.target.value) }))} className={`${p.className} min-h-24 bg-background`} placeholder="#datsan, #bongda" />}
+                          </Field>
+                          <Field label="Hashtag gợi ý">
+                            {(p) => <textarea {...p} value={tagsToText(captionPresetDraft.optionalHashtags)} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, optionalHashtags: textToTags(e.target.value) }))} className={`${p.className} min-h-24 bg-background`} placeholder="#weekendmatch, #reelsvn" />}
+                          </Field>
+                          <Field label="Keyword bắt buộc">
+                            {(p) => <textarea {...p} value={tagsToText(captionPresetDraft.requiredKeywords)} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, requiredKeywords: textToTags(e.target.value) }))} className={`${p.className} min-h-24 bg-background`} placeholder="sân mới, giờ vàng, ưu đãi" />}
+                          </Field>
+                          <Field label="Keyword tránh dùng">
+                            {(p) => <textarea {...p} value={tagsToText(captionPresetDraft.bannedKeywords)} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, bannedKeywords: textToTags(e.target.value) }))} className={`${p.className} min-h-24 bg-background`} placeholder="rẻ nhất, spam" />}
+                          </Field>
+                        </div>
+                        <Field label="Cấu trúc caption">
+                          {(p) => <input {...p} value={captionPresetDraft.formatStyle ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, formatStyle: e.target.value }))} className={`${p.className} bg-background`} placeholder="Hook -> lợi ích -> CTA -> hashtag" />}
+                        </Field>
+                        <Field label="Brand rules">
+                          {(p) => <textarea {...p} value={captionPresetDraft.brandRules ?? ""} onChange={(e) => setCaptionPresetDraft((prev) => ({ ...prev, brandRules: e.target.value }))} className={`${p.className} min-h-24 bg-background`} placeholder="Giữ giọng chuyên nghiệp, tránh sale quá tay" />}
+                        </Field>
+                      </div>
+                    )}
+
+                    <a href="/remix/presets" target="_blank" className="text-xs text-primary hover:underline">
+                      Quản lý caption preset
+                    </a>
+                  </div>
+
+                  {campaigns.length > 0 && (
+                    <Field
+                      label="Thuộc chiến dịch"
+                      hint="Để AI học theo văn phong dữ liệu cũ."
+                    >
                       {(p) => (
                         <select
                           {...p}
-                          value={captionTone || ""}
-                          onChange={(e) => setCaptionTone(e.target.value)}
+                          value={campaignId || ""}
+                          onChange={(e) => setCampaignId(e.target.value)}
                           className={`${p.className} bg-background`}
                         >
-                          <option value="">— Mặc định —</option>
-                          <option value="Chuyên nghiệp, đáng tin cậy">Chuyên nghiệp, đáng tin cậy</option>
-                          <option value="Năng động, tràn đầy năng lượng">Năng động, tràn đầy năng lượng</option>
-                          <option value="Gần gũi, thân thiện như bạn bè">Gần gũi, thân thiện như bạn bè</option>
-                          <option value="Hài hước, trending Gen Z">Hài hước, trending Gen Z</option>
+                          <option value="">— Không gắn —</option>
+                          {campaigns.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
                         </select>
                       )}
                     </Field>
-
-                    {campaigns.length > 0 && (
-                      <Field
-                        label="Thuộc chiến dịch"
-                        hint="Để AI học theo văn phong dữ liệu cũ."
-                      >
-                        {(p) => (
-                          <select
-                            {...p}
-                            value={campaignId || ""}
-                            onChange={(e) => setCampaignId(e.target.value)}
-                            className={`${p.className} bg-background`}
-                          >
-                            <option value="">— Không gắn —</option>
-                            {campaigns.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </Field>
-                    )}
-                  </div>
+                  )}
                 </div>
               </section>
             </div>
@@ -2338,6 +3024,23 @@ export function RemixStudio({
               <p className="text-sm text-muted-foreground">
                 Dán các link video bạn sở hữu, hệ thống sẽ tự xử lý theo cấu hình preset mặc định.
               </p>
+              <Field label="Lưu các job vào folder">
+                {(p) => (
+                  <select
+                    {...p}
+                    value={autoGenerateFolderId}
+                    onChange={(e) => setAutoGenerateFolderId(e.target.value)}
+                    className={`${p.className} bg-background`}
+                  >
+                    <option value="unfiled">Inbox / Unfiled</option>
+                    {allFolders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
               <BatchURLInput value={batchUrls} onChange={setBatchUrls} maxUrls={10} />
             </div>
 
@@ -2352,7 +3055,11 @@ export function RemixStudio({
                     const res = await fetch('/api/remix/batch', {
                       method: 'POST',
                       headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ urls: batchUrls, mode: 'auto', ownershipConfirmed: true }),
+                      body: JSON.stringify({
+                        urls: batchUrls,
+                        mode: 'auto',
+                        folderId: autoGenerateFolderId === "unfiled" ? null : autoGenerateFolderId,
+                      }),
                     });
                     if (!res.ok) {
                       const data = await res.json().catch(() => ({}));
@@ -2360,6 +3067,7 @@ export function RemixStudio({
                     }
                     setShowAutoDialog(false);
                     setBatchUrls([]);
+                    await Promise.all([fetchFolders(), fetchJobs(selectedFolderId)]);
                     router.refresh(); // Tải lại danh sách job trên thanh lịch sử
                   } catch (err) {
                     setError((err as Error).message);
@@ -2383,9 +3091,10 @@ export function RemixStudio({
         />
       )}
 
-      {isEditingVideo && detail?.resultUrl && detail?.options && (
+      {isEditingVideo && (detail?.sourceUrlResolved || detail?.source_url || detail?.resultUrl) && detail?.options && (
         <VideoEditor
-          source={detail.resultUrl}
+          source={detail.sourceUrlResolved || detail.source_url || detail.resultUrl || ""}
+          processedAudioSource={detail.resultUrl || undefined}
           initialOptions={{
             ...detail.options as Record<string, any>,
             // Pre-populate script from the generated ASR/AI script in plan
@@ -2396,27 +3105,64 @@ export function RemixStudio({
               detail.plan?.realScriptVi ||
               detail.plan?.scriptVi ||
               undefined,
+            scriptSegments:
+              (detail.options as Record<string, any>).scriptSegments ||
+              ((detail.plan as any)?.editDecisions?.audio?.cues
+                ?.map((cue: any, idx: number) => ({
+                  id: cue.id || `voice_${idx}`,
+                  start: cue.startSec ?? 0,
+                  end: cue.endSec ?? 0,
+                  text: cue.translatedText || cue.sourceText || '',
+                }))
+                .filter((cue: any) => cue.text && cue.end > cue.start)) ||
+              undefined,
             // Pre-populate text overlays from plan.editDecisions.overlays
             // kind='text' is what upsertTextOverlayDecision stores
             textOnScreenOverlays:
               (detail.options as Record<string, any>).textOnScreenOverlays ||
-              (detail.plan?.editDecisions?.overlays
-                ?.filter((o: any) => o.kind === 'text' && (o.translatedText || o.sourceText))
-                .map((o: any, idx: number) => ({
-                  id: o.id || `plan_${idx}`,
-                  start: o.startSec ?? 0,
-                  end: o.endSec ?? 5,
-                  text: o.translatedText || o.sourceText || '',
-                  position: {
-                    x: (o.region?.x ?? 0.5) + (o.region?.w ?? 0) / 2,
-                    y: o.region?.y ?? 0.1,
-                  },
-                  fontFamily: 'Be Vietnam Pro',
-                  fontSize: 32,
-                  fontColor: '#FFFFFF',
-                  bgColor: '#000000CC',
-                  animation: 'fade_in' as const,
-                })) ?? undefined),
+              (() => {
+                const textStyle = (detail.options as Record<string, any>).onScreenTextStyle ?? {};
+                const font = textStyle.font ?? 'Be Vietnam Pro';
+                const size = textStyle.size ?? 32;
+                const color = textStyle.color ?? '#FFFFFF';
+                const bgColor = textStyle.bgColor ?? '#000000CC';
+                const outlineColor = textStyle.outlineColor ?? '#000000';
+                const bold = textStyle.bold ?? true;
+                const backgroundStyle = textStyle.backgroundStyle ?? 'solid';
+                const backgroundOpacity = textStyle.backgroundOpacity ?? 0.72;
+                return detail.plan?.editDecisions?.overlays
+                  ?.filter((o: any) => o.kind === 'text' && (o.translatedText || o.sourceText))
+                  .map((o: any, idx: number) => ({
+                    id: o.id || `plan_${idx}`,
+                    start: o.startSec ?? 0,
+                    end: o.endSec ?? 5,
+                    text: o.translatedText || o.sourceText || '',
+                    source: 'ocr_auto' as const,
+                    status: 'pending' as const,
+                    ocrTrackId: o.id || `plan_${idx}`,
+                    sourceText: o.sourceText || o.translatedText || '',
+                    position: {
+                      x: (o.region?.x ?? 0.5) + (o.region?.w ?? 0) / 2,
+                      y: (o.region?.y ?? 0.1) + (o.region?.h ?? 0) / 2,
+                    },
+                    box: o.region
+                      ? { x: o.region.x ?? 0.29, y: o.region.y ?? 0.1, w: o.region.w ?? 0.42, h: o.region.h ?? 0.1 }
+                      : undefined,
+                    eraseBox: o.region
+                      ? { x: o.region.x ?? 0.29, y: o.region.y ?? 0.1, w: o.region.w ?? 0.42, h: o.region.h ?? 0.1 }
+                      : undefined,
+                    fontFamily: font,
+                    fontSize: size,
+                    fontColor: color,
+                    bgColor: bgColor,
+                    outlineColor: outlineColor,
+                    bold: bold,
+                    backgroundStyle: backgroundStyle,
+                    backgroundOpacity: backgroundOpacity,
+                    sizeMode: textStyle.sizeMode ?? 'fixed' as const,
+                    animation: 'fade_in' as const,
+                  })) ?? undefined;
+              })(),
           }}
           onSave={handleSaveVideo}
           onCancel={() => setIsEditingVideo(false)}

@@ -83,29 +83,31 @@ async function enqueueTargets(
   postId: string,
   targets: TargetRow[],
   delayMs: number,
-): Promise<number> {
+): Promise<string[]> {
   const queue = getQueue(QUEUE_NAMES.publish);
-  let enqueued = 0;
+  const enqueuedJobIds: string[] = [];
 
   for (const target of targets) {
     // Skip targets already published (idempotency / dedupe).
     if (target.external_post_id) continue;
 
     const data: PublishJobData = { postTargetId: target.id, postId };
+    const jobId = publishJobId(target.id);
     await queue.add("publish", data, {
-      jobId: publishJobId(target.id),
+      jobId,
       delay: delayMs > 0 ? delayMs : undefined,
     });
-    enqueued++;
+    enqueuedJobIds.push(jobId);
   }
 
-  return enqueued;
+  return enqueuedJobIds;
 }
 
 export interface ScheduleResult {
   status: "scheduled" | "publishing";
   scheduledAt: string | null;
   targetsEnqueued: number;
+  enqueuedJobIds: string[];
 }
 
 /**
@@ -151,17 +153,22 @@ export async function schedulePost(
     throw new ScheduleError(500, `update post: ${updateErr.message}`);
   }
 
-  const targetsEnqueued = await enqueueTargets(postId, targets, delayMs);
+  const enqueuedJobIds = await enqueueTargets(postId, targets, delayMs);
 
   // Bookkeeping row for observability (worker/admin can inspect).
   await admin.from("schedule_jobs").insert({
     post_id: postId,
     run_at: runAtIso,
-    bull_job_id: `publish:${postId}`,
+    bull_job_id: JSON.stringify(enqueuedJobIds),
     status: "queued",
   });
 
-  return { status: "scheduled", scheduledAt: runAtIso, targetsEnqueued };
+  return {
+    status: "scheduled",
+    scheduledAt: runAtIso,
+    targetsEnqueued: enqueuedJobIds.length,
+    enqueuedJobIds,
+  };
 }
 
 /**
@@ -186,14 +193,19 @@ export async function publishPostNow(
     throw new ScheduleError(500, `update post: ${updateErr.message}`);
   }
 
-  const targetsEnqueued = await enqueueTargets(postId, targets, 0);
+  const enqueuedJobIds = await enqueueTargets(postId, targets, 0);
 
   await admin.from("schedule_jobs").insert({
     post_id: postId,
     run_at: new Date().toISOString(),
-    bull_job_id: `publish:${postId}`,
+    bull_job_id: JSON.stringify(enqueuedJobIds),
     status: "queued",
   });
 
-  return { status: "publishing", scheduledAt: null, targetsEnqueued };
+  return {
+    status: "publishing",
+    scheduledAt: null,
+    targetsEnqueued: enqueuedJobIds.length,
+    enqueuedJobIds,
+  };
 }

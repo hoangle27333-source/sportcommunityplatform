@@ -39,6 +39,7 @@ export type DubMode = 'none' | 'full' | 'preserve_bgm' | 'heygen';
 export type ScriptInputMode = "from_video_audio" | "manual_script";
 export type SubtitleAnimation = "static" | "word_highlight" | "reveal_words";
 export type SubtitlePosition = "top" | "bottom" | "auto" | "custom";
+export type TextOnScreenOverlaySource = "ocr_auto" | "manual";
 export type SubtitlePreset =
   | "tiktok_bold"
   | "meme"
@@ -115,6 +116,14 @@ export interface RemixOptions {
   scriptInputMode?: ScriptInputMode;
   /** Script user nhập trực tiếp khi scriptInputMode='manual_script'. */
   manualScript?: string;
+  /** Script đã chia cue trong Video Editor, giữ timing gốc và cho phép user chỉnh start/end. */
+  scriptSegments?: Array<{
+    id?: string;
+    start: number;
+    end: number;
+    text: string;
+    isEdited?: boolean;
+  }>;
   /**
    * Ngôn ngữ đích cho HeyGen Video Translate (ISO-639-1 tên đầy đủ theo HeyGen API).
    * Ví dụ: 'Vietnamese', 'English'. Mặc định lấy từ targetLanguage nếu không truyền.
@@ -162,6 +171,8 @@ export interface RemixOptions {
   captionTone?: string;
   /** Xử lý dịch văn bản trên ảnh (đè chữ hoặc tạo ảnh mới). */
   imageTranslate?: "overlay" | "regenerate";
+  /** Template tái sử dụng từ Filerobot Image Editor cho flow output=image. */
+  imageEditorTemplate?: Record<string, unknown>;
   /** Dịch chữ đang burn-in/on-screen trong video gốc sang targetLanguage. */
   translateOnScreenText?: boolean;
   /** Style riêng cho bản dịch text on-screen gốc. */
@@ -172,6 +183,8 @@ export interface RemixOptions {
     sizeMode?: "auto_fit" | "fixed";
     color?: string;
     bgColor?: string;
+    backgroundStyle?: "solid" | "blur";
+    backgroundOpacity?: number;
     outlineColor?: string;
     bold?: boolean;
   };
@@ -218,12 +231,35 @@ export interface RemixOptions {
     start: number;
     end: number;
     text: string;
+    source?: TextOnScreenOverlaySource;
+    status?: "pending" | "approved" | "disabled";
+    ocrTrackId?: string;
+    sourceText?: string;
     position: { x: number; y: number };
+    box?: { x: number; y: number; w: number; h: number };
+    eraseBox?: { x: number; y: number; w: number; h: number };
     fontFamily: string;
     fontSize: number;
     fontColor: string;
     bgColor: string;
+    backgroundStyle?: "solid" | "blur";
+    backgroundOpacity?: number;
+    outlineColor?: string;
+    bold?: boolean;
+    italic?: boolean;
+    sizeMode?: "auto_fit" | "fixed";
     animation: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
+  }>;
+  /** Manual blur zones user defines in VideoEditor to fix missed/incorrect OCR text regions. */
+  manualBlurRegions?: Array<{
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    startSec: number;
+    endSec: number;
+    label?: string;
   }>;
   /** Ngôn ngữ đầu ra cho dịch phụ đề và lồng tiếng.
    * - 'vi': Tiếng Việt (mặc định)
@@ -289,18 +325,23 @@ export type VideoOp =
       endSec?: number;
       position?: "top" | "center" | "bottom";
       region?: { x: number; y: number; w: number; h: number };
+      eraseRegion?: { x: number; y: number; w: number; h: number };
       fitToRegion?: boolean;
       sizeMode?: "auto_fit" | "fixed";
       coverRegion?: boolean;
       minFontSize?: number;
       maxFontSize?: number;
+      fontSizeBoostPx?: number;
       font?: string;
       fontSize?: number;
       color?: string;
       bgColor?: string;
+      backgroundStyle?: "solid" | "blur";
+      backgroundOpacity?: number;
       outlineColor?: string;
       boxOpacity?: number;
       bold?: boolean;
+      animation?: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
     }
   /** Chỉnh màu: brightness/contrast/saturation nhẹ. */
   | { op: "colorGrade"; brightness?: number; contrast?: number; saturation?: number }

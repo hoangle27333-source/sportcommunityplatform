@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
+import pino from "pino";
 import { z } from "zod";
 import { requireUser, requireEditor, AuthError } from "@/lib/auth/require-user";
 import { enqueue, QUEUE_NAMES } from "@/lib/queue";
 import { requiresVoicePipelineForRemix } from "@/lib/remix/preflight";
 import { buildRemixOptionsFromPreset } from "@/lib/remix/preset-options";
+import { buildRemixOptionsFromImagePreset } from "@/lib/remix/image-preset-options";
 import type { RemixOptions } from "@/lib/remix/types";
 import {
   getRemixServiceHealth,
@@ -11,6 +13,7 @@ import {
 } from "@/lib/remix/service-health";
 
 export const dynamic = "force-dynamic";
+const logger = pino({ name: "api:remix" });
 
 /**
  * /api/remix — Content Remix jobs (flow: nguồn → AI plan → edit → review).
@@ -35,6 +38,13 @@ const optionsSchema = z
     dubMode: z.enum(['none', 'full', 'preserve_bgm', 'heygen']).optional(),
     scriptInputMode: z.enum(["from_video_audio", "manual_script"]).optional(),
     manualScript: z.string().max(50000).optional(),
+    scriptSegments: z.array(z.object({
+      id: z.string().max(80).optional(),
+      start: z.number().min(0),
+      end: z.number().min(0),
+      text: z.string().max(5000),
+      isEdited: z.boolean().optional(),
+    })).max(500).optional(),
     heygenTargetLanguage: z.string().max(50).optional(),
     bgVolume: z.number().optional(),
     vertical: z.boolean().optional(),
@@ -78,18 +88,67 @@ const optionsSchema = z
     captionPrompt: z.string().max(2000).optional(),
     captionTone: z.string().max(100).optional(),
     imageTranslate: z.enum(["overlay", "regenerate"]).optional(),
+    imageEditorTemplate: z.record(z.unknown()).optional(),
     translateOnScreenText: z.boolean().optional(),
     onScreenTextStyle: z.object({
       preset: z.enum(["meme", "pop", "bubble", "neon", "clean"]).optional(),
       font: z.string().max(100).optional(),
-      size: z.number().int().min(16).max(72).optional(),
+      size: z.number().int().min(1).max(120).optional(),
       sizeMode: z.enum(["auto_fit", "fixed"]).optional(),
       color: z.string().max(20).optional(),
       bgColor: z.string().max(20).optional(),
+      backgroundStyle: z.enum(["solid", "blur"]).optional(),
+      backgroundOpacity: z.number().min(0).max(1).optional(),
       outlineColor: z.string().max(20).optional(),
       bold: z.boolean().optional(),
     }).optional(),
     textOverlay: z.string().max(2000).optional(),
+    textOnScreenOverlays: z.array(z.object({
+      id: z.string().max(80),
+      start: z.number().min(0),
+      end: z.number().min(0),
+      text: z.string().max(1000),
+      status: z.enum(["pending", "approved", "disabled"]).optional(),
+      source: z.enum(["ocr_auto", "manual"]).optional(),
+      ocrTrackId: z.string().max(120).optional(),
+      sourceText: z.string().max(1000).optional(),
+      position: z.object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+      }).optional(),
+      box: z.object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        w: z.number().min(0.01).max(1),
+        h: z.number().min(0.01).max(1),
+      }).optional(),
+      eraseBox: z.object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        w: z.number().min(0.01).max(1),
+        h: z.number().min(0.01).max(1),
+      }).optional(),
+      fontFamily: z.string().max(100),
+      fontSize: z.number().int().min(1).max(120),
+      fontColor: z.string().max(20),
+      bgColor: z.string().max(20),
+      backgroundStyle: z.enum(["solid", "blur"]).optional(),
+      backgroundOpacity: z.number().min(0).max(1).optional(),
+      outlineColor: z.string().max(20).optional(),
+      bold: z.boolean().optional(),
+      sizeMode: z.enum(["auto_fit", "fixed"]).optional(),
+      animation: z.enum(["none", "fade_in", "fade_out", "slide_up", "slide_down", "scale_in"]),
+    })).max(80).optional(),
+    manualBlurRegions: z.array(z.object({
+      id: z.string().max(80),
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      w: z.number().min(0.01).max(1),
+      h: z.number().min(0.01).max(1),
+      startSec: z.number().min(0),
+      endSec: z.number().min(0),
+      label: z.string().max(120).optional(),
+    })).max(80).optional(),
     voiceName: z.string().max(100).optional(),
     voiceVolume: z.number().min(0.5).max(3.0).optional(),
     blurOriginalSub: z.boolean().optional(),
@@ -149,12 +208,12 @@ const createSchema = z
     sourceType: z.enum(["upload", "own_link", "inspiration"]),
     sourceUrl: z.string().url().optional(),
     sourceMediaId: z.string().uuid().optional(),
-    /** Xác nhận quyền sử dụng — bắt buộc với own_link. */
     ownershipConfirmed: z.boolean().default(false),
     outputKind: z.enum(["video", "image", "caption"]),
     prompt: z.string().max(4000).optional(),
     options: optionsSchema,
     presetId: z.string().uuid().optional(),
+    folderId: z.string().uuid().nullable().optional(),
     campaignId: z.string().uuid().optional(),
   })
   // Chặn ngay ở tầng API, trước cả CHECK constraint của DB, để trả lỗi rõ ràng.
@@ -163,11 +222,10 @@ const createSchema = z
     { message: "Nguồn 'upload' cần sourceMediaId.", path: ["sourceMediaId"] },
   )
   .refine(
-    (v) => v.sourceType !== "own_link" || (Boolean(v.sourceUrl) && v.ownershipConfirmed),
+    (v) => v.sourceType !== "own_link" || Boolean(v.sourceUrl),
     {
-      message:
-        "Nguồn 'own_link' cần sourceUrl và bạn phải xác nhận đây là nội dung mình sở hữu.",
-      path: ["ownershipConfirmed"],
+      message: "Nguồn 'own_link' cần sourceUrl.",
+      path: ["sourceUrl"],
     },
   )
   .refine(
@@ -179,25 +237,31 @@ export async function GET(req: NextRequest) {
   try {
     const { db } = await requireUser();
     const status = req.nextUrl.searchParams.get("status");
+    const folderId = req.nextUrl.searchParams.get("folderId");
 
     let query = db
       .from("remix_jobs")
       .select(
         "id, source_type, source_url, output_kind, prompt, options, status, plan, " +
-          "result_media_id, result_caption, result_hashtags, error, iteration, " +
+          "result_media_id, result_caption, result_hashtags, error, iteration, folder_id, " +
           "post_id, created_at, updated_at",
       )
       .order("created_at", { ascending: false })
       .limit(100);
 
     if (status) query = query.eq("status", status);
+    if (folderId === "unfiled") query = query.is("folder_id", null);
+    else if (folderId) query = query.eq("folder_id", folderId);
 
     const { data, error } = await query;
     if (error) {
+      logger.error({ err: error, status, folderId }, "failed to list remix jobs");
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    logger.info({ count: data?.length ?? 0, status, folderId }, "listed remix jobs");
     return NextResponse.json({ jobs: data });
   } catch (e) {
+    logger.error({ err: e }, "unexpected remix list error");
     return handleError(e);
   }
 }
@@ -207,21 +271,25 @@ export async function POST(req: NextRequest) {
     const { db, user } = await requireEditor();
     const body = createSchema.parse(await req.json());
     const baseOptions = body.options as RemixOptions;
-    const resolvedPresetId =
+    const presetTable =
       body.outputKind === "video"
+        ? "remix_presets"
+        : body.outputKind === "image"
+          ? "remix_image_presets"
+          : null;
+    const resolvedPresetId =
+      presetTable
         ? (
             body.presetId
-              ? await verifyPresetId(db, user.id, body.presetId)
-              : await findDefaultPresetId(db, user.id)
+              ? await verifyPresetId(db, presetTable, body.presetId)
+              : await findDefaultPresetId(db, presetTable)
           )
-        : (body.presetId
-            ? await verifyPresetId(db, user.id, body.presetId)
-            : null);
+        : null;
 
     let presetConfig: Record<string, any> | null = null;
-    if (resolvedPresetId) {
+    if (resolvedPresetId && presetTable) {
       const { data: preset, error } = await db
-        .from("remix_presets")
+        .from(presetTable)
         .select("*")
         .eq("id", resolvedPresetId)
         .maybeSingle();
@@ -237,27 +305,37 @@ export async function POST(req: NextRequest) {
     const effectiveOptions =
       presetConfig && body.outputKind === "video"
         ? buildRemixOptionsFromPreset(presetConfig, baseOptions)
-        : baseOptions;
+        : presetConfig && body.outputKind === "image"
+          ? buildRemixOptionsFromImagePreset(presetConfig, baseOptions)
+          : baseOptions;
 
     const needsVoicePipeline = requiresVoicePipelineForRemix({
       outputKind: body.outputKind,
       ...effectiveOptions,
     });
 
-    // if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
-    //   const health = await getRemixServiceHealth();
-    //   if (!health.voicePipeline.reachable) {
-    //     return NextResponse.json(
-    //       {
-    //         error:
-    //           "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
-    //           `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi tạo job.`,
-    //         preflight: health,
-    //       },
-    //       { status: 503 },
-    //     );
-    //   }
-    // }
+    if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
+      const health = await getRemixServiceHealth();
+      if (!health.voicePipeline.reachable) {
+        logger.warn(
+          {
+            outputKind: body.outputKind,
+            sourceType: body.sourceType,
+            health,
+          },
+          "voice pipeline unavailable for remix create",
+        );
+        return NextResponse.json(
+          {
+            error:
+              "Voice Pipeline V2 chưa sẵn sàng trong profile hiện tại. " +
+              `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc bật media sidecars trước khi tạo job remix này.`,
+            preflight: health,
+          },
+          { status: 503 },
+        );
+      }
+    }
 
     const { data: job, error } = await db
       .from("remix_jobs")
@@ -265,11 +343,12 @@ export async function POST(req: NextRequest) {
         source_type: body.sourceType,
         source_url: body.sourceUrl ?? null,
         source_media_id: body.sourceMediaId ?? null,
-        ownership_confirmed: body.ownershipConfirmed,
+        ownership_confirmed: body.sourceType === "own_link" ? true : body.ownershipConfirmed,
         output_kind: body.outputKind,
         prompt: body.prompt ?? null,
         options: effectiveOptions,
-        preset_id: resolvedPresetId,
+        preset_id: body.outputKind === "video" ? resolvedPresetId : null,
+        folder_id: body.folderId ?? null,
         campaign_id: body.campaignId ?? null,
         status: "queued",
         created_by: user.id,
@@ -300,10 +379,10 @@ export async function POST(req: NextRequest) {
 
 async function findDefaultPresetId(
   db: Awaited<ReturnType<typeof requireEditor>>["db"],
-  userId: string,
+  table: "remix_presets" | "remix_image_presets",
 ) {
   const { data, error } = await db
-    .from("remix_presets")
+    .from(table)
     .select("id")
     .eq("is_default", true)
     .order("updated_at", { ascending: false })
@@ -317,11 +396,11 @@ async function findDefaultPresetId(
 
 async function verifyPresetId(
   db: Awaited<ReturnType<typeof requireEditor>>["db"],
-  userId: string,
+  table: "remix_presets" | "remix_image_presets",
   presetId: string,
 ) {
   const { data, error } = await db
-    .from("remix_presets")
+    .from(table)
     .select("id")
     .eq("id", presetId)
     .maybeSingle<{ id: string }>();

@@ -1,48 +1,61 @@
 import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * Badge — small inline label. `Status` below maps domain states to tones so a
- * given state always renders the same color everywhere in the app.
+ * Badge — redesign v2: Blue + Emerald palette, softer tints, pill shape.
+ *
+ * Domain-specific helpers (Status, PlatformBadge) are co-located here
+ * so consumers can import from a single path.
  */
+const badgeVariants = cva(
+  [
+    "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5",
+    "text-2xs font-medium whitespace-nowrap",
+    "ring-1 ring-inset",
+  ],
+  {
+    variants: {
+      tone: {
+        default:     "bg-muted text-foreground ring-border",
+        neutral:     "bg-muted text-foreground ring-border",
+        primary:     "bg-primary-muted text-primary ring-primary/20",
+        accent:      "bg-accent-muted text-accent ring-accent/20",
+        success:     "bg-success-muted text-success ring-success/20",
+        warning:     "bg-warning-muted text-warning ring-warning/20",
+        destructive: "bg-destructive-muted text-destructive ring-destructive/20",
+        danger:      "bg-destructive-muted text-destructive ring-destructive/20",
+        info:        "bg-info-muted text-info ring-info/20",
+      },
+    },
+    defaultVariants: {
+      tone: "default",
+    },
+  },
+);
 
-const TONES = {
-  neutral: "bg-muted text-muted-foreground",
-  primary: "bg-primary-muted text-primary",
-  success: "bg-success-muted text-success",
-  warning: "bg-warning-muted text-warning",
-  danger: "bg-destructive-muted text-destructive",
-  info: "bg-info-muted text-info",
-} as const;
-
-export type BadgeTone = keyof typeof TONES;
-
-export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  tone?: BadgeTone;
-  /** Render a leading dot — useful for live/queue states in dense tables. */
+export interface BadgeProps
+  extends React.HTMLAttributes<HTMLSpanElement>,
+    VariantProps<typeof badgeVariants> {
   dot?: boolean;
 }
 
-export function Badge({
-  className,
-  tone = "neutral",
-  dot = false,
-  children,
-  ...props
-}: BadgeProps) {
+function Badge({ className, tone, dot, children, ...props }: BadgeProps) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-2xs font-medium",
-        TONES[tone],
-        className,
-      )}
-      {...props}
-    >
+    <span className={cn(badgeVariants({ tone }), className)} {...props}>
       {dot && (
         <span
+          className={cn(
+            "size-1.5 rounded-full shrink-0",
+            tone === "success" && "bg-success",
+            tone === "warning" && "bg-warning",
+            tone === "destructive" && "bg-destructive",
+            tone === "info" && "bg-info",
+            tone === "primary" && "bg-primary",
+            tone === "accent" && "bg-accent",
+            (!tone || tone === "default") && "bg-muted-foreground",
+          )}
           aria-hidden="true"
-          className="size-1.5 rounded-full bg-current opacity-80"
         />
       )}
       {children}
@@ -50,92 +63,99 @@ export function Badge({
   );
 }
 
-/**
- * Single source of truth for domain state → (label, tone).
- *
- * Labels are Vietnamese (NFR6). Covers the post state machine (R5.2), channel
- * token states (R2.6), async job states (R4.6) and engagement review states (R8).
- */
-const STATUS_MAP: Record<string, { label: string; tone: BadgeTone }> = {
-  // Post lifecycle (R5.2)
-  draft: { label: "Nháp", tone: "neutral" },
-  generating: { label: "Đang tạo", tone: "info" },
-  pending_review: { label: "Chờ duyệt", tone: "warning" },
-  approved: { label: "Đã duyệt", tone: "primary" },
-  scheduled: { label: "Đã lên lịch", tone: "primary" },
-  publishing: { label: "Đang đăng", tone: "info" },
-  published: { label: "Đã đăng", tone: "success" },
-  partially_published: { label: "Đăng một phần", tone: "warning" },
-  failed: { label: "Thất bại", tone: "danger" },
-  cancelled: { label: "Đã huỷ", tone: "neutral" },
-
-  // Channel / token health (R2.6)
-  active: { label: "Hoạt động", tone: "success" },
-  expired: { label: "Token hết hạn", tone: "danger" },
-  needs_reauth: { label: "Cần kết nối lại", tone: "danger" },
-  revoked: { label: "Đã thu hồi", tone: "neutral" },
-  error: { label: "Lỗi", tone: "warning" },
-
-  // Campaigns (campaign_status)
-  paused: { label: "Tạm dừng", tone: "warning" },
-  archived: { label: "Đã lưu trữ", tone: "neutral" },
-
-  // Async jobs (R4.6)
-  queued: { label: "Trong hàng đợi", tone: "neutral" },
-  running: { label: "Đang chạy", tone: "info" },
-  rendering: { label: "Đang render", tone: "info" },
-  succeeded: { label: "Thành công", tone: "success" },
-  done: { label: "Hoàn tất", tone: "success" },
-
-  // Remix pipeline (SPEC §7 — remix_status)
-  analyzing: { label: "Đang phân tích", tone: "info" },
-  processing: { label: "Đang xử lý", tone: "info" },
-  review: { label: "Chờ xem lại", tone: "warning" },
-  revising: { label: "Đang sửa", tone: "info" },
-
-
-  // Engagement review (R8.4)
-  pending: { label: "Chờ xử lý", tone: "warning" },
-  suggested: { label: "Có gợi ý", tone: "info" },
-  sent: { label: "Đã gửi", tone: "success" },
-  hidden: { label: "Đã ẩn", tone: "neutral" },
-  skipped: { label: "Bỏ qua", tone: "neutral" },
+/** Domain: maps post/job status values to a tone */
+const STATUS_TONE: Record<string, VariantProps<typeof badgeVariants>["tone"]> = {
+  draft:       "default",
+  scheduled:   "info",
+  publishing:  "warning",
+  published:   "success",
+  active:      "success",
+  completed:   "success",
+  approved:    "success",
+  failed:      "destructive",
+  error:       "destructive",
+  paused:      "warning",
+  pending:     "warning",
+  processing:  "warning",
+  queued:      "warning",
+  archived:    "default",
+  skipped:     "default",
+  needs_reauth: "destructive",
+  sent:        "accent",
 };
 
-/** Statuses that represent live work — rendered with a dot for scanability. */
-const LIVE = new Set([
-  "generating",
-  "publishing",
-  "running",
-  "rendering",
-  "queued",
-  "analyzing",
-  "processing",
-  "revising",
-]);
+const STATUS_LABEL: Record<string, string> = {
+  draft:       "Nháp",
+  scheduled:   "Đã lên lịch",
+  publishing:  "Đang đăng",
+  published:   "Đã đăng",
+  active:      "Đang chạy",
+  completed:   "Hoàn thành",
+  approved:    "Đã duyệt",
+  failed:      "Thất bại",
+  error:       "Lỗi",
+  paused:      "Tạm dừng",
+  pending:     "Chờ duyệt",
+  processing:  "Đang xử lý",
+  queued:      "Trong hàng",
+  archived:    "Lưu trữ",
+  skipped:     "Bỏ qua",
+  needs_reauth: "Cần đăng nhập lại",
+  sent:        "Đã gửi",
+};
 
 export function Status({
   value,
   className,
 }: {
-  value: string | null | undefined;
+  value: string;
   className?: string;
 }) {
-  if (!value) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  const entry = STATUS_MAP[value] ?? { label: value, tone: "neutral" as const };
+  const tone = STATUS_TONE[value] ?? "default";
+  const label = STATUS_LABEL[value] ?? value;
   return (
-    <Badge tone={entry.tone} dot={LIVE.has(value)} className={className}>
-      {entry.label}
+    <Badge tone={tone} dot className={className}>
+      {label}
     </Badge>
   );
 }
 
-/** Platform chip (Facebook / Instagram) — used in channel + target lists. */
-export function PlatformBadge({ platform }: { platform: string }) {
-  const label = platform === "instagram" ? "Instagram" : "Facebook";
+const PLATFORM_CONFIG: Record<
+  string,
+  { label: string; color: string; bg: string }
+> = {
+  facebook:  { label: "Facebook", color: "text-blue-700", bg: "bg-blue-50 ring-blue-200" },
+  instagram: { label: "Instagram", color: "text-pink-700", bg: "bg-pink-50 ring-pink-200" },
+  youtube:   { label: "YouTube", color: "text-red-700", bg: "bg-red-50 ring-red-200" },
+  tiktok:    { label: "TikTok", color: "text-gray-900", bg: "bg-gray-50 ring-gray-200" },
+};
+
+export function PlatformBadge({
+  platform,
+  className,
+}: {
+  platform: string;
+  className?: string;
+}) {
+  const cfg = PLATFORM_CONFIG[platform.toLowerCase()];
+  if (!cfg) {
+    return (
+      <Badge className={className}>{platform}</Badge>
+    );
+  }
   return (
-    <Badge tone={platform === "instagram" ? "danger" : "primary"}>{label}</Badge>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5",
+        "text-2xs font-medium ring-1 ring-inset whitespace-nowrap",
+        cfg.color,
+        cfg.bg,
+        className,
+      )}
+    >
+      {cfg.label}
+    </span>
   );
 }
+
+export { Badge, badgeVariants };

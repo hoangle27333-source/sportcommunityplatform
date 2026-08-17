@@ -40,12 +40,17 @@ export interface SyncResult {
   skipped: number;
   failed: number;
   accountsNeedingReauth: string[];
+  shard?: {
+    totalAccounts: number;
+    accountIndex: number;
+    shardSize: number;
+  };
 }
 
 /** Sync metrics for all published targets (optionally scoped to one account). */
 export async function syncAllMetrics(
   db: SupabaseClient,
-  opts: { socialAccountId?: string; limit?: number } = {},
+  opts: { socialAccountId?: string; limit?: number; shardKey?: number; shardSize?: number } = {},
 ): Promise<SyncResult> {
   const result: SyncResult = {
     totalTargets: 0,
@@ -61,7 +66,8 @@ export async function syncAllMetrics(
     .select("id, external_post_id, social_account_id")
     .eq("status", "published")
     .not("external_post_id", "is", null)
-    .limit(opts.limit ?? 1000);
+    .order("social_account_id", { ascending: true })
+    .limit(resolveAnalyticsLimit(opts.limit, opts.shardSize));
 
   if (opts.socialAccountId) {
     query = query.eq("social_account_id", opts.socialAccountId);
@@ -71,7 +77,10 @@ export async function syncAllMetrics(
   if (error) throw new Error(`load targets: ${error.message}`);
   if (!targets || targets.length === 0) return result;
 
-  result.totalTargets = targets.length;
+  const filteredTargets = applyAccountShard(targets as SyncTargetRow[], opts);
+  if (filteredTargets.length === 0) return result;
+
+  result.totalTargets = filteredTargets.length;
 
   // Cache decrypted tokens + reauth state per account across the run.
   const accountCache = new Map<
@@ -80,7 +89,7 @@ export async function syncAllMetrics(
   >();
   const reauthNeeded = new Set<string>();
 
-  for (const target of targets as SyncTargetRow[]) {
+  for (const target of filteredTargets) {
     if (!target.external_post_id) {
       result.skipped++;
       continue;
@@ -141,7 +150,13 @@ async function loadAccount(
     .single<SyncAccountRow>();
 
   if (error || !data) return null;
-  if (data.status === "revoked") return null;
+  if (
+    data.status === "revoked" ||
+    data.status === "expired" ||
+    data.status === "needs_reauth"
+  ) {
+    return null;
+  }
 
   try {
     return {
@@ -177,6 +192,47 @@ async function markNeedsReauth(
 ): Promise<void> {
   await db
     .from("social_accounts")
-    .update({ status: "expired" })
+    .update({ status: "needs_reauth" })
     .eq("id", socialAccountId);
+}
+
+function resolveAnalyticsLimit(explicitLimit?: number, shardSize?: number): number {
+  if (typeof explicitLimit === "number") return explicitLimit;
+  const envLimit = Number(process.env.ANALYTICS_SYNC_LIMIT ?? "250");
+  const baseLimit = !Number.isFinite(envLimit) || envLimit < 1 ? 250 : Math.floor(envLimit);
+  const multiplier =
+    typeof shardSize === "number" && Number.isFinite(shardSize) && shardSize > 1
+      ? Math.floor(shardSize)
+      : 1;
+  return baseLimit * multiplier;
+}
+
+function applyAccountShard(
+  targets: SyncTargetRow[],
+  opts: { shardKey?: number; shardSize?: number },
+): SyncTargetRow[] {
+  const shardSize = resolveShardSize(opts.shardSize);
+  if (shardSize <= 1) return targets;
+
+  const uniqueAccounts = [...new Set(targets.map((target) => target.social_account_id))];
+  const accountIndex = normalizeShardKey(opts.shardKey, shardSize);
+  const allowedAccounts = new Set(
+    uniqueAccounts.filter((_, index) => index % shardSize === accountIndex),
+  );
+  return targets.filter((target) => allowedAccounts.has(target.social_account_id));
+}
+
+function resolveShardSize(explicitShardSize?: number): number {
+  if (typeof explicitShardSize === "number") return Math.max(1, Math.floor(explicitShardSize));
+  const envValue = Number(process.env.ANALYTICS_SYNC_ACCOUNT_SHARDING ?? "1");
+  if (!Number.isFinite(envValue) || envValue < 1) return 1;
+  return Math.floor(envValue);
+}
+
+function normalizeShardKey(explicitShardKey: number | undefined, shardSize: number): number {
+  if (typeof explicitShardKey === "number" && Number.isFinite(explicitShardKey)) {
+    return ((Math.floor(explicitShardKey) % shardSize) + shardSize) % shardSize;
+  }
+  const dayOfMonth = new Date().getUTCDate();
+  return dayOfMonth % shardSize;
 }

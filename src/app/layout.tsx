@@ -1,21 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Fira_Sans, Fira_Code } from "next/font/google";
+import { Outfit, Fira_Code } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 /**
- * Fonts are loaded via next/font (self-hosted, non-blocking) instead of
- * a CSS @import which is render-blocking and increases LCP.
- * Vietnamese subset is included so diacritics render correctly.
+ * Fonts: Outfit (geometric sans, Playful & Friendly SaaS vibe) +
+ *        Fira Code (monospace for KPI values, code, tabular numbers).
+ * Self-hosted via next/font — non-blocking, no external network request,
+ * Vietnamese subset included for diacritics.
  */
-const firaSans = Fira_Sans({
-  subsets: ["latin", "vietnamese"],
+const outfit = Outfit({
+  subsets: ["latin", "latin-ext"],
   weight: ["300", "400", "500", "600", "700"],
   variable: "--font-sans",
   display: "swap",
 });
 
 const firaCode = Fira_Code({
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-mono",
   display: "swap",
@@ -33,26 +35,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  // No maximumScale/userScalable lock — pinch zoom must stay available (NFR5).
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F8FAFC" },
-    { media: "(prefers-color-scheme: dark)", color: "#0B1220" },
-  ],
+  themeColor: "#F8FAFC",
 };
-
-/**
- * Applied before first paint so the theme class is already on <html> when the
- * CSS is evaluated — without this, a dark-mode user sees a white flash on every
- * navigation-less load. Kept inline and dependency-free for that reason.
- */
-const THEME_INIT = `
-try {
-  var stored = localStorage.getItem('theme');
-  var dark = stored ? stored === 'dark'
-    : window.matchMedia('(prefers-color-scheme: dark)').matches;
-  if (dark) document.documentElement.classList.add('dark');
-} catch (e) {}
-`;
 
 export default function RootLayout({
   children,
@@ -60,12 +44,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
-      </head>
-      <body suppressHydrationWarning className={`${firaSans.variable} ${firaCode.variable} min-h-screen bg-background font-sans text-foreground antialiased`}>
+    <html lang="vi">
+      <body
+        className={`${outfit.variable} ${firaCode.variable} min-h-screen bg-background font-sans text-foreground antialiased`}
+      >
         {children}
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            classNames: {
+              toast:
+                "font-sans rounded-[10px] border border-border shadow-md text-sm",
+              success: "border-success/20 bg-success-muted text-foreground",
+              error:   "border-destructive/20 bg-destructive-muted text-foreground",
+              warning: "border-warning/20 bg-warning-muted text-foreground",
+              info:    "border-primary/20 bg-primary-muted text-foreground",
+            },
+          }}
+        />
       </body>
     </html>
   );

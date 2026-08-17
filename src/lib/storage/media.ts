@@ -34,14 +34,17 @@ export interface StoredAsset {
 
 export interface UploadMediaInput {
   buffer: Buffer;
-  contentType: string;
+  contentType?: string;
+  mimeType?: string;
   /** File extension without dot, e.g. "png", "jpg", "mp4". */
   ext: string;
-  type: "image" | "video" | "banner";
+  type?: "image" | "video" | "banner";
   generatedBy: GeneratedBy;
   createdBy?: string;
+  prefix?: string;
   /** Arbitrary provenance / dimensions / source asset id. */
   meta?: Record<string, unknown>;
+  prompt?: string;
 }
 
 /** Upload a buffer to storage and insert the media_assets row. */
@@ -49,12 +52,18 @@ export async function uploadMediaAsset(
   db: SupabaseClient,
   input: UploadMediaInput,
 ): Promise<StoredAsset> {
-  const path = buildStoragePath(input.type, input.ext);
+  const contentType = input.contentType ?? input.mimeType;
+  if (!contentType) {
+    throw new Error("uploadMediaAsset requires contentType or mimeType");
+  }
+  const assetType = input.type ?? inferAssetType(contentType);
+
+  const path = buildStoragePath(assetType, input.ext, input.prefix);
 
   const { error: uploadErr } = await db.storage
     .from(MEDIA_BUCKET)
     .upload(path, input.buffer, {
-      contentType: input.contentType,
+      contentType,
       upsert: false,
     });
   if (uploadErr) {
@@ -68,12 +77,15 @@ export async function uploadMediaAsset(
   const { data: row, error: insErr } = await db
     .from("media_assets")
     .insert({
-      type: input.type,
+      type: assetType,
       url: publicUrl,
       storage_path: path,
       generated_by: input.generatedBy,
       created_by: input.createdBy ?? null,
-      meta: input.meta ?? {},
+      meta: {
+        ...(input.meta ?? {}),
+        ...(input.prompt ? { prompt: input.prompt } : {}),
+      },
     })
     .select("id")
     .single<{ id: string }>();
@@ -84,7 +96,7 @@ export async function uploadMediaAsset(
     throw new Error(`media_assets insert failed: ${insErr?.message}`);
   }
 
-  return { id: row.id, url: publicUrl, storagePath: path, type: input.type };
+  return { id: row.id, url: publicUrl, storagePath: path, type: assetType };
 }
 
 /** Download an existing storage object as a Buffer (for image-edit source). */
@@ -141,12 +153,19 @@ export async function fetchToBuffer(
   return Buffer.concat(chunks);
 }
 
-function buildStoragePath(type: string, ext: string): string {
+function buildStoragePath(type: string, ext: string, prefix?: string): string {
   const now = new Date();
   const yyyy = now.getUTCFullYear();
   const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
   const rand = crypto.randomUUID();
-  return `${type}/${yyyy}/${mm}/${rand}.${ext}`;
+  const cleanPrefix = prefix?.trim().replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  const filename = cleanPrefix ? `${cleanPrefix}-${rand}.${ext}` : `${rand}.${ext}`;
+  return `${type}/${yyyy}/${mm}/${filename}`;
+}
+
+function inferAssetType(contentType: string): "image" | "video" | "banner" {
+  if (contentType.startsWith("video/")) return "video";
+  return "image";
 }
 
 async function fetchWithValidatedRedirects(url: string, timeoutMs: number): Promise<Response> {

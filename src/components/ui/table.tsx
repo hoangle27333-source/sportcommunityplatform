@@ -2,21 +2,18 @@ import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * Table primitives for the data-dense pages (channels, posts, engagement).
- *
- * Density 8/10: rows are 40px tall (px-3 py-2 at 14px text) which stays above
- * the 44px touch target only for the row's own click affordance — any per-row
- * action must be a Button with its own min-h-9, never a bare 12px icon.
- *
- * `<TableRoot>` owns the horizontal scroll container so wide tables never blow
- * out the page width on mobile (no horizontal page scroll — UX rule 5).
+ * Table — redesign v2: 48px rows, rounded-xl container, blue hover tint.
+ * Horizontal scroll containment preserved (mobile safe).
  */
 
-function TableRoot({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+function TableRoot({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "scrollbar-thin w-full overflow-x-auto rounded-lg border border-border bg-card",
+        "w-full overflow-x-auto rounded-xl border border-border",
         className,
       )}
       {...props}
@@ -24,52 +21,50 @@ function TableRoot({ className, ...props }: React.HTMLAttributes<HTMLDivElement>
   );
 }
 
-function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
+function Table({
+  className,
+  ...props
+}: React.TableHTMLAttributes<HTMLTableElement>) {
   return (
     <table
-      className={cn("w-full border-collapse text-left text-sm", className)}
+      className={cn("w-full caption-bottom text-sm", className)}
       {...props}
     />
   );
 }
 
-function TableHeader({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
+function TableHeader({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <thead
-      className={cn(
-        "border-b border-border bg-muted/60 text-2xs uppercase tracking-wide text-muted-foreground",
-        className,
-      )}
+      className={cn("border-b border-border bg-muted/50", className)}
       {...props}
     />
   );
 }
 
-function TableBody({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <tbody className={cn("divide-y divide-border", className)} {...props} />;
+function TableBody({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLTableSectionElement>) {
+  return (
+    <tbody
+      className={cn("divide-y divide-border", className)}
+      {...props}
+    />
+  );
 }
 
-function TableRow({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
+function TableRow({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
-      className={cn("transition-colors hover:bg-muted/40", className)}
-      {...props}
-    />
-  );
-}
-
-interface TableHeadProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
-  /** Right-align + tabular figures for numeric columns. */
-  numeric?: boolean;
-}
-
-function TableHead({ className, numeric, ...props }: TableHeadProps) {
-  return (
-    <th
-      scope="col"
       className={cn(
-        "whitespace-nowrap px-3 py-2 font-medium",
-        numeric && "text-right",
+        "h-12 transition-colors duration-100 hover:bg-primary/5",
         className,
       )}
       {...props}
@@ -77,16 +72,31 @@ function TableHead({ className, numeric, ...props }: TableHeadProps) {
   );
 }
 
-interface TableCellProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
-  numeric?: boolean;
+function TableHead({
+  className,
+  ...props
+}: React.ThHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <th
+      className={cn(
+        "px-4 py-3 text-left text-xs font-semibold text-muted-foreground",
+        "[&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
-function TableCell({ className, numeric, ...props }: TableCellProps) {
+function TableCell({
+  className,
+  ...props
+}: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
       className={cn(
-        "px-3 py-2 align-middle",
-        numeric && "tabular text-right",
+        "px-4 py-3 text-sm text-foreground align-middle",
+        "[&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className,
       )}
       {...props}
@@ -94,23 +104,52 @@ function TableCell({ className, numeric, ...props }: TableCellProps) {
   );
 }
 
-/** Full-width message row for the "no data" case inside a table body. */
-function TableEmpty({
-  colSpan,
-  children,
-}: {
-  colSpan: number;
-  children: React.ReactNode;
-}) {
+function TableCaption({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLTableCaptionElement>) {
   return (
-    <tr>
-      <td
-        colSpan={colSpan}
-        className="px-3 py-10 text-center text-sm text-muted-foreground"
-      >
-        {children}
-      </td>
-    </tr>
+    <caption
+      className={cn("mt-4 text-sm text-muted-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function TableSkeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <TableRoot>
+      <Table>
+        <TableHeader>
+          <tr>
+            {[40, 20, 20, 20].map((w, i) => (
+              <TableHead key={i}>
+                <div
+                  className="h-3 animate-pulse rounded bg-muted"
+                  style={{ width: `${w}%` }}
+                />
+              </TableHead>
+            ))}
+          </tr>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: rows }).map((_, i) => (
+            <TableRow key={i}>
+              {[60, 20, 20, 15].map((w, j) => (
+                <TableCell key={j}>
+                  <div
+                    className="h-3 animate-pulse rounded bg-muted"
+                    style={{ width: `${w}%` }}
+                  />
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableRoot>
   );
 }
 
@@ -122,5 +161,6 @@ export {
   TableRow,
   TableHead,
   TableCell,
-  TableEmpty,
+  TableCaption,
+  TableSkeleton,
 };

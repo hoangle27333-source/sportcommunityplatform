@@ -3,6 +3,7 @@ import pino from "pino";
 import { QUEUE_NAMES, createRedisConnection } from "@/lib/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { publishTarget } from "@/lib/posts/publish-post";
+import { getWorkerConcurrency } from "@/worker/config";
 
 /**
  * Publish worker processor (SPEC §5).
@@ -42,7 +43,7 @@ export function createPublishWorker(): Worker<PublishJobData> {
       connection: createRedisConnection(),
       // Publishing is network-bound; keep modest concurrency to respect
       // per-account Graph API rate limits (SPEC §9).
-      concurrency: 3,
+      concurrency: getWorkerConcurrency(QUEUE_NAMES.publish),
     },
   );
 

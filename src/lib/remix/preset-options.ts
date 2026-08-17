@@ -65,6 +65,8 @@ export function buildRemixOptionsFromPreset(
       sizeMode: preset.on_screen_text_size_mode ?? "auto_fit",
       color: preset.on_screen_text_color ?? "#FFFFFF",
       bgColor: preset.on_screen_text_bg_color ?? "#000000",
+      backgroundStyle: preset.on_screen_text_background_style ?? "solid",
+      backgroundOpacity: preset.on_screen_text_background_opacity ?? 0.72,
       outlineColor: preset.on_screen_text_outline_color ?? "#000000",
       bold: preset.on_screen_text_bold ?? true,
     },

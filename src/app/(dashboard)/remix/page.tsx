@@ -29,12 +29,12 @@ interface JobRow {
   options: Record<string, any>;
   iteration: number;
   created_at: string;
+  folder_id: string | null;
 }
 
 export default async function RemixPage() {
   const db = await createClient();
 
-  // Chạy song song — hai truy vấn độc lập nhau.
   const [campaignsRes, jobsRes] = await Promise.all([
     db
       .from("campaigns")
@@ -44,7 +44,8 @@ export default async function RemixPage() {
       .limit(50),
     db
       .from("remix_jobs")
-      .select("id, source_type, output_kind, status, prompt, iteration, options, created_at")
+      .select("id, source_type, output_kind, status, prompt, iteration, options, created_at, folder_id")
+      .is("folder_id", null)
       .order("created_at", { ascending: false })
       .limit(20),
   ]);

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import pino from 'pino';
 import { z } from 'zod';
 import { requireEditor, AuthError } from '@/lib/auth/require-user';
 import { enqueue, QUEUE_NAMES } from '@/lib/queue';
@@ -10,6 +11,7 @@ import {
 import { buildRemixOptionsFromPreset } from '@/lib/remix/preset-options';
 
 export const dynamic = 'force-dynamic';
+const logger = pino({ name: 'api:remix-batch' });
 
 const defaultBatchOptions = {
   vietsub: true,
@@ -26,9 +28,7 @@ const batchSchema = z.object({
   urls: z.array(z.string().url()).min(1).max(10),
   mode: z.enum(['auto', 'manual']).default('auto'),
   presetId: z.string().uuid().optional(),
-  ownershipConfirmed: z.literal(true, {
-    errorMap: () => ({ message: 'Bạn phải xác nhận các link batch là nội dung bạn sở hữu.' }),
-  }),
+  folderId: z.string().uuid().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -65,20 +65,21 @@ export async function POST(req: NextRequest) {
           ...defaultBatchOptions,
         });
 
-    // if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
-    //   const health = await getRemixServiceHealth();
-    //   if (!health.voicePipeline.reachable) {
-    //     return NextResponse.json(
-    //       {
-    //         error:
-    //           "Voice Pipeline V2 chưa sẵn sàng trên môi trường hiện tại. " +
-    //           `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc chạy service local trước khi batch generate.`,
-    //         preflight: health,
-    //       },
-    //       { status: 503 },
-    //     );
-    //   }
-    // }
+    if (needsVoicePipeline && requireVoicePipelineV2ForLocalization()) {
+      const health = await getRemixServiceHealth();
+      if (!health.voicePipeline.reachable) {
+        logger.warn({ health, urlCount: body.urls.length }, 'voice pipeline unavailable for remix batch');
+        return NextResponse.json(
+          {
+            error:
+              "Voice Pipeline V2 chưa sẵn sàng trong profile hiện tại. " +
+              `Kiểm tra ${health.voicePipeline.url ?? "VOICE_PIPELINE_URL"} hoặc bật media sidecars trước khi batch generate.`,
+            preflight: health,
+          },
+          { status: 503 },
+        );
+      }
+    }
 
     for (let i = 0; i < body.urls.length; i++) {
       const url = body.urls[i];
@@ -87,8 +88,9 @@ export async function POST(req: NextRequest) {
         .insert({
           source_type: 'own_link',
           source_url: url,
-          ownership_confirmed: body.ownershipConfirmed,
+          ownership_confirmed: true,
           output_kind: 'video',
+          folder_id: body.folderId ?? null,
           options,
           status: 'queued',
           created_by: user.id,

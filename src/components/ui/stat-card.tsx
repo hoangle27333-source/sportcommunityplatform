@@ -1,118 +1,141 @@
 import * as React from "react";
-import { ArrowDownRight, ArrowUpRight, Minus, type LucideIcon } from "lucide-react";
+import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils/cn";
+import type { LucideIcon } from "lucide-react";
 
 /**
- * KPI card — the metric tile used in the top row of dashboard/analytics pages.
+ * StatCard — redesign v2
  *
- * Follows the reference layout: label on top, large tabular value, delta chip,
- * and a tinted icon puck on the right. Value uses tabular figures so a row of
- * cards keeps its baseline grid when numbers change.
+ * Rounded-xl card, gradient icon puck (rounded-full), hover shadow lift.
+ * KPI values use font-mono for tabular alignment.
+ * Delta chip with directional arrow.
  */
+
+const TONE_STYLES = {
+  primary:     { puck: "from-primary/20 to-primary/5",     icon: "text-primary" },
+  accent:      { puck: "from-accent/20 to-accent/5",       icon: "text-accent" },
+  success:     { puck: "from-success/20 to-success/5",     icon: "text-success" },
+  warning:     { puck: "from-warning/20 to-warning/5",     icon: "text-warning" },
+  destructive: { puck: "from-destructive/20 to-destructive/5", icon: "text-destructive" },
+  info:        { puck: "from-info/20 to-info/5",           icon: "text-info" },
+};
+
+export type StatTone = keyof typeof TONE_STYLES;
 
 export interface StatCardProps {
   label: string;
-  value: string;
-  /** Small qualifier under the value, e.g. "7 ngày qua". */
+  value: string | number;
+  icon: LucideIcon;
+  tone?: StatTone;
   hint?: string;
-  /** Signed percentage change; omit when there is no comparison period. */
-  deltaPct?: number | null;
-  /** Whether a positive delta is good. Cost/failure metrics set this false. */
+  delta?: number;
+  /** True → positive delta is "good" (green); false → negative is "good" (costs). */
   positiveIsGood?: boolean;
-  icon?: LucideIcon;
-  /** Tint for the icon puck. Purely decorative — never the only signal. */
-  tone?: "primary" | "success" | "warning" | "danger" | "info" | "neutral";
-  className?: string;
 }
-
-const PUCK: Record<NonNullable<StatCardProps["tone"]>, string> = {
-  primary: "bg-primary-muted text-primary",
-  success: "bg-success-muted text-success",
-  warning: "bg-warning-muted text-warning",
-  danger: "bg-destructive-muted text-destructive",
-  info: "bg-info-muted text-info",
-  neutral: "bg-muted text-muted-foreground",
-};
 
 export function StatCard({
   label,
   value,
-  hint,
-  deltaPct,
-  positiveIsGood = true,
   icon: Icon,
   tone = "primary",
-  className,
+  hint,
+  delta,
+  positiveIsGood = true,
 }: StatCardProps) {
-  const hasDelta = typeof deltaPct === "number" && Number.isFinite(deltaPct);
-  const flat = hasDelta && Math.abs(deltaPct as number) < 0.05;
-  const up = hasDelta && (deltaPct as number) > 0;
-  const good = flat ? null : up === positiveIsGood;
-
-  const DeltaIcon = flat ? Minus : up ? ArrowUpRight : ArrowDownRight;
+  const t = TONE_STYLES[tone];
+  const isGood =
+    delta === undefined
+      ? undefined
+      : positiveIsGood
+        ? delta >= 0
+        : delta <= 0;
 
   return (
     <div
       className={cn(
-        "rounded-lg border border-border bg-card p-4 shadow-sm",
-        "transition-shadow duration-200 hover:shadow-md",
-        className,
+        "group relative flex flex-col gap-3 rounded-xl border border-border bg-card p-5",
+        "shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5",
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        {Icon && (
-          <span
-            className={cn(
-              "grid size-8 shrink-0 place-items-center rounded",
-              PUCK[tone],
-            )}
-          >
-            <Icon className="size-4" aria-hidden="true" />
-          </span>
+      {/* Icon puck */}
+      <div
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-full",
+          "bg-gradient-to-br",
+          t.puck,
         )}
+        aria-hidden="true"
+      >
+        <Icon className={cn("size-5", t.icon)} strokeWidth={1.8} />
       </div>
 
-      <p className="mt-2 font-mono text-2xl font-semibold tabular tracking-tight text-foreground">
-        {value}
-      </p>
-
-      <div className="mt-1.5 flex items-center gap-2 text-xs">
-        {hasDelta && (
-          <span
-            className={cn(
-              "inline-flex items-center gap-0.5 font-medium",
-              good === null
-                ? "text-muted-foreground"
-                : good
-                  ? "text-success"
-                  : "text-destructive",
-            )}
-          >
-            <DeltaIcon className="size-3.5" aria-hidden="true" />
-            {flat
-              ? "0%"
-              : `${up ? "+" : ""}${(deltaPct as number).toFixed(1)}%`}
-          </span>
-        )}
-        {hint && <span className="truncate text-muted-foreground">{hint}</span>}
+      {/* Value */}
+      <div>
+        <p className="font-mono text-2xl font-semibold tracking-tight text-foreground tabular">
+          {value}
+        </p>
+        <p className="mt-0.5 text-xs font-medium text-muted-foreground">{label}</p>
       </div>
+
+      {/* Delta + hint row */}
+      {(delta !== undefined || hint) && (
+        <div className="flex items-center gap-2">
+          {delta !== undefined && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-2xs font-medium",
+                isGood
+                  ? "bg-success-muted text-success"
+                  : "bg-destructive-muted text-destructive",
+              )}
+            >
+              {delta > 0 ? "↑" : "↓"}
+              {Math.abs(delta)}%
+            </span>
+          )}
+          {hint && (
+            <span className="text-2xs text-muted-foreground">{hint}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-/** Grid wrapper: 1 col mobile → 2 tablet → 4 desktop. */
 export function StatGrid({
+  children,
   className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div
       className={cn(
-        "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4",
+        "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4",
         className,
       )}
-      {...props}
-    />
+    >
+      {children}
+    </div>
+  );
+}
+
+export function StatGridSkeleton() {
+  return (
+    <StatGrid>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5"
+        >
+          <div className="h-10 w-10 animate-pulse rounded-full bg-muted" />
+          <div className="space-y-2">
+            <div className="h-6 w-24 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ))}
+    </StatGrid>
   );
 }

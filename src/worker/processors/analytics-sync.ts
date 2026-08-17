@@ -3,6 +3,7 @@ import pino from "pino";
 import { QUEUE_NAMES, createRedisConnection } from "@/lib/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncAllMetrics, type SyncResult } from "@/lib/analytics/sync-metrics";
+import { getWorkerConcurrency } from "@/worker/config";
 
 /**
  * Analytics sync worker processor (SPEC §6).
@@ -34,6 +35,11 @@ export function createAnalyticsSyncWorker(): Worker<
       const result = await syncAllMetrics(db, {
         socialAccountId: job.data.socialAccountId,
         limit: job.data.limit,
+        shardKey:
+          job.data.socialAccountId ? undefined : Number(process.env.ANALYTICS_SYNC_SHARD_KEY),
+        shardSize: job.data.socialAccountId
+          ? undefined
+          : Number(process.env.ANALYTICS_SYNC_ACCOUNT_SHARDING ?? "1"),
       });
       logger.info({ jobId: job.id, result }, "analytics sync done");
       return result;
@@ -41,7 +47,7 @@ export function createAnalyticsSyncWorker(): Worker<
     {
       connection: createRedisConnection(),
       // Insights reads are rate-limited per account; keep concurrency modest.
-      concurrency: 2,
+      concurrency: getWorkerConcurrency(QUEUE_NAMES.analyticsSync),
     },
   );
 

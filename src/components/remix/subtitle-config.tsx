@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { ColorFieldWithOpacity } from "@/components/ui/color-field-with-opacity";
 
 export interface SubtitleSettings {
   preset?: "tiktok_bold" | "meme" | "pop" | "bubble" | "neon" | "clean";
@@ -13,6 +14,7 @@ export interface SubtitleSettings {
   italic: boolean;
   outline: number;
   borderStyle: number; // 0=none, 1=outline, 3=opaque box
+  backgroundBlur?: boolean; // blur effect when borderStyle === 3
   position: 'top' | 'bottom' | 'auto' | 'custom';
   customY?: number;
   animation?: "static" | "word_highlight" | "reveal_words";
@@ -29,6 +31,7 @@ export const defaultSubtitleSettings: SubtitleSettings = {
   italic: false,
   outline: 3,
   borderStyle: 1,
+  backgroundBlur: false,
   position: 'auto',
   customY: 0.78,
   animation: 'word_highlight',
@@ -143,34 +146,27 @@ export function SubtitleConfig({
       </div>
 
       {/* Colors & Styles */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <ColorFieldWithOpacity
+          label="Màu chữ"
+          value={value.color}
+          onChange={(next) => update({ color: next })}
+          fallback="#FFFFFF"
+        />
+        <ColorFieldWithOpacity
+          label="Màu nền / viền"
+          value={value.bgColor}
+          onChange={(next) => update({ bgColor: next })}
+          fallback="#000000"
+        />
+        <ColorFieldWithOpacity
+          label="Màu nhấn từng từ"
+          value={value.highlightColor ?? "#FFF200"}
+          onChange={(next) => update({ highlightColor: next })}
+          fallback="#FFF200"
+        />
+      </div>
       <div className="flex flex-wrap gap-4 items-center">
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Màu chữ</span>
-          <input
-            type="color"
-            value={value.color}
-            onChange={(e) => update({ color: e.target.value })}
-            className="h-9 w-12 rounded border border-input bg-background p-1 cursor-pointer"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Màu nền / viền</span>
-          <input
-            type="color"
-            value={value.bgColor}
-            onChange={(e) => update({ bgColor: e.target.value })}
-            className="h-9 w-12 rounded border border-input bg-background p-1 cursor-pointer"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Màu nhấn từng từ</span>
-          <input
-            type="color"
-            value={value.highlightColor ?? '#FFF200'}
-            onChange={(e) => update({ highlightColor: e.target.value })}
-            className="h-9 w-12 rounded border border-input bg-background p-1 cursor-pointer"
-          />
-        </label>
         <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
           <input
             type="checkbox"
@@ -211,16 +207,20 @@ export function SubtitleConfig({
         <label className="text-xs text-muted-foreground block">Kiểu đường viền / nền</label>
         <div className="flex flex-wrap gap-4">
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-            <input type="radio" checked={value.borderStyle === 0} onChange={() => update({ borderStyle: 0 })} />
+            <input type="radio" checked={value.borderStyle === 0} onChange={() => update({ borderStyle: 0, backgroundBlur: false })} />
             Không có
           </label>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-            <input type="radio" checked={value.borderStyle === 1} onChange={() => update({ borderStyle: 1 })} />
+            <input type="radio" checked={value.borderStyle === 1} onChange={() => update({ borderStyle: 1, backgroundBlur: false })} />
             Viền chữ
           </label>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-            <input type="radio" checked={value.borderStyle === 3} onChange={() => update({ borderStyle: 3 })} />
+            <input type="radio" checked={value.borderStyle === 3 && !value.backgroundBlur} onChange={() => update({ borderStyle: 3, backgroundBlur: false })} />
             Hộp nền
+          </label>
+          <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+            <input type="radio" checked={value.borderStyle === 3 && !!value.backgroundBlur} onChange={() => update({ borderStyle: 3, backgroundBlur: true })} />
+            Hộp nền mờ (blur)
           </label>
         </div>
         
@@ -299,13 +299,22 @@ export function SubtitleConfig({
 
       {/* Preview Box */}
       <div className="rounded-md bg-zinc-950 p-4 text-center min-h-[90px] flex items-center justify-center relative overflow-hidden border border-border/50">
+        {value.borderStyle === 3 && value.backgroundBlur && (
+          <div
+            className="absolute inset-0"
+            style={{
+              backdropFilter: 'blur(12px)',
+              backgroundColor: `${value.bgColor}99`,
+            }}
+          />
+        )}
         <span
-          className="inline-block rounded px-3 py-1 leading-tight max-w-full break-words"
+          className="relative inline-block rounded px-3 py-1 leading-tight max-w-full break-words"
           style={{
             fontFamily: value.font,
             fontSize: `${Math.min(Number(value.size) || 24, 38)}px`,
             color: value.color,
-            ...(value.borderStyle === 3 ? { backgroundColor: value.bgColor } : {}),
+            ...(value.borderStyle === 3 && !value.backgroundBlur ? { backgroundColor: value.bgColor } : {}),
             ...(value.borderStyle === 1 ? { WebkitTextStroke: `${value.outline || 1}px ${value.bgColor}` } : {}),
             fontWeight: value.bold ? 800 : 500,
             fontStyle: value.italic ? 'italic' : 'normal',
