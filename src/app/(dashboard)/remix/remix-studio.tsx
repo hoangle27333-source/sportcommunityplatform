@@ -2278,12 +2278,12 @@ export function RemixStudio({
 
                   {(outputKind === "video" || outputKind === "image") && (
                     <div className="space-y-4 pt-2 border-t border-border/50">
-                      <div className="flex border-b border-border mb-4 overflow-x-auto">
-                        <button type="button" onClick={() => setManualVideoTab("general")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "general" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Chung</button>
-                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("voice")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "voice" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Lồng tiếng</button>}
-                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("subtitle")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "subtitle" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Phụ đề</button>}
-                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("onscreen")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "onscreen" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Text on-screen</button>}
-                        <button type="button" onClick={() => setManualVideoTab("watermark")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${manualVideoTab === "watermark" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Watermark</button>
+                      <div className="tab-bar mb-4">
+                        <button type="button" onClick={() => setManualVideoTab("general")} aria-selected={manualVideoTab === "general"} className="tab-item">Chung</button>
+                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("voice")} aria-selected={manualVideoTab === "voice"} className="tab-item">🎤 Lồng tiếng</button>}
+                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("subtitle")} aria-selected={manualVideoTab === "subtitle"} className="tab-item">📝 Phụ đề</button>}
+                        {outputKind === "video" && <button type="button" onClick={() => setManualVideoTab("onscreen")} aria-selected={manualVideoTab === "onscreen"} className="tab-item">🖊 Text on-screen</button>}
+                        <button type="button" onClick={() => setManualVideoTab("watermark")} aria-selected={manualVideoTab === "watermark"} className="tab-item">💧 Watermark</button>
                       </div>
 
                       <div className={manualVideoTab === "general" ? "block space-y-4" : "hidden"}>

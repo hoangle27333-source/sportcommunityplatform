@@ -973,7 +973,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
           </div>
           
           <div className="w-full lg:w-[500px] border-t lg:border-t-0 lg:border-l border-border flex flex-col min-h-0 bg-muted/10">
-            <div className="flex gap-0.5 overflow-x-auto border-b border-border bg-muted/30 px-2 scrollbar-thin">
+            <div className="tab-bar m-2">
               {([
                 { id: 'trim_ratio', label: '✂ Trim & Ratio' },
                 { id: 'voice', label: '🎤 Voice' },
@@ -986,11 +986,8 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-xs font-medium transition-colors border-b-2 ${
-                    activeTab === tab.id
-                      ? 'border-primary text-primary bg-card rounded-t-[6px]'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
+                  aria-selected={activeTab === tab.id}
+                  className="tab-item"
                 >
                   {tab.label}
                 </button>

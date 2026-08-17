@@ -474,38 +474,48 @@ export default function PresetPage() {
 
         {/* Internal Tabs for Video Preset */}
         <div>
-          <div className="border-b border-border flex gap-4 overflow-x-auto pb-px">
+          <div className="tab-bar">
             <button
+              type="button"
               onClick={() => setVideoTab("general")}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${videoTab === "general" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              aria-selected={videoTab === "general"}
+              className="tab-item"
             >
-               Cài đặt chung
+              Cài đặt chung
             </button>
             <button
+              type="button"
               onClick={() => setVideoTab("voice")}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${videoTab === "voice" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              aria-selected={videoTab === "voice"}
+              className="tab-item"
             >
-              <Mic className="w-4 h-4" /> Giọng đọc
+              <Mic className="w-3.5 h-3.5" /> Giọng đọc
             </button>
             <button
+              type="button"
               onClick={() => setVideoTab("subtitle")}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${videoTab === "subtitle" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              aria-selected={videoTab === "subtitle"}
+              className="tab-item"
             >
-              <TypeIcon className="w-4 h-4" /> Phụ đề
+              <TypeIcon className="w-3.5 h-3.5" /> Phụ đề
             </button>
             <button
+              type="button"
               onClick={() => setVideoTab("onscreen")}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors relative ${videoTab === "onscreen" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              aria-selected={videoTab === "onscreen"}
+              className="tab-item relative"
             >
-              <Captions className="w-4 h-4" /> Text on-screen
-              {translateOnScreenText && <span className="absolute top-2 right-1 w-1.5 h-1.5 rounded-full bg-primary" />}
+              <Captions className="w-3.5 h-3.5" /> Text on-screen
+              {translateOnScreenText && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border-2 border-card" />}
             </button>
             <button
+              type="button"
               onClick={() => setVideoTab("watermark")}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors relative ${videoTab === "watermark" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              aria-selected={videoTab === "watermark"}
+              className="tab-item relative"
             >
-              <Droplet className="w-4 h-4" /> Watermark
-              {watermarkMode !== "disabled" && <span className="absolute top-2 right-1 w-1.5 h-1.5 rounded-full bg-primary" />}
+              <Droplet className="w-3.5 h-3.5" /> Watermark
+              {watermarkMode !== "disabled" && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border-2 border-card" />}
             </button>
           </div>
 

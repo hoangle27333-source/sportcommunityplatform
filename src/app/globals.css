@@ -199,6 +199,67 @@
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
+
+  /* ── Inline tab bar — pill style, strong visual affordance ──────────────── */
+  /*
+   * Usage:
+   *   <div class="tab-bar">
+   *     <button class="tab-item" data-active="true">Active Tab</button>
+   *     <button class="tab-item">Inactive</button>
+   *   </div>
+   *
+   * Or apply [aria-selected=true] / data-active for active state.
+   */
+  .tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 0.25rem;
+    border-radius: 0.75rem; /* rounded-xl */
+    background-color: hsl(var(--muted) / 0.6);
+    border: 1px solid hsl(var(--border));
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+
+  .tab-item {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 2rem;
+    padding: 0 0.75rem;
+    border-radius: 0.5rem; /* rounded-lg */
+    font-size: 0.75rem;    /* text-xs */
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 150ms ease;
+    color: hsl(var(--muted-foreground));
+    background: transparent;
+    border: none;
+    outline: none;
+  }
+
+  .tab-item:hover {
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--card) / 0.7);
+  }
+
+  .tab-item:focus-visible {
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.5);
+  }
+
+  /* Active state — pill with primary background */
+  .tab-item[aria-selected="true"],
+  .tab-item[data-active="true"],
+  .tab-item.active {
+    background-color: hsl(var(--card));
+    color: hsl(var(--primary));
+    font-weight: 600;
+    box-shadow: 0 1px 3px hsl(var(--foreground) / 0.08), 0 0 0 1px hsl(var(--border));
+  }
 }
 
 /* Motion 5/10 — moderate, fully disabled when user prefers-reduced-motion */

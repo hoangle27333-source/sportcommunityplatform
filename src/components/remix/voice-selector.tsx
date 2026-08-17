@@ -169,18 +169,22 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
                 </div>
               </div>
               
-              <div className="flex border-b border-border">
+              <div className="tab-bar">
                 <button
-                  className={`px-4 py-2 text-sm font-medium ${tab === 'all' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}
+                  type="button"
+                  aria-selected={tab === 'all'}
+                  className="tab-item"
                   onClick={() => setTab('all')}
                 >
                   Tất cả
                 </button>
                 <button
-                  className={`px-4 py-2 text-sm font-medium ${tab === 'favorites' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}
+                  type="button"
+                  aria-selected={tab === 'favorites'}
+                  className="tab-item"
                   onClick={() => setTab('favorites')}
                 >
-                  Yêu thích ⭐
+                  ⭐ Yêu thích
                 </button>
               </div>
               

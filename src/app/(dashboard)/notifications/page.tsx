@@ -110,22 +110,20 @@ export default function NotificationsPage() {
         </Button>
       </div>
 
-      <div className="flex border-b border-border mb-4">
+      <div className="tab-bar mb-4 self-start">
         <button
+          type="button"
           onClick={() => setTab("all")}
-          className={cn(
-            "px-4 py-2 font-medium text-sm transition-colors border-b-2",
-            tab === "all" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
+          aria-selected={tab === "all"}
+          className="tab-item"
         >
           Tất cả
         </button>
         <button
+          type="button"
           onClick={() => setTab("unread")}
-          className={cn(
-            "px-4 py-2 font-medium text-sm transition-colors border-b-2",
-            tab === "unread" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
+          aria-selected={tab === "unread"}
+          className="tab-item"
         >
           Chưa đọc
         </button>
