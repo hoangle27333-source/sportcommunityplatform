@@ -9,6 +9,7 @@ import { SubtitleConfig, defaultSubtitleSettings, type SubtitleSettings } from "
 import { BlurRegionPicker, type BlurRegion } from "@/components/remix/blur-region-picker";
 import { VoiceSelector } from "@/components/remix/voice-selector";
 import { buildFacebookCopyrightPreflight } from "@/lib/remix/copyright-preflight";
+import { VIETNAMESE_FONTS, VIETNAMESE_FONT_NAMES } from "@/lib/remix/fonts";
 
 type OnScreenTextPreset = "meme" | "pop" | "bubble" | "neon" | "clean";
 
@@ -738,7 +739,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
   // Sub text đang active theo currentTime (dùng cho subtitle preview)
   const activeSubtitleSeg = scriptSegments.find(s => s.text?.trim() && currentTime >= s.start && currentTime <= s.end);
 
-  const FONT_OPTIONS = ["Anton", "Oswald", "Be Vietnam Pro", "Montserrat", "Nunito", "Baloo 2", "Inter", "Impact", "Arial", "Noto Sans"];
+  const FONT_OPTIONS = VIETNAMESE_FONT_NAMES;
   const ANIMATION_OPTIONS: Array<{ value: TextOnScreenOverlay['animation']; label: string }> = [
     { value: 'none', label: 'Không có' },
     { value: 'fade_in', label: 'Fade In' },
@@ -1798,7 +1799,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                   onChange={(e) => updateOverlay(overlay.id, { fontFamily: e.target.value })}
                                   className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
                                 >
-                                  {FONT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
+                                  {VIETNAMESE_FONTS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                                 </select>
                               </div>
                               {remixPresets.length > 0 && (
@@ -2052,14 +2053,9 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                               onChange={(e) => setTextFont(e.target.value)}
                               className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
                             >
-                              <option value="Anton">Anton (Meme)</option>
-                              <option value="Oswald">Oswald (Condensed)</option>
-                              <option value="Be Vietnam Pro">Be Vietnam Pro</option>
-                              <option value="Montserrat">Montserrat</option>
-                              <option value="Nunito">Nunito</option>
-                              <option value="Baloo 2">Baloo 2 (Sticker)</option>
-                              <option value="Inter">Inter</option>
-                              <option value="Noto Sans">Noto Sans</option>
+                              {VIETNAMESE_FONTS.map((f) => (
+                                <option key={f.value} value={f.value}>{f.label}</option>
+                              ))}
                             </select>
                           </div>
                           <div className="space-y-1">

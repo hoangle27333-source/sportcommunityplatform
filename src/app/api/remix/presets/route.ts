@@ -43,7 +43,7 @@ const presetSchema = z.object({
   autoVietsub: z.boolean().default(true),
   translateOnScreenText: z.boolean().default(false),
   onScreenTextPreset: z.enum(["meme", "pop", "bubble", "neon", "clean"]).default("meme"),
-  onScreenTextFont: z.string().default("Impact"),
+  onScreenTextFont: z.string().default("Anton"),
   onScreenTextSize: z.coerce.number().int().min(16).max(72).default(34),
   onScreenTextSizeMode: z.enum(["auto_fit", "fixed"]).default("auto_fit"),
   onScreenTextColor: z.string().default("#FFFFFF"),

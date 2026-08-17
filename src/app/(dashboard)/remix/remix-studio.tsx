@@ -33,6 +33,7 @@ import {
   captionPresetToManualInput,
   type CaptionPresetManualInput,
 } from "@/lib/remix/caption-preset-options";
+import { VIETNAMESE_FONTS } from "@/lib/remix/fonts";
 
 type SourceType = "upload" | "own_link" | "inspiration";
 type OutputKind = "video" | "image" | "caption";
@@ -2612,17 +2613,9 @@ export function RemixStudio({
                                         onChange={(e) => setOnScreenTextFont(e.target.value)}
                                         className={`${p.className} bg-background`}
                                       >
-                                        <option value="Anton">Anton (Meme / Impact - Việt hoá)</option>
-                                        <option value="Oswald">Oswald (Condensed - Việt hoá)</option>
-                                        <option value="Be Vietnam Pro">Be Vietnam Pro (Tiêu chuẩn - Việt hoá)</option>
-                                        <option value="Montserrat">Montserrat (Hiện đại - Việt hoá)</option>
-                                        <option value="Nunito">Nunito (Bo tròn - Việt hoá)</option>
-                                        <option value="Baloo 2">Baloo 2 (Sticker - Việt hoá)</option>
-                                        <option value="Inter">Inter (Tối giản - Việt hoá)</option>
-                                        <option value="Impact">Impact (Cơ bản)</option>
-                                        <option value="Arial">Arial (Cơ bản)</option>
-                                        <option value="Arial Black">Arial Black (Cơ bản)</option>
-                                        <option value="Noto Sans">Noto Sans (Cơ bản)</option>
+                                        {VIETNAMESE_FONTS.map((f) => (
+                                          <option key={f.value} value={f.value}>{f.label}</option>
+                                        ))}
                                       </select>
                                     )}
                                   </Field>

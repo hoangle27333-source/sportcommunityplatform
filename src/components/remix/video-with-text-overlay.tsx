@@ -215,7 +215,7 @@ export const VideoWithTextOverlay = React.forwardRef<
                   <span
                     className="inline-block text-center rounded px-2.5 py-1 leading-tight shadow-lg transition-all duration-75"
                     style={{
-                      fontFamily: styleProps?.font || "Anton, Impact, sans-serif",
+                      fontFamily: styleProps?.font || "Anton, 'Be Vietnam Pro', Montserrat, sans-serif",
                       fontSize: `${fontSizePx}px`,
                       color: styleProps?.color || "#FFFFFF",
                       backgroundColor: styleProps?.bgColor || "rgba(0, 0, 0, 0.88)",

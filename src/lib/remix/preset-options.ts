@@ -60,7 +60,7 @@ export function buildRemixOptionsFromPreset(
     translateOnScreenText: Boolean(preset.translate_on_screen_text),
     onScreenTextStyle: {
       preset: preset.on_screen_text_preset ?? "meme",
-      font: preset.on_screen_text_font ?? "Impact",
+      font: preset.on_screen_text_font ?? "Anton",
       size: preset.on_screen_text_size ?? 34,
       sizeMode: preset.on_screen_text_size_mode ?? "auto_fit",
       color: preset.on_screen_text_color ?? "#FFFFFF",

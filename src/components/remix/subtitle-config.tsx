@@ -2,6 +2,7 @@
 
 import React from "react";
 import { ColorFieldWithOpacity } from "@/components/ui/color-field-with-opacity";
+import { VIETNAMESE_FONTS, DEFAULT_VIETNAMESE_SUBTITLE_FONT } from "@/lib/remix/fonts";
 
 export interface SubtitleSettings {
   preset?: "tiktok_bold" | "meme" | "pop" | "bubble" | "neon" | "clean";
@@ -22,7 +23,7 @@ export interface SubtitleSettings {
 
 export const defaultSubtitleSettings: SubtitleSettings = {
   preset: 'tiktok_bold',
-  font: 'Arial',
+  font: DEFAULT_VIETNAMESE_SUBTITLE_FONT,
   size: 36,
   color: '#FFFFFF',
   bgColor: '#000000',
@@ -119,17 +120,11 @@ export function SubtitleConfig({
             onChange={(e) => update({ font: e.target.value })}
             className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
           >
-            <option value="Anton">Anton (Meme / Impact - Việt hoá)</option>
-            <option value="Oswald">Oswald (Condensed - Việt hoá)</option>
-            <option value="Be Vietnam Pro">Be Vietnam Pro (Tiêu chuẩn - Việt hoá)</option>
-            <option value="Montserrat">Montserrat (Hiện đại - Việt hoá)</option>
-            <option value="Nunito">Nunito (Bo tròn - Việt hoá)</option>
-            <option value="Baloo 2">Baloo 2 (Sticker - Việt hoá)</option>
-            <option value="Inter">Inter (Tối giản - Việt hoá)</option>
-            <option value="Impact">Impact (Cơ bản)</option>
-            <option value="Arial">Arial (Cơ bản)</option>
-            <option value="Arial Black">Arial Black (Cơ bản)</option>
-            <option value="Noto Sans">Noto Sans (Cơ bản)</option>
+            {VIETNAMESE_FONTS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
           </select>
         </div>
         <div>

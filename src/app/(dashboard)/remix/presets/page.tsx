@@ -21,6 +21,7 @@ import {
   normalizeStringArray,
   type CaptionPresetManualInput,
 } from "@/lib/remix/caption-preset-options";
+import { VIETNAMESE_FONTS } from "@/lib/remix/fonts";
 
 const ImageEditor = dynamic(() => import("@/components/shared/image-editor"), { ssr: false });
 
@@ -635,7 +636,13 @@ export default function PresetPage() {
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Font chữ">
-                          {(p) => <Input {...p} value={onScreenTextFont} onChange={(e) => setOnScreenTextFont(e.target.value)} />}
+                          {(p) => (
+                            <Select {...p} value={onScreenTextFont} onChange={(e) => setOnScreenTextFont(e.target.value)}>
+                              {VIETNAMESE_FONTS.map((f) => (
+                                <option key={f.value} value={f.value}>{f.label}</option>
+                              ))}
+                            </Select>
+                          )}
                         </Field>
                         <Field label="Cỡ chữ / Size mode">
                           {(p) => (

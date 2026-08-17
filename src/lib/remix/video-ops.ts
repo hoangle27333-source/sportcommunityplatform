@@ -743,6 +743,9 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     const vw = reframe ? reframe.width : info.width;
     const vh = reframe ? reframe.height : info.height;
     const fontSize = clamp(subs.fontSize ?? 24, 12, 72);
+    const fontsDir = path.join(process.cwd(), "public", "fonts");
+    const fontsDirParam = existsSync(fontsDir) ? `:fontsdir='${escapeFilterPath(fontsDir)}'` : "";
+
     if (subs.ass) {
       // Already-built ASS (animated) – but patch PlayRes into it if missing
       let assContent = subs.ass;
@@ -754,19 +757,19 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       }
       const assPath = path.join(workDir, "sub.ass");
       await writeFile(assPath, assContent, "utf8");
-      chain.push(`ass='${escapeFilterPath(assPath)}'`);
+      chain.push(`ass='${escapeFilterPath(assPath)}'${fontsDirParam}`);
     } else {
       // Static subtitles: build a real ASS file with correct PlayRes
       // so FontSize and MarginV are in actual video pixels, not script units
-      const primary = assColor(subs.primaryColor, '\u0026H00FFFFFF');
-      const outline = assColor(subs.outlineColor, '\u0026H00000000');
+      const primary = assColor(subs.primaryColor, '&H00FFFFFF');
+      const outline = assColor(subs.outlineColor, '&H00000000');
       const bold = subs.bold ? 1 : 0;
       const italic = subs.italic ? 1 : 0;
       const outlineWidth = clamp(Math.round(subs.outline ?? 2), 0, 8);
       const borderStyle = clamp(Math.round(subs.borderStyle ?? 1), 0, 4);
       const alignment = subs.alignment ?? 2;
       const marginV = clamp(Math.round(subs.marginV ?? 60), 0, vh);
-      const fontName = (subs.font?.trim()) || 'Arial';
+      const fontName = (subs.font?.trim()) || 'Be Vietnam Pro';
 
       // Parse SRT cues and write a minimal static ASS file
       const srtCues = (subs.srt ?? '').split(/\n\n+/).map(block => {
@@ -788,7 +791,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
         '',
         '[V4+ Styles]',
         'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-        `Style: Default,${fontName},${fontSize},${primary},${primary},${outline},\u0026H80000000,${bold},${italic},0,0,100,100,0,0,${borderStyle},${outlineWidth},1,${alignment},60,60,${marginV},1`,
+        `Style: Default,${fontName},${fontSize},${primary},${primary},${outline},&H80000000,${bold},${italic},0,0,100,100,0,0,${borderStyle},${outlineWidth},1,${alignment},60,60,${marginV},1`,
         '',
         '[Events]',
         'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -798,7 +801,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
 
       const assPath = path.join(workDir, "sub.ass");
       await writeFile(assPath, assContent, "utf8");
-      chain.push(`ass='${escapeFilterPath(assPath)}'`);
+      chain.push(`ass='${escapeFilterPath(assPath)}'${fontsDirParam}`);
     }
   }
 

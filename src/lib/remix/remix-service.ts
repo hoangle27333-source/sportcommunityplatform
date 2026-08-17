@@ -1945,11 +1945,11 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
     boxOpacity: number;
     bold: boolean;
   }> = {
-    meme: { font: "Impact", size: 34, color: "#FFFFFF", bgColor: "#000000", backgroundStyle: "solid", backgroundOpacity: 0.05, outlineColor: "#000000", boxOpacity: 0.05, bold: true },
-    pop: { font: "Arial", size: 34, color: "#FFF200", bgColor: "#FF2A6D", backgroundStyle: "solid", backgroundOpacity: 0.78, outlineColor: "#101010", boxOpacity: 0.78, bold: true },
-    bubble: { font: "Arial", size: 32, color: "#111111", bgColor: "#FFFFFF", backgroundStyle: "solid", backgroundOpacity: 0.9, outlineColor: "#FFB703", boxOpacity: 0.9, bold: true },
-    neon: { font: "Arial", size: 32, color: "#00F5FF", bgColor: "#090A18", backgroundStyle: "solid", backgroundOpacity: 0.72, outlineColor: "#FF00E5", boxOpacity: 0.72, bold: true },
-    clean: { font: "Arial", size: 28, color: "#FFFFFF", bgColor: "#111827", backgroundStyle: "solid", backgroundOpacity: 0.68, outlineColor: "#111827", boxOpacity: 0.68, bold: false },
+    meme: { font: "Anton", size: 34, color: "#FFFFFF", bgColor: "#000000", backgroundStyle: "solid", backgroundOpacity: 0.05, outlineColor: "#000000", boxOpacity: 0.05, bold: true },
+    pop: { font: "Montserrat", size: 34, color: "#FFF200", bgColor: "#FF2A6D", backgroundStyle: "solid", backgroundOpacity: 0.78, outlineColor: "#101010", boxOpacity: 0.78, bold: true },
+    bubble: { font: "Baloo 2", size: 32, color: "#111111", bgColor: "#FFFFFF", backgroundStyle: "solid", backgroundOpacity: 0.9, outlineColor: "#FFB703", boxOpacity: 0.9, bold: true },
+    neon: { font: "Oswald", size: 32, color: "#00F5FF", bgColor: "#090A18", backgroundStyle: "solid", backgroundOpacity: 0.72, outlineColor: "#FF00E5", boxOpacity: 0.72, bold: true },
+    clean: { font: "Be Vietnam Pro", size: 28, color: "#FFFFFF", bgColor: "#111827", backgroundStyle: "solid", backgroundOpacity: 0.68, outlineColor: "#111827", boxOpacity: 0.68, bold: false },
   };
   const base = defaults[preset] ?? defaults.meme;
   return {
