@@ -14,7 +14,13 @@ export function buildRemixOptionsFromPreset(
   const outputRatio = coerceOutputRatio(preset.output_ratio);
   const subCustomY = clampNumber(preset.sub_custom_y, 0.05, 0.9, 0.78);
 
-  return {
+  // Preset là GIÁ TRỊ MẶC ĐỊNH, overrides là ý chí của người dùng.
+  // Dùng helper: nếu override đã set tường minh (kể cả false/null/'none') thì giữ override.
+  // Chỉ dùng giá trị preset khi override là undefined.
+  const def = <T>(overrideVal: T | undefined, presetVal: T): T =>
+    overrideVal !== undefined ? overrideVal : presetVal;
+
+  const presetDefaults: RemixOptions = {
     outputRatio,
     vertical: outputRatio === "9:16",
     targetLanguage: preset.target_language || "vi",
@@ -80,7 +86,21 @@ export function buildRemixOptionsFromPreset(
     brandLogo: Boolean(watermarkConfig?.enabled && watermarkConfig?.type === "image"),
     logoMediaId: watermarkConfig?.imageMediaId,
     logoPosition: watermarkConfig?.position === "custom" ? undefined : watermarkConfig?.position,
+  };
+
+  // Merge: overrides tường minh luôn thắng preset (kể cả false/'none').
+  // Những trường boolean quan trọng: nếu override đã set (kể cả = false) thì dùng override.
+  return {
+    ...presetDefaults,
     ...overrides,
+    // Đảm bảo các trường boolean không bị undefined → dùng def() để lấy preset khi chưa set
+    vietsub: def(overrides.vietsub, presetDefaults.vietsub),
+    dubVi: def(overrides.dubVi, presetDefaults.dubVi),
+    dubMode: def(overrides.dubMode, presetDefaults.dubMode),
+    translateOnScreenText: def(overrides.translateOnScreenText, presetDefaults.translateOnScreenText),
+    muteOriginal: def(overrides.muteOriginal, presetDefaults.muteOriginal),
+    blurOriginalSub: def(overrides.blurOriginalSub, presetDefaults.blurOriginalSub),
+    autoDetectSubtitleRegion: def(overrides.autoDetectSubtitleRegion, presetDefaults.autoDetectSubtitleRegion),
   };
 }
 

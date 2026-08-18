@@ -14,7 +14,7 @@ import { Status } from "@/components/ui/badge";
 import { Field, Input, Textarea, Select, Checkbox } from "@/components/ui/field";
 import { ColorFieldWithOpacity } from "@/components/ui/color-field-with-opacity";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Sparkles, Plus, X, Zap, ChevronDown, Folder, FolderOpen, ChevronRight, Edit2, Trash2 } from "lucide-react";
+import { Sparkles, Plus, X, Zap, ChevronDown, Folder, FolderOpen, ChevronRight, Edit2, Trash2, Upload, UploadCloud, CheckCircle2, RefreshCw, Check, Film, Image as ImageIcon } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 
@@ -35,7 +35,7 @@ import {
 } from "@/lib/remix/caption-preset-options";
 import { VIETNAMESE_FONTS } from "@/lib/remix/fonts";
 
-type SourceType = "upload" | "own_link" | "inspiration";
+type SourceType = "upload" | "media_library" | "own_link" | "inspiration";
 type OutputKind = "video" | "image" | "caption";
 type PipelineMode = "simple" | "localization_dub" | "clip_factory" | "hybrid";
 type OnScreenTextPreset = "meme" | "pop" | "bubble" | "neon" | "clean";
@@ -177,12 +177,17 @@ const RUNNING = new Set(["queued", "analyzing", "processing", "revising"]);
 const SOURCE_TABS: { value: SourceType; label: string; hint: string }[] = [
   {
     value: "upload",
-    label: "Tải file lên",
-    hint: "Video/ảnh bạn có sẵn trên máy. An toàn nhất về bản quyền.",
+    label: "📁 Tải file lên",
+    hint: "Kéo thả hoặc chọn file video/ảnh từ máy tính của bạn.",
+  },
+  {
+    value: "media_library",
+    label: "🖼️ Thư viện Media",
+    hint: "Chọn file media đã có sẵn trong Thư viện Media của bạn.",
   },
   {
     value: "own_link",
-    label: "Link của mình",
+    label: "🔗 Link bài đăng",
     hint: "Link bài đăng do chính bạn/Page bạn sở hữu. Hệ thống sẽ tải media về để biên tập.",
   },
 ];
@@ -254,6 +259,12 @@ export function RemixStudio({
     type: string;
   } | null>(null);
   const [uploading, setUploading] = React.useState(false);
+  const [createModalFolderId, setCreateModalFolderId] = React.useState<string>("unfiled");
+  const [mediaLibrary, setMediaLibrary] = React.useState<Array<{ id: string; type: string; url: string; created_at: string; meta?: any }>>([]);
+  const [loadingMediaLibrary, setLoadingMediaLibrary] = React.useState(false);
+  const [mediaFilter, setMediaFilter] = React.useState<"all" | "video" | "image">("all");
+  const [isDraggingFile, setIsDraggingFile] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [uploadedLogo, setUploadedLogo] = React.useState<{
     id: string;
@@ -308,6 +319,7 @@ export function RemixStudio({
   const [onScreenTextBackgroundStyle, setOnScreenTextBackgroundStyle] = React.useState<"solid" | "blur">("solid");
   const [onScreenTextBackgroundOpacity, setOnScreenTextBackgroundOpacity] = React.useState(0.72);
   const [onScreenTextOutlineColor, setOnScreenTextOutlineColor] = React.useState("#000000");
+  const [onScreenTextOutlineWidth, setOnScreenTextOutlineWidth] = React.useState("1");
   const [onScreenTextBold, setOnScreenTextBold] = React.useState(true);
   const [onScreenTextItalic, setOnScreenTextItalic] = React.useState(false);
   // --- Caption & Image options ---
@@ -353,6 +365,21 @@ export function RemixStudio({
       });
     } catch {
       // ignore refresh errors
+    }
+  }, []);
+
+  const fetchMediaLibrary = React.useCallback(async () => {
+    setLoadingMediaLibrary(true);
+    try {
+      const res = await fetch("/api/media", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok && data.media) {
+        setMediaLibrary(data.media);
+      }
+    } catch (err) {
+      console.error("Failed to fetch media library:", err);
+    } finally {
+      setLoadingMediaLibrary(false);
     }
   }, []);
 
@@ -824,11 +851,12 @@ export function RemixStudio({
       return;
     }
 
-    if (sourceType === "upload" && !uploadedMedia) {
-      setError("Hãy tải lên file nguồn trước.");
+    const isFileSource = sourceType === "upload" || sourceType === "media_library";
+    if (isFileSource && !uploadedMedia) {
+      setError("Hãy chọn hoặc tải lên file nguồn trước.");
       return;
     }
-    if (sourceType !== "upload" && !sourceUrl.trim()) {
+    if (!isFileSource && !sourceUrl.trim()) {
       setError("Hãy dán link nguồn.");
       return;
     }
@@ -956,41 +984,60 @@ export function RemixStudio({
             options.manualScript = manualScript.trim();
             options.editedScript = manualScript.trim();
           }
+
+          // ---- QUAN TRỌNG: luôn set tường minh để override preset ----
+          // Nếu user tắt vietsub/dubMode/translateOnScreenText, phải ghi false/'none'
+          // vào options để buildRemixOptionsFromPreset không ghi đè bằng preset defaults.
+          options.vietsub = vietsub;
+          options.dubMode = dubMode;
+          options.dubVi = dubMode !== 'none';
+          options.translateOnScreenText = translateOnScreenText;
+          options.muteOriginal = muteOriginal;
+          // --------------------------------------------------------------
+
           if (vietsub) {
-            options.vietsub = true;
             options.subtitleConfig = subtitleSettings;
             if (autoDetectSub) {
               options.autoDetectSubtitleRegion = true;
             } else if (blurOriginalSub) {
               options.blurOriginalSub = true;
               options.blurRegion = blurRegion;
+            } else {
+              options.blurOriginalSub = false;
+              options.autoDetectSubtitleRegion = false;
             }
+          } else {
+            // Tắt sub → xoá các cờ liên quan để worker không nhầm
+            options.blurOriginalSub = false;
+            options.autoDetectSubtitleRegion = false;
           }
+
           if (dubMode !== 'none') {
-            options.dubMode = dubMode;
-            options.dubVi = true;
             options.voiceName = selectedVoice;
             options.voiceVolume = voiceVolume;
           }
-          if (muteOriginal) options.muteOriginal = true;
+
           if (translateOnScreenText) {
-            options.translateOnScreenText = true;
+            options.onScreenTextPreset = onScreenTextPreset;
             options.onScreenTextStyle = {
-              preset: onScreenTextPreset,
               font: onScreenTextFont,
-              size: Number(onScreenTextSize),
+              size: Number(onScreenTextSize) || 34,
               sizeMode: onScreenTextSizeMode,
               color: onScreenTextColor,
               bgColor: onScreenTextBgColor,
               backgroundStyle: onScreenTextBackgroundStyle,
               backgroundOpacity: onScreenTextBackgroundOpacity,
               outlineColor: onScreenTextOutlineColor,
-              outlineWidth: 2,
+              outlineWidth: Number(onScreenTextOutlineWidth) || 1,
               bold: onScreenTextBold,
               italic: onScreenTextItalic,
             };
             if (onScreenTextHint.trim()) options.textOverlay = onScreenTextHint.trim();
+          } else {
+            options.onScreenTextStyle = undefined;
+            options.textOverlay = undefined;
           }
+
           if (trimMode === "trim") {
             const trimStart = Number(trimStartInput);
             const trimEnd = Number(trimEndInput);
@@ -1004,7 +1051,7 @@ export function RemixStudio({
           }
           if (outputCrf) options.outputCrf = outputCrf;
         }
-        
+
         if (outputKind === "image") {
           if (imageTranslate !== "none") options.imageTranslate = imageTranslate;
         }
@@ -1012,13 +1059,12 @@ export function RemixStudio({
 
       const activeCaptionPreset =
         captionPresetMode === "preset"
-          ? captionPresets.find((preset: any) => preset.id === selectedCaptionPresetId)
+          ? captionPresets.find((item) => item.id === selectedCaptionPresetId)
           : null;
       const effectiveCaptionPreset =
         captionPresetMode === "manual"
           ? captionPresetDraft
           : captionPresetToManualInput(activeCaptionPreset);
-
       if (captionPrompt.trim()) options.captionPrompt = captionPrompt.trim();
       const captionPresetPrompt = buildCaptionPromptFromPreset(effectiveCaptionPreset);
       const captionPresetTone = buildCaptionToneFromPreset(effectiveCaptionPreset);
@@ -1032,18 +1078,19 @@ export function RemixStudio({
         options.editedScript = manualScript.trim();
       }
 
+      const effectiveSourceType = (sourceType === "media_library" ? "upload" : sourceType) as any;
       const res = await fetch("/api/remix", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          sourceType,
-          sourceUrl: sourceType === "upload" ? undefined : sourceUrl.trim(),
-          sourceMediaId: sourceType === "upload" ? uploadedMedia?.id : undefined,
+          sourceType: effectiveSourceType,
+          sourceUrl: isFileSource ? undefined : sourceUrl.trim(),
+          sourceMediaId: isFileSource ? uploadedMedia?.id : undefined,
           outputKind,
           prompt: undefined,
           options,
           presetId: (outputMode === 'preset' && selectedPresetId) ? selectedPresetId : undefined,
-          folderId: selectedFolderId === "unfiled" ? null : selectedFolderId,
+          folderId: createModalFolderId === "unfiled" ? null : createModalFolderId,
           campaignId: campaignId || undefined,
         }),
 
@@ -1057,14 +1104,14 @@ export function RemixStudio({
       setJobs((prev) => [
         {
           id: data.id,
-          source_type: sourceType,
+          source_type: effectiveSourceType,
           output_kind: outputKind,
           status: "queued",
           prompt: null,
           options,
           iteration: 0,
           created_at: new Date().toISOString(),
-          folder_id: selectedFolderId === "unfiled" ? null : selectedFolderId,
+          folder_id: createModalFolderId === "unfiled" ? null : createModalFolderId,
         },
         ...prev,
       ]);
@@ -1424,7 +1471,7 @@ export function RemixStudio({
             <Zap className="h-4 w-4" />
             Auto Generate
           </Button>
-          <Button onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); }}>
+          <Button onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); setCreateModalFolderId(selectedFolderId); void fetchMediaLibrary(); }}>
             <Plus className="size-4 mr-2" aria-hidden="true" />
             Tạo nội dung mới
           </Button>
@@ -1446,11 +1493,11 @@ export function RemixStudio({
 
       {/* ---------------- Grid 3 Cột ---------------- */}
       <div className="grid items-start gap-6 xl:grid-cols-[260px_340px_minmax(0,1fr)]">
-        <Card className="h-[calc(100vh-16rem)] overflow-hidden">
-          <CardHeader className="border-b border-border/50 bg-muted/20 py-4">
+        <Card className="h-[calc(100vh-16rem)] min-h-[520px] flex flex-col overflow-hidden">
+          <CardHeader className="border-b border-border/50 bg-muted/20 py-4 flex-shrink-0">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <CardTitle className="text-sm font-medium">Folders</CardTitle>
+                <CardTitle className="text-sm font-semibold text-foreground">Folders</CardTitle>
                 <CardDescription>Tổ chức job theo cây thư mục.</CardDescription>
               </div>
               <Button size="sm" variant="outline" onClick={() => void handleCreateFolder(null)}>
@@ -1459,10 +1506,10 @@ export function RemixStudio({
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-2 overflow-y-auto p-3">
+          <CardContent className="flex-1 space-y-2 overflow-y-auto p-3 scrollbar-thin">
             <button
               type="button"
-              className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${selectedFolderId === "unfiled" ? "border-primary bg-primary/10" : "border-transparent hover:bg-muted/60"}`}
+              className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${selectedFolderId === "unfiled" ? "border-primary bg-primary/10 font-medium" : "border-transparent hover:bg-muted/60"}`}
               onClick={() => setSelectedFolderId("unfiled")}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
@@ -1479,11 +1526,11 @@ export function RemixStudio({
           </CardContent>
         </Card>
 
-        <Card className="h-[calc(100vh-16rem)] overflow-hidden">
-          <CardHeader className="border-b border-border/50 bg-muted/20 py-4">
+        <Card className="h-[calc(100vh-16rem)] min-h-[520px] flex flex-col overflow-hidden">
+          <CardHeader className="border-b border-border/50 bg-muted/20 py-4 flex-shrink-0">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <CardTitle className="text-sm font-medium">{selectedFolderId === "unfiled" ? "Inbox / Unfiled" : selectedFolder?.name ?? "Folder"}</CardTitle>
+                <CardTitle className="text-sm font-semibold text-foreground">{selectedFolderId === "unfiled" ? "Inbox / Unfiled" : selectedFolder?.name ?? "Folder"}</CardTitle>
                 <CardDescription>{jobsCountLabel} job</CardDescription>
               </div>
               <div className="flex gap-2">
@@ -1493,7 +1540,7 @@ export function RemixStudio({
                     Child
                   </Button>
                 )}
-                <Button size="sm" onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); }}>
+                <Button size="sm" onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); setCreateModalFolderId(selectedFolderId); void fetchMediaLibrary(); }}>
                   <Plus className="mr-1 h-4 w-4" />
                   Job
                 </Button>
@@ -1501,7 +1548,7 @@ export function RemixStudio({
             </div>
           </CardHeader>
           <CardContent
-            className="divide-y divide-border overflow-y-auto p-0"
+            className="flex-1 divide-y divide-border overflow-y-auto p-0 scrollbar-thin"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -1599,16 +1646,16 @@ export function RemixStudio({
         </Card>
 
         <div className="space-y-4">
-          <Card className="h-[calc(100vh-16rem)] flex flex-col overflow-hidden">
-            <CardHeader className="py-4 border-b border-border/50 bg-muted/20 flex flex-row items-center justify-between">
+          <Card className="h-[calc(100vh-16rem)] min-h-[520px] flex flex-col overflow-hidden">
+            <CardHeader className="py-4 border-b border-border/50 bg-muted/20 flex flex-row items-center justify-between flex-shrink-0">
               <div>
-                <CardTitle className="text-sm font-medium">
+                <CardTitle className="text-sm font-semibold text-foreground">
                   {outputKind === "caption" ? "Kết quả Bài viết" : "Kết quả Media"}
                 </CardTitle>
               </div>
               {detail && <Status value={detail.status} />}
             </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto p-6">
+            <CardContent className="flex-1 overflow-y-auto p-6 scrollbar-thin">
               {!jobId ? (
                 <EmptyState
                   icon={Sparkles}
@@ -2051,9 +2098,28 @@ export function RemixStudio({
 
               {/* --- 1. Nguồn --- */}
               <section className="space-y-4">
-                <div>
-                  <h4 className="font-semibold text-foreground">1. Nguồn nội dung</h4>
-                  <p className="text-sm text-muted-foreground">{activeSource.hint}</p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-semibold text-foreground">1. Nguồn nội dung</h4>
+                    <p className="text-sm text-muted-foreground">{activeSource?.hint || "Chọn nguồn video hoặc ảnh để xử lý."}</p>
+                  </div>
+                  <div className="min-w-[200px] flex-shrink-0">
+                    <Field label="Lưu vào Thư mục">
+                      {(p) => (
+                        <select
+                          {...p}
+                          value={createModalFolderId}
+                          onChange={(e) => setCreateModalFolderId(e.target.value)}
+                          className={`${p.className} h-9 text-xs bg-background`}
+                        >
+                          <option value="unfiled">📥 Inbox / Chưa phân loại</option>
+                          {allFolders.map((f) => (
+                            <option key={f.id} value={f.id}>📁 {f.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </Field>
+                  </div>
                 </div>
                 
                 <div
@@ -2067,8 +2133,11 @@ export function RemixStudio({
                       type="button"
                       role="tab"
                       aria-selected={sourceType === tab.value}
-                      onClick={() => setSourceType(tab.value)}
-                      className={`flex-1 cursor-pointer rounded px-3 py-2 text-sm font-medium transition-colors ${
+                      onClick={() => {
+                        setSourceType(tab.value);
+                        if (tab.value === "media_library") void fetchMediaLibrary();
+                      }}
+                      className={`flex-1 cursor-pointer rounded px-3 py-2 text-sm font-semibold transition-colors ${
                         sourceType === tab.value
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -2080,35 +2149,178 @@ export function RemixStudio({
                 </div>
 
                 <div className="bg-muted/20 p-4 rounded-lg border border-border/50">
-                  {sourceType === "upload" ? (
-                    <div key="upload-section" className="space-y-2">
-                      <Field
-                        label="File video hoặc ảnh"
-                        hint="MP4, MOV, PNG, JPG. Tối đa 200MB."
-                      >
-                        {(p) => (
+                  {sourceType === "upload" && (
+                    <div key="upload-section" className="space-y-3">
+                      {!uploadedMedia ? (
+                        <div
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setIsDraggingFile(true);
+                          }}
+                          onDragLeave={() => setIsDraggingFile(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDraggingFile(false);
+                            const f = e.dataTransfer.files?.[0];
+                            if (f) void handleUpload(f);
+                          }}
+                          onClick={() => fileInputRef.current?.click()}
+                          className={`relative flex flex-col items-center justify-center p-8 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
+                            isDraggingFile
+                              ? "border-primary bg-primary/10 scale-[1.01]"
+                              : "border-border hover:border-primary/60 bg-background/60 hover:bg-muted/40"
+                          }`}
+                        >
                           <input
-                            {...p}
+                            ref={fileInputRef}
                             type="file"
                             accept="video/*,image/*"
                             disabled={uploading}
+                            className="hidden"
                             onChange={(e) => {
                               const f = e.target.files?.[0];
                               if (f) void handleUpload(f);
                             }}
                           />
-                        )}
-                      </Field>
-                      {uploading && (
-                        <p className="text-xs text-muted-foreground">Đang tải lên…</p>
-                      )}
-                      {uploadedMedia && (
-                        <p className="text-xs text-success">
-                          Đã tải lên ({uploadedMedia.type}). Sẵn sàng remix.
-                        </p>
+                          <div className="p-3 bg-primary/10 rounded-full text-primary mb-3">
+                            <UploadCloud className="h-8 w-8" />
+                          </div>
+                          <p className="text-sm font-semibold text-foreground mb-1">
+                            {uploading ? "Đang tải file lên..." : "Kéo & thả file video/ảnh vào đây hoặc bấm để duyệt"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Hỗ trợ MP4, MOV, PNG, JPG (Tối đa 200MB)
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-4 p-4 rounded-lg border border-border bg-background shadow-sm">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="h-16 w-16 rounded-md bg-muted/60 border border-border flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {uploadedMedia.type === "video" ? (
+                                <video src={uploadedMedia.url} className="h-full w-full object-cover" />
+                              ) : (
+                                <img src={uploadedMedia.url} alt="Media" className="h-full w-full object-cover" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                                  {uploadedMedia.type}
+                                </span>
+                                <span className="text-xs text-success flex items-center gap-1 font-medium">
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Sẵn sàng remix
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate mt-1 max-w-[280px]">
+                                {uploadedMedia.url}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setUploadedMedia(null);
+                              setTimeout(() => fileInputRef.current?.click(), 50);
+                            }}
+                          >
+                            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                            Đổi file khác
+                          </Button>
+                        </div>
                       )}
                     </div>
-                  ) : (
+                  )}
+
+                  {sourceType === "media_library" && (
+                    <div key="library-section" className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex gap-1 bg-background border border-border p-0.5 rounded-md">
+                          {(["all", "video", "image"] as const).map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setMediaFilter(t)}
+                              className={`px-2.5 py-1 text-xs rounded transition-all font-medium ${
+                                mediaFilter === t
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {t === "all" ? "Tất cả" : t === "video" ? "Video" : "Ảnh"}
+                            </button>
+                          ))}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void fetchMediaLibrary()}
+                          disabled={loadingMediaLibrary}
+                          className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <RefreshCw className={`h-3 w-3 mr-1 ${loadingMediaLibrary ? "animate-spin" : ""}`} />
+                          Làm mới
+                        </Button>
+                      </div>
+
+                      {loadingMediaLibrary ? (
+                        <div className="py-8 text-center text-xs text-muted-foreground">
+                          Đang tải danh sách media...
+                        </div>
+                      ) : mediaLibrary.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
+                          Chưa có file trong Thư viện Media. Hãy chọn tab "📁 Tải file lên".
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5 max-h-56 overflow-y-auto p-1 scrollbar-thin">
+                          {mediaLibrary
+                            .filter((m) => mediaFilter === "all" || m.type === mediaFilter)
+                            .map((asset) => {
+                              const isSelected = uploadedMedia?.id === asset.id;
+                              return (
+                                <button
+                                  key={asset.id}
+                                  type="button"
+                                  onClick={() => setUploadedMedia({ id: asset.id, url: asset.url, type: asset.type })}
+                                  className={`relative aspect-video rounded-lg border-2 overflow-hidden bg-zinc-950 transition-all text-left group ${
+                                    isSelected
+                                      ? "border-primary ring-2 ring-primary/30"
+                                      : "border-border hover:border-primary/50"
+                                  }`}
+                                >
+                                  {asset.type === "video" ? (
+                                    <video src={asset.url} className="h-full w-full object-cover opacity-80 group-hover:opacity-100" />
+                                  ) : (
+                                    <img src={asset.url} alt={asset.id} className="h-full w-full object-cover opacity-80 group-hover:opacity-100" />
+                                  )}
+                                  <span className="absolute top-1 left-1 px-1 py-0.5 rounded bg-black/60 text-[9px] font-semibold text-white uppercase backdrop-blur-xs">
+                                    {asset.type}
+                                  </span>
+                                  {isSelected && (
+                                    <span className="absolute top-1 right-1 p-0.5 rounded-full bg-primary text-white shadow">
+                                      <Check className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      )}
+
+                      {uploadedMedia && (
+                        <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs">
+                          <span className="text-muted-foreground">Đã chọn: <strong className="text-foreground">{uploadedMedia.type.toUpperCase()}</strong> ({uploadedMedia.id.slice(0, 8)}...)</span>
+                          <span className="text-success font-medium flex items-center gap-1">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Sẵn sàng remix
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {sourceType === "own_link" && (
                     <div key="link-section" className="space-y-3">
                       <Field
                         label="Link bài đăng"
@@ -2121,7 +2333,7 @@ export function RemixStudio({
                             type="url"
                             value={sourceUrl || ""}
                             onChange={(e) => setSourceUrl(e.target.value)}
-                            placeholder="https://…"
+                            placeholder="https://www.instagram.com/reel/... hoặc https://www.tiktok.com/@.../video/..."
                           />
                         )}
                       </Field>
@@ -2510,98 +2722,95 @@ export function RemixStudio({
                               )}
                             </div>
                             
-                            <Checkbox
-                              label="Tạo lồng tiếng AI (TTS)"
-                              description="Tự động dịch nội dung và lồng tiếng lại theo ngôn ngữ đích."
-                              checked={dubMode !== 'none'}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setDubMode('full');
-                                  setDubVi(true);
-                                } else {
-                                  setDubMode('none');
-                                  setDubVi(false);
-                                }
-                              }}
-                            />
-                            {/* Dubbing mode picker (expanded) */}
-                            {dubMode !== 'none' && (
-                              <div className="mt-2 ml-7 mb-4 space-y-2">
-                                {([
-                                  { value: 'full', icon: '🎙️', label: 'Luồng thường: Thay toàn bộ audio', desc: 'Thay audio gốc bằng giọng TTS. Phù hợp khi không có nhạc nền.' },
-                                  { value: 'preserve_bgm', icon: '🎵', label: 'Luồng thường: Giữ nhạc nền gốc', desc: 'Tách giọng người khỏi nhạc nền, lồng TTS, mix lại với nhạc nền.' },
-                                  { value: 'heygen', icon: '✨', label: 'Luồng HeyGen: Video Translate (Lip-sync AI)', desc: 'Dịch video qua HeyGen API, tự động clone giọng thật của speaker và khớp khẩu hình.' },
-                                ] as const).map(opt => (
-                                  <label
-                                    key={opt.value}
-                                    onClick={() => setDubMode(opt.value)}
-                                    className={`flex items-start gap-2.5 p-2.5 rounded-lg border-2 cursor-pointer transition-all select-none text-sm ${
-                                      dubMode === opt.value
-                                        ? 'border-primary bg-primary/10'
-                                        : 'border-border bg-muted/40 hover:bg-muted'
-                                    }`}
-                                  >
-                                    <div className="mt-0.5 flex-shrink-0">
-                                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
-                                        dubMode === opt.value ? 'border-primary' : 'border-muted-foreground'
-                                      }`}>
-                                        {dubMode === opt.value && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <span className="font-semibold text-foreground">{opt.icon} {opt.label}</span>
-                                      <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
-                                    </div>
-                                  </label>
-                                ))}
-                                {dubMode !== 'heygen' ? (
-                                  <div className="mt-3 max-w-xs space-y-3">
-                                    <div>
-                                      <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Giọng lồng tiếng</label>
-                                      <VoiceSelector value={selectedVoice} onChange={setSelectedVoice} />
-                                    </div>
-                                    <div>
-                                      <div className="flex items-center justify-between mb-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                                          Âm lượng giọng
-                                        </label>
-                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                                          voiceVolume < 1.5 ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                                          voiceVolume <= 2.5 ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
-                                          'bg-orange-500/10 text-orange-600 dark:text-orange-400'
-                                        }`}>
-                                          {voiceVolume < 1.5 ? '🔉' : voiceVolume <= 2.5 ? '🔊' : '📢'} {Math.round(voiceVolume * 100)}%
-                                        </span>
-                                      </div>
-                                      <input
-                                        type="range"
-                                        min={0.5}
-                                        max={3.0}
-                                        step={0.1}
-                                        value={voiceVolume}
-                                        onChange={(e) => setVoiceVolume(Number(e.target.value))}
-                                        className="w-full h-2 appearance-none rounded-full cursor-pointer accent-primary"
-                                      />
-                                      <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                                        <span>Nhỏ (50%)</span>
-                                        <span>Mặc định (200%)</span>
-                                        <span>To (300%)</span>
-                                      </div>
+                            {/* Dubbing mode picker */}
+                            <div className="mb-4 space-y-2">
+                              {([
+                                { value: 'none', icon: '🔇', label: 'Không lồng tiếng', desc: 'Giữ nguyên audio gốc, không tạo lồng tiếng AI.' },
+                                { value: 'full', icon: '🎙️', label: 'Luồng thường: Thay toàn bộ audio', desc: 'Thay audio gốc bằng giọng TTS. Phù hợp khi không có nhạc nền.' },
+                                { value: 'preserve_bgm', icon: '🎵', label: 'Luồng thường: Giữ nhạc nền gốc', desc: 'Tách giọng người khỏi nhạc nền, lồng TTS, mix lại với nhạc nền.' },
+                                { value: 'heygen', icon: '✨', label: 'Luồng HeyGen: Video Translate (Lip-sync AI)', desc: 'Dịch video qua HeyGen API, tự động clone giọng thật của speaker và khớp khẩu hình.' },
+                              ] as const).map(opt => (
+                                <label
+                                  key={opt.value}
+                                  onClick={() => {
+                                    setDubMode(opt.value);
+                                    if (opt.value === 'none') {
+                                      setDubVi(false);
+                                    } else {
+                                      setDubVi(true);
+                                    }
+                                  }}
+                                  className={`flex items-start gap-2.5 p-2.5 rounded-lg border-2 cursor-pointer transition-all select-none text-sm ${
+                                    dubMode === opt.value
+                                      ? 'border-primary bg-primary/10'
+                                      : 'border-border bg-muted/40 hover:bg-muted'
+                                  }`}
+                                >
+                                  <div className="mt-0.5 flex-shrink-0">
+                                    <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
+                                      dubMode === opt.value ? 'border-primary' : 'border-muted-foreground'
+                                    }`}>
+                                      {dubMode === opt.value && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
                                     </div>
                                   </div>
-                                ) : (
-                                  <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-300 space-y-1">
-                                    <div className="font-semibold flex items-center gap-1.5">
-                                      <span>✨ HeyGen Video Translate</span>
-                                    </div>
-                                    <p>• HeyGen sẽ tự động clone giọng thật của người nói trong video gốc.</p>
-                                    <p>• Đồng bộ khẩu hình (lip-sync) chuẩn theo ngữ điệu ngôn ngữ đích.</p>
-                                    <p>• Vẫn giữ trọn vẹn quy trình xử lý Text on-screen và Blur phụ đề cũ sau khi HeyGen trả video về.</p>
+                                  <div>
+                                    <span className="font-semibold text-foreground">{opt.icon} {opt.label}</span>
+                                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
                                   </div>
-                                )}
-                              </div>
-                            )}
+                                </label>
+                              ))}
+                              
+                              {dubMode !== 'none' && (
+                                <div className="mt-2 ml-7">
+                                  {dubMode !== 'heygen' ? (
+                                    <div className="mt-3 max-w-xs space-y-3">
+                                      <div>
+                                        <label className="text-xs font-medium mb-1.5 block text-muted-foreground">Giọng lồng tiếng</label>
+                                        <VoiceSelector value={selectedVoice} onChange={setSelectedVoice} />
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                                            Âm lượng giọng
+                                          </label>
+                                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                            voiceVolume < 1.5 ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                                            voiceVolume <= 2.5 ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+                                            'bg-orange-500/10 text-orange-600 dark:text-orange-400'
+                                          }`}>
+                                            {voiceVolume < 1.5 ? '🔉' : voiceVolume <= 2.5 ? '🔊' : '📢'} {Math.round(voiceVolume * 100)}%
+                                          </span>
+                                        </div>
+                                        <input
+                                          type="range"
+                                          min={0.5}
+                                          max={3.0}
+                                          step={0.1}
+                                          value={voiceVolume}
+                                          onChange={(e) => setVoiceVolume(Number(e.target.value))}
+                                          className="w-full h-2 appearance-none rounded-full cursor-pointer accent-primary"
+                                        />
+                                        <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                                          <span>Nhỏ (50%)</span>
+                                          <span>Mặc định (200%)</span>
+                                          <span>To (300%)</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                                      <div className="font-semibold flex items-center gap-1.5">
+                                        <span>✨ HeyGen Video Translate</span>
+                                      </div>
+                                      <p>• HeyGen sẽ tự động clone giọng thật của người nói trong video gốc.</p>
+                                      <p>• Đồng bộ khẩu hình (lip-sync) chuẩn theo ngữ điệu ngôn ngữ đích.</p>
+                                      <p>• Vẫn giữ trọn vẹn quy trình xử lý Text on-screen và Blur phụ đề cũ sau khi HeyGen trả video về.</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                             </div>
                           </div>
 
@@ -2724,18 +2933,31 @@ export function RemixStudio({
                                 </div>
 
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-2">
-                                  {[
-                                    ["Màu chữ", onScreenTextColor, setOnScreenTextColor],
-                                    ["Màu viền", onScreenTextOutlineColor, setOnScreenTextOutlineColor],
-                                  ].map(([label, value, setter]) => (
-                                    <ColorFieldWithOpacity
-                                      key={String(label)}
-                                      label={String(label)}
-                                      value={String(value)}
-                                      onChange={setter as (v: string) => void}
-                                      fallback={label === "Màu chữ" ? "#FFFFFF" : "#000000"}
-                                    />
-                                  ))}
+                                  <ColorFieldWithOpacity
+                                    label="Màu chữ"
+                                    value={onScreenTextColor}
+                                    onChange={setOnScreenTextColor}
+                                    fallback="#FFFFFF"
+                                  />
+                                  <ColorFieldWithOpacity
+                                    label="Màu viền"
+                                    value={onScreenTextOutlineColor}
+                                    onChange={setOnScreenTextOutlineColor}
+                                    fallback="#000000"
+                                    extraHeader={
+                                      <div className="flex items-center gap-1.5" title="Kích thước viền (px)">
+                                        <span className="text-[10px] text-muted-foreground uppercase font-medium">Cỡ viền</span>
+                                        <input 
+                                          type="number" 
+                                          min={0}
+                                          max={20}
+                                          value={onScreenTextOutlineWidth}
+                                          onChange={(e) => setOnScreenTextOutlineWidth(e.target.value)}
+                                          className="h-5 w-10 rounded border border-input bg-background px-1 text-center text-xs font-normal"
+                                        />
+                                      </div>
+                                    }
+                                  />
                                 </div>
                                 <div className="space-y-3">
                                   <div>
@@ -2816,7 +3038,7 @@ export function RemixStudio({
                                       backgroundColor: onScreenTextBackgroundStyle === "blur" ? "rgba(15,23,42,0.5)" : onScreenTextBgColor,
                                       backdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                                       WebkitBackdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
-                                      WebkitTextStroke: `1px ${onScreenTextOutlineColor}`,
+                                      WebkitTextStroke: `${onScreenTextOutlineWidth}px ${onScreenTextOutlineColor}`,
                                       fontWeight: onScreenTextBold ? 800 : 500,
                                       fontStyle: onScreenTextItalic ? "italic" : "normal",
                                     }}

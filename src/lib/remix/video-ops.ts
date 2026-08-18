@@ -631,30 +631,42 @@ export function buildTightTextBlurRegions(input: {
   fontSize: number;
   frameWidth: number;
   frameHeight: number;
+  outlineWidth?: number;
+  coverOriginalText?: boolean;
   minimumWidthRatio?: number;
 }): Array<{ x: number; y: number; w: number; h: number }> {
   const region = clampRegion(input.region);
   const frameWidth = Math.max(1, input.frameWidth);
   const frameHeight = Math.max(1, input.frameHeight);
   const fontSize = clamp(Math.round(input.fontSize), 1, 240);
+  const outlineWidth = clamp(Math.round(input.outlineWidth ?? Math.round(fontSize * 0.08)), 0, 24);
+  const coverOriginalText = input.coverOriginalText === true;
   const lines = input.lines
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
   if (lines.length === 0) return [region];
 
-  const contentWidth = Math.max(1, Math.round(region.w * frameWidth * 0.86));
+  const contentWidth = Math.max(1, Math.round(region.w * frameWidth * (coverOriginalText ? 0.96 : 0.9)));
   const lineSpacing = Math.max(0, Math.round(fontSize * 0.14));
-  const lineHeight = Math.max(fontSize, Math.round(fontSize * 1.08));
+  const lineHeight = Math.max(fontSize, Math.round(fontSize * (coverOriginalText ? 1.22 : 1.12)));
   const renderedHeight = lines.length * lineHeight + Math.max(0, lines.length - 1) * lineSpacing;
   const startX = region.x * frameWidth + Math.max(0, (region.w * frameWidth - contentWidth) / 2);
   const startY = region.y * frameHeight + Math.max(0, (region.h * frameHeight - renderedHeight) / 2);
-  const padX = clamp(Math.round(fontSize * 0.22), 3, Math.max(4, Math.round(contentWidth * 0.08)));
-  const padY = clamp(Math.round(fontSize * 0.16), 2, Math.max(3, Math.round(lineHeight * 0.24)));
+  const padX = clamp(
+    Math.round(fontSize * (coverOriginalText ? 0.46 : 0.3)) + outlineWidth * 2,
+    coverOriginalText ? 8 : 5,
+    Math.max(8, Math.round(contentWidth * (coverOriginalText ? 0.18 : 0.12))),
+  );
+  const padY = clamp(
+    Math.round(fontSize * (coverOriginalText ? 0.34 : 0.22)) + outlineWidth * 2,
+    coverOriginalText ? 6 : 4,
+    Math.max(6, Math.round(lineHeight * (coverOriginalText ? 0.55 : 0.38))),
+  );
   const minWidth = Math.min(
     contentWidth,
     Math.max(
-      Math.round(fontSize * 2.2),
-      Math.round(contentWidth * clamp(input.minimumWidthRatio ?? 0.2, 0.1, 0.6)),
+      Math.round(fontSize * (coverOriginalText ? 4 : 2.8)),
+      Math.round(contentWidth * clamp(input.minimumWidthRatio ?? (coverOriginalText ? 0.5 : 0.28), 0.1, 0.9)),
     ),
   );
 
@@ -678,7 +690,6 @@ function buildDelogoFilter(
   region: { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number },
   frameWidth: number,
   frameHeight: number,
-  bandPx?: number,
 ): string {
   let bx = Math.max(1, Math.floor(region.x * frameWidth));
   let by = Math.max(1, Math.floor(region.y * frameHeight));
@@ -689,15 +700,11 @@ function buildDelogoFilter(
   let bh = Math.max(1, Math.floor(region.h * frameHeight));
   bw = Math.min(bw, frameWidth - bx - 1);
   bh = Math.min(bh, frameHeight - by - 1);
+  return `delogo=x=${bx}:y=${by}:w=${bw}:h=${bh}:show=0${timelineEnable(region.startSec, region.endSec)}`;
+}
 
-  const band = clamp(
-    Math.round(
-      bandPx ?? Math.min(6, Math.max(1, Math.min(bw, bh) * 0.08)),
-    ),
-    1,
-    Math.max(1, Math.min(bw, bh)),
-  );
-  return `delogo=x=${bx}:y=${by}:w=${bw}:h=${bh}:band=${band}:show=0${timelineEnable(region.startSec, region.endSec)}`;
+export function buildDrawtextTextfileParam(textPath: string): string {
+  return `textfile='${escapeFilterPath(textPath)}'`;
 }
 
 /**
@@ -895,11 +902,9 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
           maxFontSize: autoMaxFontSize,
         })
       : { text: normalizedOverlayText, fontSize: baseFontSize, lines: normalizedOverlayText.split("\n").filter(Boolean) };
-    const escapedText = fitted.text
-      .replace(/\\/g, "\\\\")
-      .replace(/'/g, "\u2019")
-      .replace(/:/g, "\\:")
-      .replace(/\n/g, "\\n");
+    const textFilePath = path.join(workDir, `overlay-text-${chain.length}.txt`);
+    await writeFile(textFilePath, fitted.text, "utf8");
+    const textSource = buildDrawtextTextfileParam(textFilePath);
     const color = ffmpegColor(textOverlay.color, "white");
     const fontOpacity = hexOpacity(textOverlay.color);
     const bgColor = ffmpegColor(textOverlay.bgColor, "black");
@@ -911,6 +916,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     const fontOpt = getFontOptionForDrawtext(textOverlay.font);
     const boldScale = textOverlay.bold ? 1.08 : 1;
     const baseFinalFontSize = Math.round(fitted.fontSize * boldScale);
+    const outlineWidth = Math.max(0, Math.round(textOverlay.outlineWidth ?? baseFinalFontSize * 0.08));
     const blurTargetRegion = textOverlay.coverRegion ? eraseRegion : region;
     const blurText = normalizeOverlayTextForDrawtext(textOverlay.sourceText ?? textOverlay.text);
     const blurFitted = blurTargetRegion && textOverlay.fitToRegion
@@ -929,10 +935,11 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
           fontSize: Math.round(blurFitted.fontSize * boldScale),
           frameWidth: fw,
           frameHeight: fh,
+          outlineWidth,
+          coverOriginalText: textOverlay.coverRegion,
           minimumWidthRatio: textOverlay.coverRegion ? 0.34 : 0.18,
         })
       : [];
-    const outlineWidth = Math.max(0, Math.round(textOverlay.outlineWidth ?? baseFinalFontSize * 0.08));
     let finalFontSize: string | number = baseFinalFontSize;
     let xExpr = region
       ? `${Math.round(region.x * fw)}+(${Math.max(1, Math.round(region.w * fw))}-text_w)/2`
@@ -970,7 +977,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       const coverH = Math.min(fh - coverY, Math.max(1, Math.round(eraseRegion.h * fh)));
       if (textOverlay.backgroundStyle === "blur") {
         for (const blurRegion of tightBlurRegions) {
-          chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh, 2));
+          chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh));
         }
       } else {
         chain.push(
@@ -983,11 +990,11 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       : `box=1:boxcolor=${bgColor}@${opacity}:boxborderw=${region ? fitBoxBorder(region, fw, fh) : 14}`;
     if (!textOverlay.coverRegion && tightBlurRegions.length) {
       for (const blurRegion of tightBlurRegions) {
-        chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh, 2));
+        chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh));
       }
     }
     chain.push(
-      `drawtext=text='${escapedText}'${fontOpt}:fontcolor=${color}${effectiveAlpha}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(0, Math.round(baseFinalFontSize * 0.14))}:borderw=${outlineWidth}:bordercolor=${outlineColor}${outlineOpacity >= 0.999 ? "" : `@${outlineOpacity.toFixed(3)}`}${enable}`
+      `drawtext=${textSource}${fontOpt}:fontcolor=${color}${effectiveAlpha}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(0, Math.round(baseFinalFontSize * 0.14))}:borderw=${outlineWidth}:bordercolor=${outlineColor}${outlineOpacity >= 0.999 ? "" : `@${outlineOpacity.toFixed(3)}`}${enable}`
     );
   }
 

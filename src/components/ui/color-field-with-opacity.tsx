@@ -53,20 +53,25 @@ export function ColorFieldWithOpacity({
   onChange,
   fallback = "#000000",
   className,
+  extraHeader,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   fallback?: string;
   className?: string;
+  extraHeader?: React.ReactNode;
 }) {
   const parsed = splitHexColorAndOpacity(value, fallback);
   const opacityPercent = Math.round(parsed.opacity * 100);
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      {/* Label */}
-      <span className="text-xs font-semibold text-foreground">{label}</span>
+      {/* Label and Extra Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-foreground">{label}</span>
+        {extraHeader}
+      </div>
 
       {/* Row: color swatch + opacity value */}
       <div className="flex items-center gap-2">

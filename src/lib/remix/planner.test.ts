@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeVideoOps } from "./planner";
 import {
+  buildDrawtextTextfileParam,
   buildTightTextBlurRegions,
   buildAssSubtitles,
   buildSrt,
@@ -741,6 +742,66 @@ describe("buildTightTextBlurRegions", () => {
 
     expect(regions).toHaveLength(2);
     expect(regions[1]!.w).toBeGreaterThan(regions[0]!.w);
+  });
+
+  it("phủ OCR text rộng hơn manual để che outline chữ gốc", () => {
+    const region = { x: 0.2, y: 0.48, w: 0.5, h: 0.12 };
+    const manual = buildTightTextBlurRegions({
+      region,
+      lines: ["Listen to your body"],
+      fontSize: 36,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      outlineWidth: 2,
+      coverOriginalText: false,
+    });
+    const ocr = buildTightTextBlurRegions({
+      region,
+      lines: ["Listen to your body"],
+      fontSize: 36,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      outlineWidth: 2,
+      coverOriginalText: true,
+    });
+
+    const manualArea = manual.reduce((sum, item) => sum + item.w * item.h, 0);
+    const ocrArea = ocr.reduce((sum, item) => sum + item.w * item.h, 0);
+    expect(ocrArea).toBeGreaterThan(manualArea);
+  });
+
+  it("tăng padding blur khi outline lớn hơn", () => {
+    const region = { x: 0.2, y: 0.48, w: 0.5, h: 0.12 };
+    const thin = buildTightTextBlurRegions({
+      region,
+      lines: ["Listen to your body"],
+      fontSize: 36,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      outlineWidth: 1,
+      coverOriginalText: true,
+    });
+    const thick = buildTightTextBlurRegions({
+      region,
+      lines: ["Listen to your body"],
+      fontSize: 36,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      outlineWidth: 8,
+      coverOriginalText: true,
+    });
+
+    expect(thick[0]!.w * thick[0]!.h).toBeGreaterThan(thin[0]!.w * thin[0]!.h);
+  });
+});
+
+describe("buildDrawtextTextfileParam", () => {
+  it("dùng textfile để tránh newline bị render thành chữ n", () => {
+    const param = buildDrawtextTextfileParam("/tmp/overlay text.txt");
+
+    expect(param).toContain("textfile=");
+    expect(param).not.toContain("text='");
+    expect(param).not.toContain("\\n");
   });
 });
 
