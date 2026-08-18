@@ -47,7 +47,7 @@ export function Field({
       <label
         htmlFor={id}
         className={cn(
-          "text-sm font-medium text-foreground",
+          "text-sm font-semibold text-foreground",
           srOnlyLabel && "sr-only",
         )}
       >
@@ -164,7 +164,7 @@ export function Checkbox({ label, hint, description, className, id: externalId, 
         {...props}
       />
       <span className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="text-sm font-semibold text-foreground">{label}</span>
         {helpText && <span className="text-xs text-muted-foreground">{helpText}</span>}
       </span>
     </label>

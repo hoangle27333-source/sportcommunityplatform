@@ -178,6 +178,17 @@ export async function runRemixJob(
         effectiveOptions = buildRemixOptionsFromPreset(preset, effectiveOptions);
       }
     }
+    if (
+      effectiveOptions.translateOnScreenText === true &&
+      hasRenderableTextOnScreenOverlays(effectiveOptions.textOnScreenOverlays)
+    ) {
+      effectiveOptions.translateOnScreenText = false;
+      effectiveOptions.textOverlay = "";
+      effectiveOptions.onScreenTextStyle = undefined;
+      warnings.push(
+        "Đã dùng text overlay chỉnh tay từ Video Editor; tắt auto-detect/dịch text on-screen cho lượt generate này để tránh chèn chữ trùng.",
+      );
+    }
 
     // ---- 1. Ngữ cảnh tham khảo (không tải media bên thứ ba) ----
     let inspiration: string | undefined;
@@ -1434,8 +1445,14 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
     }
   }
 
-  const onScreenTextBlurRegions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
-  if (options.translateOnScreenText === true) {
+  const onScreenTextOccupiedRegions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
+  const hasUserTextOverlayEdits = hasRenderableTextOnScreenOverlays(options.textOnScreenOverlays);
+  if (options.translateOnScreenText === true && hasUserTextOverlayEdits) {
+    plan.warnings.push(
+      "Đã dùng text overlay chỉnh tay từ Video Editor; bỏ qua auto-detect/dịch text on-screen để tránh chèn chữ trùng.",
+    );
+  }
+  if (options.translateOnScreenText === true && !hasUserTextOverlayEdits) {
     const plannedTextTracks = plannedOnScreenTextTracksFromPlan(plan);
     const translations = plannedTextTracks.length
       ? await translatePlannedOnScreenTextTracks({
@@ -1471,10 +1488,11 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
         if (trimEnd !== undefined && translation.startSec > trimEnd) continue;
         if (translation.endSec < trimStart) continue;
         const replacementRegions = textReplacementRegions(translation.region);
-        onScreenTextBlurRegions.push({ ...replacementRegions.erase, startSec, endSec });
+        onScreenTextOccupiedRegions.push({ ...replacementRegions.erase, startSec, endSec });
         ops.push({
           op: "overlayText",
           text: translation.translatedText,
+          sourceText: translation.detectedText,
           startSec,
           endSec,
           region: replacementRegions.overlay,
@@ -1492,8 +1510,10 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
           backgroundStyle: textStyle.backgroundStyle,
           backgroundOpacity: textStyle.backgroundOpacity,
           outlineColor: textStyle.outlineColor,
+          outlineWidth: textStyle.outlineWidth,
           boxOpacity: textStyle.boxOpacity,
           bold: textStyle.bold,
+          italic: textStyle.italic,
         });
         upsertTextOverlayDecision(plan, {
           startSec,
@@ -1530,7 +1550,9 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
             backgroundStyle: textStyle.backgroundStyle,
             backgroundOpacity: textStyle.backgroundOpacity,
             outlineColor: textStyle.outlineColor ?? '#000000',
+            outlineWidth: textStyle.outlineWidth,
             bold: textStyle.bold,
+            italic: textStyle.italic,
             sizeMode: textStyle.sizeMode,
             animation: 'fade_in' as const,
           })),
@@ -1579,7 +1601,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
   const subtitleMove = moveSubtitleAwayFromOcrRegions({
     ops,
     options,
-    ocrRegions: [...onScreenTextBlurRegions, ...customTextOverlayRegions],
+    ocrRegions: [...onScreenTextOccupiedRegions, ...customTextOverlayRegions],
     videoHeight: videoInfo?.height ?? 1920,
     plan,
     durationSec: videoInfo?.durationSec ?? 30,
@@ -1608,7 +1630,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
     ops, 
     workDir,
     blurRegion: applyBlurRegion,
-    blurRegions: [...onScreenTextBlurRegions, ...watermarkCoverRegions, ...manualBlurRegions],
+    blurRegions: [...watermarkCoverRegions, ...manualBlurRegions],
   });
   
   // --- Intro/Outro: concat nếu preset đã cấu hình ---
@@ -1926,8 +1948,10 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
   backgroundStyle: "solid" | "blur";
   backgroundOpacity: number;
   outlineColor: string;
+  outlineWidth: number;
   boxOpacity: number;
   bold: boolean;
+  italic: boolean;
   sizeMode: "auto_fit" | "fixed";
 } {
   type OnScreenTextPreset = NonNullable<
@@ -1942,14 +1966,16 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
     backgroundStyle: "solid" | "blur";
     backgroundOpacity: number;
     outlineColor: string;
+    outlineWidth: number;
     boxOpacity: number;
     bold: boolean;
+    italic: boolean;
   }> = {
-    meme: { font: "Anton", size: 34, color: "#FFFFFF", bgColor: "#000000", backgroundStyle: "solid", backgroundOpacity: 0.05, outlineColor: "#000000", boxOpacity: 0.05, bold: true },
-    pop: { font: "Montserrat", size: 34, color: "#FFF200", bgColor: "#FF2A6D", backgroundStyle: "solid", backgroundOpacity: 0.78, outlineColor: "#101010", boxOpacity: 0.78, bold: true },
-    bubble: { font: "Baloo 2", size: 32, color: "#111111", bgColor: "#FFFFFF", backgroundStyle: "solid", backgroundOpacity: 0.9, outlineColor: "#FFB703", boxOpacity: 0.9, bold: true },
-    neon: { font: "Oswald", size: 32, color: "#00F5FF", bgColor: "#090A18", backgroundStyle: "solid", backgroundOpacity: 0.72, outlineColor: "#FF00E5", boxOpacity: 0.72, bold: true },
-    clean: { font: "Be Vietnam Pro", size: 28, color: "#FFFFFF", bgColor: "#111827", backgroundStyle: "solid", backgroundOpacity: 0.68, outlineColor: "#111827", boxOpacity: 0.68, bold: false },
+    meme: { font: "Anton", size: 34, color: "#FFFFFF", bgColor: "#000000", backgroundStyle: "solid", backgroundOpacity: 0.05, outlineColor: "#000000", outlineWidth: 2, boxOpacity: 0.05, bold: true, italic: false },
+    pop: { font: "Montserrat", size: 34, color: "#FFF200", bgColor: "#FF2A6D", backgroundStyle: "solid", backgroundOpacity: 0.78, outlineColor: "#101010", outlineWidth: 2, boxOpacity: 0.78, bold: true, italic: false },
+    bubble: { font: "Baloo 2", size: 32, color: "#111111", bgColor: "#FFFFFF", backgroundStyle: "solid", backgroundOpacity: 0.9, outlineColor: "#FFB703", outlineWidth: 2, boxOpacity: 0.9, bold: true, italic: false },
+    neon: { font: "Oswald", size: 32, color: "#00F5FF", bgColor: "#090A18", backgroundStyle: "solid", backgroundOpacity: 0.72, outlineColor: "#FF00E5", outlineWidth: 2, boxOpacity: 0.72, bold: true, italic: false },
+    clean: { font: "Be Vietnam Pro", size: 28, color: "#FFFFFF", bgColor: "#111827", backgroundStyle: "solid", backgroundOpacity: 0.68, outlineColor: "#111827", outlineWidth: 2, boxOpacity: 0.68, bold: false, italic: false },
   };
   const base = defaults[preset] ?? defaults.meme;
   return {
@@ -1961,7 +1987,9 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
     backgroundStyle: style?.backgroundStyle === "blur" ? "blur" : base.backgroundStyle,
     backgroundOpacity: clampNumber(style?.backgroundOpacity, 0, 1, base.backgroundOpacity),
     outlineColor: validHex(style?.outlineColor) ? style!.outlineColor! : base.outlineColor,
+    outlineWidth: clampNumber(style?.outlineWidth, 0, 10, base.outlineWidth),
     bold: style?.bold ?? base.bold,
+    italic: style?.italic ?? base.italic,
     sizeMode: style?.sizeMode ?? "auto_fit",
     boxOpacity: clampNumber(style?.backgroundOpacity, 0, 1, base.boxOpacity),
   };
@@ -1984,6 +2012,7 @@ function appendCustomTextOverlayOps(input: {
     input.ops.push({
       op: "overlayText",
       text: overlay.text.trim(),
+      sourceText: overlay.sourceText?.trim() || undefined,
       startSec,
       endSec,
       region,
@@ -2001,8 +2030,10 @@ function appendCustomTextOverlayOps(input: {
       backgroundStyle: overlay.backgroundStyle ?? "solid",
       backgroundOpacity: clampNumber(overlay.backgroundOpacity, 0, 1, colorHasAlpha(overlay.bgColor) ? alphaFromHex(overlay.bgColor) : 0.72),
       outlineColor: overlay.outlineColor ?? "#000000",
+      outlineWidth: overlay.outlineWidth,
       boxOpacity: clampNumber(overlay.backgroundOpacity, 0, 1, colorHasAlpha(overlay.bgColor) ? alphaFromHex(overlay.bgColor) : 0.72),
       bold: overlay.bold ?? true,
+      italic: overlay.italic ?? false,
       animation: overlay.animation,
     });
     regions.push({ ...(inferOverlaySource(overlay) === "ocr_auto" ? eraseRegion : region), startSec, endSec });
@@ -2107,6 +2138,18 @@ function mergePersistedTextOnScreenOverlays(
     if (!exists) merged.push(candidate);
   }
   return merged;
+}
+
+function hasRenderableTextOnScreenOverlays(
+  overlays: RemixOptions["textOnScreenOverlays"] | undefined,
+): boolean {
+  return (overlays ?? []).some((overlay) =>
+    Boolean(
+      overlay.text?.trim() &&
+        overlay.status !== "pending" &&
+        overlay.status !== "disabled",
+    ),
+  );
 }
 
 function replacementRegionToOverlayBox(region: { x: number; y: number; w: number; h: number }) {

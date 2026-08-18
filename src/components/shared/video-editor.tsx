@@ -9,7 +9,7 @@ import { SubtitleConfig, defaultSubtitleSettings, type SubtitleSettings } from "
 import { BlurRegionPicker, type BlurRegion } from "@/components/remix/blur-region-picker";
 import { VoiceSelector } from "@/components/remix/voice-selector";
 import { buildFacebookCopyrightPreflight } from "@/lib/remix/copyright-preflight";
-import { VIETNAMESE_FONTS, VIETNAMESE_FONT_NAMES } from "@/lib/remix/fonts";
+import { VIETNAMESE_FONTS } from "@/lib/remix/fonts";
 
 type OnScreenTextPreset = "meme" | "pop" | "bubble" | "neon" | "clean";
 
@@ -66,6 +66,7 @@ interface TextOnScreenOverlay {
   backgroundStyle?: "solid" | "blur";
   backgroundOpacity?: number;
   outlineColor?: string;
+  outlineWidth?: number;
   bold?: boolean;
   italic?: boolean;
   sizeMode?: "auto_fit" | "fixed";
@@ -77,6 +78,11 @@ interface ManualBlurRegion extends BlurRegion {
   startSec: number;
   endSec: number;
   label?: string;
+}
+
+interface FrameSize {
+  width: number;
+  height: number;
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -107,6 +113,11 @@ function autoSplitSegments(duration: number, interval = 15): ScriptSegment[] {
 function clamp01(n: number) {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(1, n));
+}
+
+function clampNumber(n: number, min: number, max: number) {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
 }
 
 function defaultOverlayBox(position?: { x: number; y: number }) {
@@ -145,6 +156,7 @@ function normalizeOverlay(raw: TextOnScreenOverlay): TextOnScreenOverlay {
     backgroundStyle: raw.backgroundStyle ?? "solid",
     backgroundOpacity: Number.isFinite(raw.backgroundOpacity) ? Math.max(0, Math.min(1, raw.backgroundOpacity!)) : 0.72,
     outlineColor: raw.outlineColor ?? "#000000",
+    outlineWidth: Number.isFinite(raw.outlineWidth) ? Math.max(0, Math.min(10, raw.outlineWidth!)) : 2,
     bold: raw.bold ?? true,
     sizeMode: raw.sizeMode ?? "fixed",
     position: raw.position ?? {
@@ -167,6 +179,50 @@ function normalizeBlurRegion(raw: Partial<ManualBlurRegion>, duration: number, i
   };
 }
 
+function getLogicalFrameSize(
+  outputRatio: string,
+  naturalVideoSize: FrameSize,
+): FrameSize {
+  switch (outputRatio) {
+    case "9:16":
+      return { width: 1080, height: 1920 };
+    case "16:9":
+      return { width: 1920, height: 1080 };
+    case "1:1":
+      return { width: 1080, height: 1080 };
+    case "4:5":
+      return { width: 1080, height: 1350 };
+    default:
+      return naturalVideoSize.width > 0 && naturalVideoSize.height > 0
+        ? naturalVideoSize
+        : { width: 1920, height: 1080 };
+  }
+}
+
+function getOverlayPreviewModel(input: {
+  text: string;
+  box: { x: number; y: number; w: number; h: number };
+  overlay?: Pick<TextOnScreenOverlay, "fontSize" | "sizeMode">;
+  previewFrameSize: FrameSize;
+  logicalFrameSize: FrameSize;
+}) {
+  const { text, overlay, previewFrameSize, logicalFrameSize } = input;
+  const scale = logicalFrameSize.height > 0
+    ? previewFrameSize.height / logicalFrameSize.height
+    : 1;
+  const baseFontSize = clampNumber(overlay?.fontSize ?? 32, 1, 120);
+  return {
+    text: text || "",
+    fontSizePx: Math.max(1, Math.round(baseFontSize * Math.max(scale, 0.01))),
+  };
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
 export function VideoEditor({ source, processedAudioSource, initialOptions = {}, onSave, onCancel }: VideoEditorProps) {
   const initialTextStyle = initialOptions.onScreenTextStyle ?? {};
   const initialSubtitle = initialOptions.subtitleConfig ?? {};
@@ -174,6 +230,8 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
 
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [naturalVideoSize, setNaturalVideoSize] = useState<FrameSize>({ width: 0, height: 0 });
+  const [previewFrameSize, setPreviewFrameSize] = useState<FrameSize>({ width: 0, height: 0 });
   const [trimStart, setTrimStart] = useState<number>(initialOptions.trimStart || 0);
   const [trimEnd, setTrimEnd] = useState<number>(
     (initialOptions.trimStart || 0) + (initialOptions.trimSeconds || 0)
@@ -326,6 +384,10 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
     if (videoRef.current) {
       videoRef.current.onloadedmetadata = () => {
         const d = videoRef.current!.duration;
+        setNaturalVideoSize({
+          width: videoRef.current!.videoWidth || 0,
+          height: videoRef.current!.videoHeight || 0,
+        });
         setDuration(d);
         if (!initialOptions.trimSeconds) setTrimEnd(Math.floor(d));
 
@@ -352,7 +414,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && videoRef.current) {
+      if (e.code === 'Space' && videoRef.current && !isTypingTarget(e.target)) {
         e.preventDefault();
         if (videoRef.current.paused) videoRef.current.play();
         else videoRef.current.pause();
@@ -368,6 +430,27 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
     setActiveSegmentIndex(idx);
   }, [currentTime, scriptSegments]);
 
+  useEffect(() => {
+    const node = videoContainerRef.current;
+    if (!node) return;
+
+    const updateSize = () => {
+      setPreviewFrameSize({
+        width: node.clientWidth || 0,
+        height: node.clientHeight || 0,
+      });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(node);
+    window.addEventListener("resize", updateSize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateSize);
+    };
+  }, [outputRatio]);
+
   // ─── Handlers ────────────────────────────────────────────────────────────────
   const seekTo = (sec: number) => {
     if (videoRef.current) videoRef.current.currentTime = sec;
@@ -380,6 +463,10 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
     const savedScriptInputMode = scriptInputMode === "manual_script" || scriptWasEdited
       ? "manual_script"
       : scriptInputMode;
+    const hasRenderableTextOverlays = textOverlays.some((overlay) =>
+      overlay.text.trim() && overlay.status !== "pending" && overlay.status !== "disabled",
+    );
+    const shouldAutoTranslateOnScreenText = translateOnScreenText && !hasRenderableTextOverlays;
     const preflight = buildFacebookCopyrightPreflight({
       options: {
         ...initialOptions,
@@ -420,11 +507,11 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
       subHighlightColor: subtitleSettings.highlightColor,
       subPosition: subtitleSettings.position,
       subCustomY: subtitleSettings.customY,
-      translateOnScreenText,
-      textOverlay: translateOnScreenText ? textOverlay.trim() : "",
-      onScreenTextStyle: translateOnScreenText
+      translateOnScreenText: shouldAutoTranslateOnScreenText,
+      textOverlay: shouldAutoTranslateOnScreenText ? textOverlay.trim() : "",
+      onScreenTextStyle: shouldAutoTranslateOnScreenText
         ? { preset: onScreenTextPreset, font: textFont, size: textFontSize, color: textColor,
-            bgColor: textBgColor, backgroundStyle: textBackgroundStyle, backgroundOpacity: textBackgroundOpacity, outlineColor: textOutlineColor, bold: textBold }
+            bgColor: textBgColor, backgroundStyle: textBackgroundStyle, backgroundOpacity: textBackgroundOpacity, outlineColor: textOutlineColor, outlineWidth: 2, bold: textBold }
         : undefined,
       textOnScreenOverlays: textOverlays.length > 0 ? textOverlays : undefined,
       manualBlurRegions: manualBlurRegions.length > 0 ? manualBlurRegions : undefined,
@@ -540,7 +627,18 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
   };
 
   const updateOverlay = (id: string, patch: Partial<TextOnScreenOverlay>) => {
-    setTextOverlays(prev => prev.map(o => o.id === id ? normalizeOverlay({ ...o, ...patch }) : o));
+    setTextOverlays(prev => prev.map((overlay) => {
+      if (overlay.id !== id) return overlay;
+      const next = { ...overlay, ...patch };
+      const shouldPromoteToApproved =
+        patch.status === undefined &&
+        overlay.status === "pending" &&
+        Object.keys(patch).length > 0;
+      return normalizeOverlay({
+        ...next,
+        status: shouldPromoteToApproved ? "approved" : next.status,
+      });
+    }));
   };
 
   const toggleOverlaySelection = (id: string) => {
@@ -738,8 +836,8 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
 
   // Sub text đang active theo currentTime (dùng cho subtitle preview)
   const activeSubtitleSeg = scriptSegments.find(s => s.text?.trim() && currentTime >= s.start && currentTime <= s.end);
+  const logicalFrameSize = getLogicalFrameSize(outputRatio, naturalVideoSize);
 
-  const FONT_OPTIONS = VIETNAMESE_FONT_NAMES;
   const ANIMATION_OPTIONS: Array<{ value: TextOnScreenOverlay['animation']; label: string }> = [
     { value: 'none', label: 'Không có' },
     { value: 'fade_in', label: 'Fade In' },
@@ -849,12 +947,20 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
               {activeOverlays.map(overlay => (
                 (() => {
                   const box = overlay.box ?? defaultOverlayBox(overlay.position);
+                  const previewModel = getOverlayPreviewModel({
+                    text: overlay.text,
+                    box,
+                    overlay,
+                    previewFrameSize,
+                    logicalFrameSize,
+                  });
+                  const blurRadius = Math.max(6, Math.round(previewModel.fontSizePx * 0.18));
                   return (
                 <div
                   key={overlay.id}
                   onPointerDown={(e) => beginMoveOverlay(overlay.id, e)}
                   onClick={() => { setActiveTab('text_overlay'); setEditingOverlayId(overlay.id); }}
-                  className={`absolute cursor-move rounded border px-2 py-1 text-sm font-semibold select-none transition-all ${
+                  className={`absolute cursor-move overflow-visible rounded border px-2 py-1 text-sm font-semibold select-none transition-all ${
                     editingOverlayId === overlay.id ? 'ring-2 ring-blue-400' : 'hover:ring-1 hover:ring-white/50'
                   }`}
                   style={{
@@ -863,7 +969,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                     width: `${box.w * 100}%`,
                     height: `${box.h * 100}%`,
                     fontFamily: overlay.fontFamily,
-                    fontSize: `${Math.min(overlay.fontSize, 36)}px`,
+                    fontSize: `${previewModel.fontSizePx}px`,
                     fontWeight: overlay.bold ? 800 : 400,
                     fontStyle: overlay.italic ? 'italic' : 'normal',
                     color: overlay.fontColor,
@@ -872,21 +978,30 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                       : undefined,
                     backgroundColor:
                       overlay.backgroundStyle === "blur"
-                        ? `rgba(15,23,42,${overlay.backgroundOpacity ?? 0.72})`
+                        ? "rgba(15,23,42,0.08)"
                         : overlay.bgColor,
                     backdropFilter:
                       overlay.backgroundStyle === "blur"
-                        ? `blur(${Math.max(6, Math.round(overlay.fontSize * 0.18))}px)`
+                        ? `blur(${blurRadius}px)`
                         : undefined,
                     WebkitBackdropFilter:
                       overlay.backgroundStyle === "blur"
-                        ? `blur(${Math.max(6, Math.round(overlay.fontSize * 0.18))}px)`
+                        ? `blur(${blurRadius}px)`
                         : undefined,
                     borderColor: editingOverlayId === overlay.id ? '#60a5fa' : 'rgba(255,255,255,0.28)',
                   }}
                 >
-                  <span className="flex h-full w-full items-center justify-center text-center leading-tight">
-                    {overlay.text}
+                  <span
+                    className="pointer-events-none absolute left-1/2 top-1/2 text-center"
+                    style={{
+                      transform: "translate(-50%, -50%)",
+                      width: "max-content",
+                      maxWidth: "none",
+                      whiteSpace: "pre",
+                      lineHeight: 1.14,
+                    }}
+                  >
+                    {previewModel.text}
                   </span>
                   {editingOverlayId === overlay.id && (['nw', 'ne', 'sw', 'se'] as const).map(handle => (
                     <span
@@ -1594,6 +1709,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                             fontColor: p.on_screen_text_color ?? o.fontColor,
                             bgColor: p.on_screen_text_bg_color ?? o.bgColor,
                             outlineColor: p.on_screen_text_outline_color ?? o.outlineColor,
+                            outlineWidth: p.on_screen_text_outline_width ?? o.outlineWidth,
                             bold: p.on_screen_text_bold ?? o.bold,
                             italic: p.on_screen_text_italic ?? o.italic,
                             backgroundStyle: p.on_screen_text_background_style ?? o.backgroundStyle,
@@ -1685,7 +1801,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                               ⏱ {fmt(overlay.start)} - {fmt(overlay.end)}
                             </button>
                             <span
-                              className="text-xs px-2 py-0.5 rounded font-medium truncate max-w-[120px]"
+                              className="max-w-[220px] overflow-visible rounded px-2 py-0.5 text-xs font-medium leading-tight whitespace-pre"
                               style={{
                                 fontFamily: overlay.fontFamily,
                                 fontWeight: overlay.bold ? 800 : 500,
@@ -1693,7 +1809,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                 color: overlay.fontColor,
                                 backgroundColor:
                                   overlay.backgroundStyle === "blur"
-                                    ? `rgba(15,23,42,${overlay.backgroundOpacity ?? 0.72})`
+                                    ? "rgba(15,23,42,0.08)"
                                     : overlay.bgColor,
                                 backdropFilter: overlay.backgroundStyle === "blur" ? "blur(8px)" : undefined,
                                 WebkitBackdropFilter: overlay.backgroundStyle === "blur" ? "blur(8px)" : undefined,
@@ -1722,11 +1838,11 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                           <div className="border-t border-border/50 p-3 space-y-3" onClick={e => e.stopPropagation()}>
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground">Nội dung text</label>
-                              <input
-                                type="text"
+                              <textarea
                                 value={overlay.text}
                                 onChange={(e) => updateOverlay(overlay.id, { text: e.target.value })}
-                                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                                rows={3}
+                                className="min-h-[88px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed"
                               />
                             </div>
                             <div className="space-y-1">
@@ -1816,6 +1932,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                         fontColor: p.on_screen_text_color ?? overlay.fontColor,
                                         bgColor: p.on_screen_text_bg_color ?? overlay.bgColor,
                                         outlineColor: p.on_screen_text_outline_color ?? overlay.outlineColor,
+                                        outlineWidth: p.on_screen_text_outline_width ?? overlay.outlineWidth,
                                         bold: p.on_screen_text_bold ?? overlay.bold,
                                         italic: p.on_screen_text_italic ?? overlay.italic,
                                         backgroundStyle: p.on_screen_text_background_style ?? overlay.backgroundStyle,
@@ -1848,19 +1965,21 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                 />
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <div className={`grid grid-cols-1 gap-2 ${overlay.backgroundStyle === "blur" ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
                               <ColorFieldWithOpacity
                                 label="Màu chữ"
                                 value={overlay.fontColor}
                                 onChange={(next) => updateOverlay(overlay.id, { fontColor: next })}
                                 fallback="#FFFFFF"
                               />
-                              <ColorFieldWithOpacity
-                                label="Màu nền"
-                                value={overlay.bgColor}
-                                onChange={(next) => updateOverlay(overlay.id, { bgColor: next })}
-                                fallback="#000000"
-                              />
+                              {overlay.backgroundStyle !== "blur" && (
+                                <ColorFieldWithOpacity
+                                  label="Màu nền"
+                                  value={overlay.bgColor}
+                                  onChange={(next) => updateOverlay(overlay.id, { bgColor: next })}
+                                  fallback="#000000"
+                                />
+                              )}
                               <ColorFieldWithOpacity
                                 label="Màu viền"
                                 value={overlay.outlineColor || 'transparent'}
@@ -1888,7 +2007,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                 <em>In nghiêng (Italic)</em>
                               </label>
                             </div>
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <div className={`grid grid-cols-1 gap-2 ${overlay.backgroundStyle === "blur" ? "" : "sm:grid-cols-2"}`}>
                               <div className="space-y-1">
                                 <label className="text-xs text-muted-foreground">Kiểu nền</label>
                                 <select
@@ -1900,24 +2019,26 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                   <option value="blur">Blur background</option>
                                 </select>
                               </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-xs font-medium text-muted-foreground">Opacity nền</label>
-                                  <span className="rounded bg-muted px-1.5 py-0.5 text-2xs tabular text-foreground">
-                                    {Math.round((overlay.backgroundOpacity ?? 0.72) * 100)}%
-                                  </span>
+                              {overlay.backgroundStyle !== "blur" && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-xs font-medium text-muted-foreground">Opacity nền</label>
+                                    <span className="rounded bg-muted px-1.5 py-0.5 text-2xs tabular text-foreground">
+                                      {Math.round((overlay.backgroundOpacity ?? 0.72) * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={overlay.backgroundOpacity ?? 0.72}
+                                    onChange={(e) => updateOverlay(overlay.id, { backgroundOpacity: Number(e.target.value) })}
+                                    className="range-slider w-full"
+                                    aria-label="Background opacity"
+                                  />
                                 </div>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="1"
-                                  step="0.01"
-                                  value={overlay.backgroundOpacity ?? 0.72}
-                                  onChange={(e) => updateOverlay(overlay.id, { backgroundOpacity: Number(e.target.value) })}
-                                  className="range-slider w-full"
-                                  aria-label="Background opacity"
-                                />
-                              </div>
+                              )}
                             </div>
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground">Animation</label>
@@ -1930,27 +2051,43 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                               </select>
                             </div>
                             <div className="rounded-md bg-zinc-950 p-4 text-center">
-                              <span
-                                className="inline-block rounded px-3 py-1"
-                                style={{
-                                  fontFamily: overlay.fontFamily,
-                                  fontSize: `${Math.min(overlay.fontSize, 40)}px`,
-                                  fontWeight: overlay.bold ? 800 : 400,
-                                  fontStyle: overlay.italic ? 'italic' : 'normal',
-                                  color: overlay.fontColor,
-                                  WebkitTextStroke: overlay.outlineColor && overlay.outlineColor !== '#000000' && overlay.outlineColor !== 'transparent'
-                                    ? `1px ${overlay.outlineColor}`
-                                    : undefined,
-                                  backgroundColor:
-                                    overlay.backgroundStyle === "blur"
-                                      ? `rgba(15,23,42,${overlay.backgroundOpacity ?? 0.72})`
-                                      : overlay.bgColor,
-                                  backdropFilter: overlay.backgroundStyle === "blur" ? "blur(10px)" : undefined,
-                                  WebkitBackdropFilter: overlay.backgroundStyle === "blur" ? "blur(10px)" : undefined,
-                                }}
-                              >
-                                {overlay.text || 'Preview'}
-                              </span>
+                              {(() => {
+                                const box = overlay.box ?? defaultOverlayBox(overlay.position);
+                                const previewModel = getOverlayPreviewModel({
+                                  text: overlay.text || "Preview",
+                                  box,
+                                  overlay,
+                                  previewFrameSize,
+                                  logicalFrameSize,
+                                });
+                                return (
+                                  <span
+                                    className="inline-block rounded px-3 py-1 text-center"
+                                    style={{
+                                      fontFamily: overlay.fontFamily,
+                                      fontSize: `${previewModel.fontSizePx}px`,
+                                      fontWeight: overlay.bold ? 800 : 400,
+                                      fontStyle: overlay.italic ? 'italic' : 'normal',
+                                      color: overlay.fontColor,
+                                      width: "max-content",
+                                      maxWidth: "none",
+                                      whiteSpace: "pre",
+                                      lineHeight: 1.14,
+                                      WebkitTextStroke: overlay.outlineColor && overlay.outlineColor !== '#000000' && overlay.outlineColor !== 'transparent'
+                                        ? `1px ${overlay.outlineColor}`
+                                        : undefined,
+                                      backgroundColor:
+                                        overlay.backgroundStyle === "blur"
+                                          ? "rgba(15,23,42,0.08)"
+                                          : overlay.bgColor,
+                                      backdropFilter: overlay.backgroundStyle === "blur" ? "blur(10px)" : undefined,
+                                      WebkitBackdropFilter: overlay.backgroundStyle === "blur" ? "blur(10px)" : undefined,
+                                    }}
+                                  >
+                                    {previewModel.text}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             {selectedOverlayIds.size > 0 && !selectedOverlayIds.has(overlay.id) && (
                               <button
@@ -1968,6 +2105,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                           backgroundStyle: overlay.backgroundStyle,
                                           backgroundOpacity: overlay.backgroundOpacity,
                                           outlineColor: overlay.outlineColor,
+                                          outlineWidth: overlay.outlineWidth,
                                           bold: overlay.bold,
                                           italic: overlay.italic,
                                           animation: overlay.animation,
@@ -2074,10 +2212,12 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                             />
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                        <div className={`grid grid-cols-1 gap-2 ${textBackgroundStyle === "blur" ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
                           {[
                             { label: "Chữ", value: textColor, setter: setTextColor },
-                            { label: "Nền", value: textBgColor, setter: setTextBgColor },
+                            ...(textBackgroundStyle === "blur"
+                              ? []
+                              : [{ label: "Nền", value: textBgColor, setter: setTextBgColor }] as const),
                             { label: "Viền", value: textOutlineColor, setter: setTextOutlineColor },
                           ].map(({ label, value, setter }) => (
                             <ColorFieldWithOpacity
@@ -2089,7 +2229,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                             />
                           ))}
                         </div>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className={`grid grid-cols-1 gap-2 ${textBackgroundStyle === "blur" ? "" : "sm:grid-cols-2"}`}>
                           <div className="space-y-1">
                             <label className="text-xs text-muted-foreground">Kiểu nền</label>
                             <select
@@ -2101,24 +2241,26 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                               <option value="blur">Blur background</option>
                             </select>
                           </div>
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <label className="text-xs font-medium text-muted-foreground">Opacity nền</label>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-2xs tabular text-foreground">
-                                {Math.round(textBackgroundOpacity * 100)}%
-                              </span>
+                          {textBackgroundStyle !== "blur" && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-medium text-muted-foreground">Opacity nền</label>
+                                <span className="rounded bg-muted px-1.5 py-0.5 text-2xs tabular text-foreground">
+                                  {Math.round(textBackgroundOpacity * 100)}%
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={textBackgroundOpacity}
+                                onChange={(e) => setTextBackgroundOpacity(Number(e.target.value))}
+                                className="range-slider w-full"
+                                aria-label="Text background opacity"
+                              />
                             </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max="1"
-                              step="0.01"
-                              value={textBackgroundOpacity}
-                              onChange={(e) => setTextBackgroundOpacity(Number(e.target.value))}
-                              className="range-slider w-full"
-                              aria-label="Text background opacity"
-                            />
-                          </div>
+                          )}
                         </div>
                         <label className="flex items-center gap-2 text-xs">
                           <input type="checkbox" checked={textBold} onChange={(e) => setTextBold(e.target.checked)} />
@@ -2129,16 +2271,20 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                             className="inline-block rounded px-2 py-0.5"
                             style={{
                               fontFamily: textFont,
-                              fontSize: `${Math.min(textFontSize, 36)}px`,
+                              fontSize: `${Math.max(1, Math.round(textFontSize * Math.max(previewFrameSize.height / Math.max(1, logicalFrameSize.height), 0.01)))}px`,
                               color: textColor,
-                              backgroundColor: textBackgroundStyle === "blur" ? `rgba(15,23,42,${textBackgroundOpacity})` : textBgColor,
+                              backgroundColor: textBackgroundStyle === "blur" ? "rgba(15,23,42,0.08)" : textBgColor,
                               backdropFilter: textBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                               WebkitBackdropFilter: textBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                               WebkitTextStroke: `1px ${textOutlineColor}`,
                               fontWeight: textBold ? 800 : 500,
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              overflowWrap: "anywhere",
+                              lineHeight: 1.14,
                             }}
                           >
-                            Preview text dịch
+                            {"Preview text\ndich"}
                           </span>
                         </div>
                       </div>

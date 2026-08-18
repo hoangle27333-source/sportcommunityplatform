@@ -24,14 +24,30 @@ export const QUEUE_NAMES = {
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
-const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
+const RAILWAY_REDIS_FALLBACK = "redis://default:spnaHoyhqyOMfPTkThHhjTHRuqrkRhpd@altaria.proxy.rlwy.net:27502";
+
+export function getRedisUrl(): string {
+  const envUrl = process.env.REDIS_URL?.trim();
+  if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+    return envUrl;
+  }
+  if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+    return envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1") ? envUrl : RAILWAY_REDIS_FALLBACK;
+  }
+  return envUrl || "redis://localhost:6379";
+}
 
 /**
  * BullMQ requires `maxRetriesPerRequest: null` on its blocking connection.
  * Reuse a single connection per process for producers.
  */
 export function createRedisConnection(opts?: RedisOptions): IORedis {
-  return new IORedis(redisUrl, { maxRetriesPerRequest: null, ...opts });
+  return new IORedis(getRedisUrl(), {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    connectTimeout: 10000,
+    ...opts,
+  });
 }
 
 let sharedConnection: IORedis | null = null;
@@ -74,25 +90,27 @@ export async function enqueue(
   data: any,
   opts?: JobsOptions,
 ) {
+  const q = getQueue(queueName);
   const client = getSharedConnection();
   try {
-    // Fail fast if Redis is completely down to prevent the API from hanging indefinitely.
-    // ioredis buffers commands if offline, so ping() will just wait. We use Promise.race.
-    if (client.status !== 'ready') {
+    if (client.status !== "ready" && client.status !== "connect") {
       await Promise.race([
         new Promise((resolve, reject) => {
-          client.once('ready', resolve);
-          client.once('error', reject);
+          client.once("ready", resolve);
+          client.once("error", reject);
         }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Redis connection timeout')), 2000))
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Redis connection timeout")), 3000),
+        ),
       ]);
     }
   } catch (e) {
-    throw new Error('Hệ thống hàng đợi (Redis) không phản hồi. Hãy đảm bảo redis-server đang chạy.');
+    throw new Error(
+      `Hệ thống hàng đợi (Redis) không phản hồi (${(e as Error).message}). Hãy kiểm tra kết nối Railway Redis.`,
+    );
   }
 
-  const queue = new Queue(queueName, { connection: client });
-  return queue.add(name, data, opts);
+  return q.add(name, data, opts);
 }
 
 /**

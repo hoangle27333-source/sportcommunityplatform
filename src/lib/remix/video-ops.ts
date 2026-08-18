@@ -625,6 +625,81 @@ export function subtitlePlacementForBlurRegion(
   return { alignment: 2, marginV: Math.max(12, marginFromFrameBottom + inset) };
 }
 
+export function buildTightTextBlurRegions(input: {
+  region: { x: number; y: number; w: number; h: number };
+  lines: string[];
+  fontSize: number;
+  frameWidth: number;
+  frameHeight: number;
+  minimumWidthRatio?: number;
+}): Array<{ x: number; y: number; w: number; h: number }> {
+  const region = clampRegion(input.region);
+  const frameWidth = Math.max(1, input.frameWidth);
+  const frameHeight = Math.max(1, input.frameHeight);
+  const fontSize = clamp(Math.round(input.fontSize), 1, 240);
+  const lines = input.lines
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [region];
+
+  const contentWidth = Math.max(1, Math.round(region.w * frameWidth * 0.86));
+  const lineSpacing = Math.max(0, Math.round(fontSize * 0.14));
+  const lineHeight = Math.max(fontSize, Math.round(fontSize * 1.08));
+  const renderedHeight = lines.length * lineHeight + Math.max(0, lines.length - 1) * lineSpacing;
+  const startX = region.x * frameWidth + Math.max(0, (region.w * frameWidth - contentWidth) / 2);
+  const startY = region.y * frameHeight + Math.max(0, (region.h * frameHeight - renderedHeight) / 2);
+  const padX = clamp(Math.round(fontSize * 0.22), 3, Math.max(4, Math.round(contentWidth * 0.08)));
+  const padY = clamp(Math.round(fontSize * 0.16), 2, Math.max(3, Math.round(lineHeight * 0.24)));
+  const minWidth = Math.min(
+    contentWidth,
+    Math.max(
+      Math.round(fontSize * 2.2),
+      Math.round(contentWidth * clamp(input.minimumWidthRatio ?? 0.2, 0.1, 0.6)),
+    ),
+  );
+
+  return lines.map((line, index) => {
+    const estimatedWidth = Math.round(estimatedTextWidth(line, fontSize));
+    const lineWidth = clamp(estimatedWidth, minWidth, contentWidth);
+    const x = startX + (contentWidth - lineWidth) / 2 - padX;
+    const y = startY + index * (lineHeight + lineSpacing) - padY;
+    const w = lineWidth + padX * 2;
+    const h = lineHeight + padY * 2;
+    return clampRegion({
+      x: x / frameWidth,
+      y: y / frameHeight,
+      w: w / frameWidth,
+      h: h / frameHeight,
+    });
+  });
+}
+
+function buildDelogoFilter(
+  region: { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number },
+  frameWidth: number,
+  frameHeight: number,
+  bandPx?: number,
+): string {
+  let bx = Math.max(1, Math.floor(region.x * frameWidth));
+  let by = Math.max(1, Math.floor(region.y * frameHeight));
+  bx = Math.min(bx, frameWidth - 2);
+  by = Math.min(by, frameHeight - 2);
+
+  let bw = Math.max(1, Math.floor(region.w * frameWidth));
+  let bh = Math.max(1, Math.floor(region.h * frameHeight));
+  bw = Math.min(bw, frameWidth - bx - 1);
+  bh = Math.min(bh, frameHeight - by - 1);
+
+  const band = clamp(
+    Math.round(
+      bandPx ?? Math.min(6, Math.max(1, Math.min(bw, bh) * 0.08)),
+    ),
+    1,
+    Math.max(1, Math.min(bw, bh)),
+  );
+  return `delogo=x=${bx}:y=${by}:w=${bw}:h=${bh}:band=${band}:show=0${timelineEnable(region.startSec, region.endSec)}`;
+}
+
 /**
  * Ghép danh sách op thành MỘT lệnh ffmpeg và chạy. Trả về đường dẫn file ra.
  *
@@ -707,29 +782,9 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     ),
   ];
   for (const region of blurRegions) {
-    const { x, y, w, h } = region;
     const fw = reframe ? reframe.width : info.width;
     const fh = reframe ? reframe.height : info.height;
-    
-    // FFmpeg's delogo requires a 1-pixel boundary on all 4 sides.
-    // bx >= 1, by >= 1, bx + bw <= fw - 1, by + bh <= fh - 1
-    let bx = Math.max(1, Math.floor(x * fw));
-    let by = Math.max(1, Math.floor(y * fh));
-    
-    // Ensure there's room for at least w=1, h=1
-    bx = Math.min(bx, fw - 2);
-    by = Math.min(by, fh - 2);
-
-    let bw = Math.max(1, Math.floor(w * fw));
-    let bh = Math.max(1, Math.floor(h * fh));
-
-    // Cap bw and bh so bx + bw <= fw - 1
-    bw = Math.min(bw, fw - bx - 1);
-    bh = Math.min(bh, fh - by - 1);
-
-    chain.push(
-      `delogo=x=${bx}:y=${by}:w=${bw}:h=${bh}:show=0${timelineEnable(region.startSec, region.endSec)}`,
-    );
+    chain.push(buildDelogoFilter(region, fw, fh));
   }
 
   if (color) {
@@ -806,7 +861,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   }
 
   for (const textOverlay of textOverlays) {
-    const region = textOverlay.region
+    let region = textOverlay.region
       ? transformRegionForReframe(textOverlay.region, info.width, info.height, reframe)
       : undefined;
     const eraseRegion = textOverlay.eraseRegion
@@ -814,6 +869,16 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       : region;
     const fw = reframe ? reframe.width : info.width;
     const fh = reframe ? reframe.height : info.height;
+    const normalizedOverlayText = normalizeOverlayTextForDrawtext(textOverlay.text);
+    if (region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit") {
+      region = expandRegionForFullOverlayText(
+        region,
+        normalizedOverlayText,
+        fw,
+        fh,
+        clamp(textOverlay.minFontSize ?? 1, 1, textOverlay.maxFontSize ?? textOverlay.fontSize ?? 32),
+      );
+    }
     const fontSizeBoostPx = Math.max(0, Math.round(textOverlay.fontSizeBoostPx ?? 0));
     const baseFontSize = region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit"
       ? clamp(Math.round(region.h * fh * 0.5) + fontSizeBoostPx, 1, 120)
@@ -822,14 +887,14 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       ? Math.max(baseFontSize, Math.round(region.h * fh * 0.72) + fontSizeBoostPx)
       : textOverlay.maxFontSize;
     const fitted = region && textOverlay.fitToRegion
-      ? fitTextToRegion(textOverlay.text, {
+      ? fitTextToRegion(normalizedOverlayText, {
           width: Math.max(1, Math.round(region.w * fw)),
           height: Math.max(1, Math.round(region.h * fh)),
           desiredFontSize: baseFontSize,
           minFontSize: textOverlay.minFontSize,
           maxFontSize: autoMaxFontSize,
         })
-      : { text: textOverlay.text, fontSize: baseFontSize };
+      : { text: normalizedOverlayText, fontSize: baseFontSize, lines: normalizedOverlayText.split("\n").filter(Boolean) };
     const escapedText = fitted.text
       .replace(/\\/g, "\\\\")
       .replace(/'/g, "\u2019")
@@ -839,11 +904,35 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     const fontOpacity = hexOpacity(textOverlay.color);
     const bgColor = ffmpegColor(textOverlay.bgColor, "black");
     const outlineColor = ffmpegColor(textOverlay.outlineColor, "black");
-    const opacity = clamp(textOverlay.backgroundOpacity ?? (textOverlay.boxOpacity ?? 0.75) * hexOpacity(textOverlay.bgColor), 0, 1);
+    const opacity = textOverlay.backgroundStyle === "blur"
+      ? 0
+      : clamp(textOverlay.backgroundOpacity ?? (textOverlay.boxOpacity ?? 0.75) * hexOpacity(textOverlay.bgColor), 0, 1);
     const outlineOpacity = hexOpacity(textOverlay.outlineColor);
     const fontOpt = getFontOptionForDrawtext(textOverlay.font);
     const boldScale = textOverlay.bold ? 1.08 : 1;
     const baseFinalFontSize = Math.round(fitted.fontSize * boldScale);
+    const blurTargetRegion = textOverlay.coverRegion ? eraseRegion : region;
+    const blurText = normalizeOverlayTextForDrawtext(textOverlay.sourceText ?? textOverlay.text);
+    const blurFitted = blurTargetRegion && textOverlay.fitToRegion
+      ? fitTextToRegion(blurText, {
+          width: Math.max(1, Math.round(blurTargetRegion.w * fw)),
+          height: Math.max(1, Math.round(blurTargetRegion.h * fh)),
+          desiredFontSize: baseFontSize,
+          minFontSize: textOverlay.minFontSize,
+          maxFontSize: autoMaxFontSize,
+        })
+      : { text: blurText, fontSize: baseFontSize, lines: blurText.split("\n").filter(Boolean) };
+    const tightBlurRegions = blurTargetRegion && textOverlay.backgroundStyle === "blur"
+      ? buildTightTextBlurRegions({
+          region: blurTargetRegion,
+          lines: blurFitted.lines,
+          fontSize: Math.round(blurFitted.fontSize * boldScale),
+          frameWidth: fw,
+          frameHeight: fh,
+          minimumWidthRatio: textOverlay.coverRegion ? 0.34 : 0.18,
+        })
+      : [];
+    const outlineWidth = Math.max(0, Math.round(textOverlay.outlineWidth ?? baseFinalFontSize * 0.08));
     let finalFontSize: string | number = baseFinalFontSize;
     let xExpr = region
       ? `${Math.round(region.x * fw)}+(${Math.max(1, Math.round(region.w * fw))}-text_w)/2`
@@ -880,9 +969,9 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       const coverW = Math.min(fw - coverX, Math.max(1, Math.round(eraseRegion.w * fw)));
       const coverH = Math.min(fh - coverY, Math.max(1, Math.round(eraseRegion.h * fh)));
       if (textOverlay.backgroundStyle === "blur") {
-        chain.push(
-          `delogo=x=${Math.max(1, coverX)}:y=${Math.max(1, coverY)}:w=${Math.max(1, Math.min(coverW, fw - Math.max(1, coverX) - 1))}:h=${Math.max(1, Math.min(coverH, fh - Math.max(1, coverY) - 1))}:show=0${enable}`,
-        );
+        for (const blurRegion of tightBlurRegions) {
+          chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh, 2));
+        }
       } else {
         chain.push(
           `drawbox=x=${coverX}:y=${coverY}:w=${coverW}:h=${coverH}:color=${bgColor}@${Math.max(opacity, 0.72)}:t=fill${enable}`,
@@ -892,17 +981,13 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     const boxParams = textOverlay.coverRegion || textOverlay.backgroundStyle === "blur"
       ? "box=0"
       : `box=1:boxcolor=${bgColor}@${opacity}:boxborderw=${region ? fitBoxBorder(region, fw, fh) : 14}`;
-    if (!textOverlay.coverRegion && textOverlay.backgroundStyle === "blur" && region) {
-      const coverX = Math.max(0, Math.round(region.x * fw));
-      const coverY = Math.max(0, Math.round(region.y * fh));
-      const coverW = Math.min(fw - coverX, Math.max(1, Math.round(region.w * fw)));
-      const coverH = Math.min(fh - coverY, Math.max(1, Math.round(region.h * fh)));
-      chain.push(
-        `delogo=x=${Math.max(1, coverX)}:y=${Math.max(1, coverY)}:w=${Math.max(1, Math.min(coverW, fw - Math.max(1, coverX) - 1))}:h=${Math.max(1, Math.min(coverH, fh - Math.max(1, coverY) - 1))}:show=0${enable}`,
-      );
+    if (!textOverlay.coverRegion && tightBlurRegions.length) {
+      for (const blurRegion of tightBlurRegions) {
+        chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh, 2));
+      }
     }
     chain.push(
-      `drawtext=text='${escapedText}'${fontOpt}:fontcolor=${color}${effectiveAlpha}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(0, Math.round(baseFinalFontSize * 0.14))}:borderw=${Math.max(0, Math.round(baseFinalFontSize * 0.08))}:bordercolor=${outlineColor}${outlineOpacity >= 0.999 ? "" : `@${outlineOpacity.toFixed(3)}`}${enable}`
+      `drawtext=text='${escapedText}'${fontOpt}:fontcolor=${color}${effectiveAlpha}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(0, Math.round(baseFinalFontSize * 0.14))}:borderw=${outlineWidth}:bordercolor=${outlineColor}${outlineOpacity >= 0.999 ? "" : `@${outlineOpacity.toFixed(3)}`}${enable}`
     );
   }
 
@@ -1278,6 +1363,39 @@ function roundTime(sec: number): string {
   return (Math.round(sec * 100) / 100).toFixed(2);
 }
 
+function normalizeOverlayTextForDrawtext(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
+}
+
+function expandRegionForFullOverlayText(
+  region: { x: number; y: number; w: number; h: number },
+  text: string,
+  frameWidth: number,
+  frameHeight: number,
+  minFontSize: number,
+): { x: number; y: number; w: number; h: number } {
+  const contentWidth = Math.max(1, region.w * frameWidth * 0.86);
+  const charsPerLine = Math.max(4, Math.floor(contentWidth / (Math.max(1, minFontSize) * 0.58)));
+  const lines = wrapText(text, charsPerLine, Number.POSITIVE_INFINITY);
+  const widestLine = Math.max(...lines.map((line) => estimatedTextWidth(line, minFontSize)), 0);
+  const renderedHeight = lines.length * minFontSize + Math.max(0, lines.length - 1) * Math.round(minFontSize * 0.14);
+  const neededW = Math.min(0.96, Math.max(region.w, (widestLine / 0.86) / Math.max(1, frameWidth)));
+  const neededH = Math.min(0.9, Math.max(region.h, (renderedHeight / 0.74) / Math.max(1, frameHeight)));
+  if (neededW <= region.w && neededH <= region.h) return region;
+
+  const centerX = region.x + region.w / 2;
+  const centerY = region.y + region.h / 2;
+  const x = clamp(centerX - neededW / 2, 0, Math.max(0, 1 - neededW));
+  const y = clamp(centerY - neededH / 2, 0, Math.max(0, 1 - neededH));
+  return clampRegion({ x, y, w: neededW, h: neededH });
+}
+
 export function fitTextToRegion(
   text: string,
   input: {
@@ -1294,7 +1412,10 @@ export function fitTextToRegion(
     Math.max(1, input.desiredFontSize),
   );
   const minFontSize = clamp(input.minFontSize ?? 1, 1, maxFontSize);
-  const maxLines = input.height >= maxFontSize * 1.65 ? 2 : 1;
+  const maxLines = Math.max(
+    1,
+    Math.min(6, Math.floor(contentLineCapacity(input.height, minFontSize))),
+  );
   const contentWidth = Math.max(1, input.width * 0.86);
   const contentHeight = Math.max(1, input.height * 0.74);
 
@@ -1303,27 +1424,42 @@ export function fitTextToRegion(
     const lines = wrapText(text, maxCharsPerLine, maxLines);
     const renderedHeight = lines.length * size + Math.max(0, lines.length - 1) * Math.round(size * 0.14);
     const widestLine = Math.max(...lines.map((line) => estimatedTextWidth(line, size)), 0);
-    if (renderedHeight <= contentHeight && widestLine <= contentWidth) {
+    if (preservesAllText(text, lines) && renderedHeight <= contentHeight && widestLine <= contentWidth) {
       return { text: lines.join("\n"), fontSize: size, lines };
     }
   }
 
   const fallbackChars = Math.max(4, Math.floor(contentWidth / (minFontSize * 0.58)));
-  const lines = wrapText(text, fallbackChars, maxLines);
+  const lines = wrapText(text, fallbackChars, Number.POSITIVE_INFINITY);
+  console.warn(
+    `fitTextToRegion: text exceeded region; rendering full text at min font size (${minFontSize}px).`,
+  );
   return { text: lines.join("\n"), fontSize: minFontSize, lines };
 }
 
 function wrapText(text: string, maxCharsPerLine: number, maxLines: number): string[] {
-  const words = text
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .flatMap((word) => splitLongToken(word, maxCharsPerLine));
+  const paragraphs = text
+    .split(/\n+/)
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+  const sourceLines = paragraphs.length ? paragraphs : [text.replace(/\s+/g, " ").trim()];
+  const words = sourceLines.flatMap((line, lineIndex) => {
+    const lineWords = line
+      .split(" ")
+      .filter(Boolean)
+      .flatMap((word) => splitLongToken(word, maxCharsPerLine));
+    return lineIndex === sourceLines.length - 1 ? lineWords : [...lineWords, "\n"];
+  });
   if (words.length === 0) return [""];
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
+    if (word === "\n") {
+      if (current) lines.push(current);
+      current = "";
+      if (lines.length >= maxLines) break;
+      continue;
+    }
     const candidate = current ? `${current} ${word}` : word;
     if (candidate.length <= maxCharsPerLine || !current) {
       current = candidate;
@@ -1335,16 +1471,19 @@ function wrapText(text: string, maxCharsPerLine: number, maxLines: number): stri
   }
   if (lines.length < maxLines && current) lines.push(current);
   if (lines.length > maxLines) return lines.slice(0, maxLines);
-  const usedWords = lines.join(" ").split(/\s+/).filter(Boolean).length;
-  if (usedWords < words.length && lines.length) {
-    lines[lines.length - 1] = truncateToFit(lines[lines.length - 1], maxCharsPerLine);
-  }
   return lines;
 }
 
-function truncateToFit(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(1, maxChars - 1)).trim()}…`;
+function contentLineCapacity(height: number, fontSize: number): number {
+  return Math.max(1, height / Math.max(1, fontSize * 1.14));
+}
+
+function preservesAllText(source: string, lines: string[]): boolean {
+  return normalizeFitText(lines.join(" ")).includes(normalizeFitText(source));
+}
+
+function normalizeFitText(text: string): string {
+  return text.replace(/[-\s]+/g, "").trim();
 }
 
 function splitLongToken(text: string, maxChars: number): string[] {

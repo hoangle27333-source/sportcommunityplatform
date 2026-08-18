@@ -287,7 +287,14 @@ export function RemixStudio({
   const [watermarkPosition, setWatermarkPosition] = React.useState("bottom-right");
   const [watermarkPositionX, setWatermarkPositionX] = React.useState("0.5");
   const [watermarkPositionY, setWatermarkPositionY] = React.useState("0.5");
+  const WATERMARK_RATIOS = ["9:16", "16:9", "1:1", "4:5"] as const;
+  type WatermarkRatioKey = typeof WATERMARK_RATIOS[number];
+  const [watermarkRatioTab, setWatermarkRatioTab] = React.useState<WatermarkRatioKey>("9:16");
+  const [watermarkPositionsByRatio, setWatermarkPositionsByRatio] = React.useState<Record<WatermarkRatioKey, { position: string; positionX: string; positionY: string }>>(
+    () => Object.fromEntries(["9:16", "16:9", "1:1", "4:5"].map(r => [r, { position: "bottom-right", positionX: "0.5", positionY: "0.5" }])) as Record<WatermarkRatioKey, { position: string; positionX: string; positionY: string }>
+  );
   const [muteOriginal, setMuteOriginal] = React.useState(false);
+  const [trimMode, setTrimMode] = React.useState<"full" | "trim">("full");
   const [trimStartInput, setTrimStartInput] = React.useState("");
   const [trimEndInput, setTrimEndInput] = React.useState("");
   const [translateOnScreenText, setTranslateOnScreenText] = React.useState(false);
@@ -302,6 +309,7 @@ export function RemixStudio({
   const [onScreenTextBackgroundOpacity, setOnScreenTextBackgroundOpacity] = React.useState(0.72);
   const [onScreenTextOutlineColor, setOnScreenTextOutlineColor] = React.useState("#000000");
   const [onScreenTextBold, setOnScreenTextBold] = React.useState(true);
+  const [onScreenTextItalic, setOnScreenTextItalic] = React.useState(false);
   // --- Caption & Image options ---
   const [captionPrompt, setCaptionPrompt] = React.useState("");
   const [imageTranslate, setImageTranslate] = React.useState<"overlay" | "regenerate" | "none">("none");
@@ -541,6 +549,7 @@ export function RemixStudio({
     if (p.on_screen_text_bg_color) setOnScreenTextBgColor(p.on_screen_text_bg_color);
     if (p.on_screen_text_outline_color) setOnScreenTextOutlineColor(p.on_screen_text_outline_color);
     if (p.on_screen_text_bold !== null && p.on_screen_text_bold !== undefined) setOnScreenTextBold(p.on_screen_text_bold);
+    if (p.on_screen_text_italic !== null && p.on_screen_text_italic !== undefined) setOnScreenTextItalic(Boolean(p.on_screen_text_italic));
     
     // watermark
     if (p.watermark_defaults && Object.keys(p.watermark_defaults).length) {
@@ -553,6 +562,14 @@ export function RemixStudio({
       if (w.position) setWatermarkPosition(w.position);
       if (w.positionX !== undefined) setWatermarkPositionX(String(w.positionX));
       if (w.positionY !== undefined) setWatermarkPositionY(String(w.positionY));
+      const defaultPos = { position: w.position ?? "bottom-right", positionX: String(w.positionX ?? 0.5), positionY: String(w.positionY ?? 0.5) };
+      setWatermarkPositionsByRatio(
+        Object.fromEntries(WATERMARK_RATIOS.map(r => {
+          const rp = (w.positionsByRatio as any)?.[r];
+          return [r, rp ? { position: rp.position ?? defaultPos.position, positionX: String(rp.positionX ?? 0.5), positionY: String(rp.positionY ?? 0.5) } : { ...defaultPos }];
+        })) as Record<WatermarkRatioKey, { position: string; positionX: string; positionY: string }>
+      );
+      setWatermarkRatioTab("9:16");
     }
     
     // image mode
@@ -601,6 +618,9 @@ export function RemixStudio({
     setDubMode((p.dub_mode as 'none' | 'full' | 'preserve_bgm' | 'heygen') ?? (p.auto_dub ? 'full' : 'none'));
     setDubVi(p.auto_dub ?? false);
     setVietsub(p.auto_vietsub ?? false);
+    setTrimMode("full");
+    setTrimStartInput("");
+    setTrimEndInput("");
     setTranslateOnScreenText(p.translate_on_screen_text ?? false);
     setOnScreenTextPreset((p.on_screen_text_preset ?? 'meme') as OnScreenTextPreset);
     setOnScreenTextFont(p.on_screen_text_font ?? 'Anton');
@@ -612,6 +632,7 @@ export function RemixStudio({
     setOnScreenTextBackgroundOpacity(Number.isFinite(p.on_screen_text_background_opacity) ? p.on_screen_text_background_opacity : 0.72);
     setOnScreenTextOutlineColor(p.on_screen_text_outline_color ?? '#000000');
     setOnScreenTextBold(p.on_screen_text_bold ?? true);
+    setOnScreenTextItalic(Boolean(p.on_screen_text_italic ?? false));
     setBlurOriginalSub(p.blur_original_sub ?? false);
     setAutoDetectSub(p.auto_detect_subtitle_region ?? false);
     if (p.blur_region) setBlurRegion(p.blur_region);
@@ -643,6 +664,7 @@ export function RemixStudio({
     setOnScreenTextBackgroundOpacity(0.72);
     setOnScreenTextOutlineColor(style.outlineColor);
     setOnScreenTextBold(style.bold);
+    setOnScreenTextItalic(false);
   }, []);
 
   React.useEffect(() => {
@@ -866,8 +888,12 @@ export function RemixStudio({
               sizeMode: p.on_screen_text_size_mode ?? 'auto_fit',
               color: p.on_screen_text_color ?? '#FFFFFF',
               bgColor: p.on_screen_text_bg_color ?? '#000000',
+              backgroundStyle: p.on_screen_text_background_style ?? 'solid',
+              backgroundOpacity: p.on_screen_text_background_opacity ?? 0.72,
               outlineColor: p.on_screen_text_outline_color ?? '#000000',
+              outlineWidth: p.on_screen_text_outline_width ?? 2,
               bold: p.on_screen_text_bold ?? true,
+              italic: p.on_screen_text_italic ?? false,
             };
           }
           
@@ -900,6 +926,14 @@ export function RemixStudio({
           options.outputRatio = outputRatio;
           if (vertical) options.vertical = true;
           if (watermarkMode !== "disabled") {
+            const positionsByRatio = Object.fromEntries(
+              WATERMARK_RATIOS.map(r => {
+                const p = watermarkPositionsByRatio[r];
+                return [r, { position: p.position, positionX: p.position === "custom" ? Number(p.positionX) : undefined, positionY: p.position === "custom" ? Number(p.positionY) : undefined }];
+              })
+            );
+            const activeRatioKey = (outputRatio in watermarkPositionsByRatio ? outputRatio : "9:16") as WatermarkRatioKey;
+            const currentPos = watermarkPositionsByRatio[activeRatioKey] || watermarkPositionsByRatio["9:16"];
             options.watermarkConfig = {
               enabled: true,
               type: watermarkMode,
@@ -907,9 +941,10 @@ export function RemixStudio({
               imageMediaId: watermarkMode === "image" ? watermarkImageMediaId.trim() || undefined : undefined,
               opacity: Number(watermarkOpacity),
               scale: Number(watermarkScale),
-              position: watermarkPosition,
-              positionX: watermarkPosition === "custom" ? Number(watermarkPositionX) : undefined,
-              positionY: watermarkPosition === "custom" ? Number(watermarkPositionY) : undefined,
+              position: currentPos.position,
+              positionX: currentPos.position === "custom" ? Number(currentPos.positionX) : undefined,
+              positionY: currentPos.position === "custom" ? Number(currentPos.positionY) : undefined,
+              positionsByRatio,
             };
           }
         }
@@ -950,15 +985,17 @@ export function RemixStudio({
               backgroundStyle: onScreenTextBackgroundStyle,
               backgroundOpacity: onScreenTextBackgroundOpacity,
               outlineColor: onScreenTextOutlineColor,
+              outlineWidth: 2,
               bold: onScreenTextBold,
+              italic: onScreenTextItalic,
             };
             if (onScreenTextHint.trim()) options.textOverlay = onScreenTextHint.trim();
           }
-          const trimStart = Number(trimStartInput);
-          const trimEnd = Number(trimEndInput);
-          const hasTrimStart = Number.isFinite(trimStart) && trimStart >= 0;
-          const hasTrimEnd = Number.isFinite(trimEnd) && trimEnd > 0;
-          if (hasTrimStart || hasTrimEnd) {
+          if (trimMode === "trim") {
+            const trimStart = Number(trimStartInput);
+            const trimEnd = Number(trimEndInput);
+            const hasTrimStart = Number.isFinite(trimStart) && trimStart >= 0;
+            const hasTrimEnd = Number.isFinite(trimEnd) && trimEnd > 0;
             if (!hasTrimStart || !hasTrimEnd || trimEnd <= trimStart) {
               throw new Error("Khoảng cắt video không hợp lệ. Hãy nhập giây bắt đầu và giây kết thúc hợp lệ.");
             }
@@ -2015,7 +2052,7 @@ export function RemixStudio({
               {/* --- 1. Nguồn --- */}
               <section className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-foreground">1. Nguồn nội dung</h4>
+                  <h4 className="font-semibold text-foreground">1. Nguồn nội dung</h4>
                   <p className="text-sm text-muted-foreground">{activeSource.hint}</p>
                 </div>
                 
@@ -2096,7 +2133,7 @@ export function RemixStudio({
               {/* --- 2. Đầu ra mong muốn --- */}
               <section className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-foreground">2. Đầu ra mong muốn</h4>
+                  <h4 className="font-semibold text-foreground">2. Đầu ra mong muốn</h4>
                   <p className="text-sm text-muted-foreground">Chọn cách cấu hình đầu ra cho video.</p>
                 </div>
 
@@ -2107,7 +2144,7 @@ export function RemixStudio({
                       key={opt.value}
                       type="button"
                       onClick={() => setOutputMode(opt.value)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border-2 text-sm font-medium transition-all ${
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border-2 text-sm font-semibold transition-all ${
                         outputMode === opt.value
                           ? 'border-primary bg-primary/10 text-primary'
                           : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -2124,7 +2161,7 @@ export function RemixStudio({
                   <div className="space-y-3 bg-muted/20 p-4 rounded-lg border border-border/50">
                     <div>
                       <div className="mb-2 flex items-center justify-between gap-3">
-                        <label className="text-sm font-medium">Chọn Preset</label>
+                        <label className="text-sm font-semibold text-foreground">Chọn Preset</label>
                         <Field label="Loại đầu ra" srOnlyLabel>
                           {(p) => (
                             <select
@@ -2289,7 +2326,7 @@ export function RemixStudio({
 
                       <div className={manualVideoTab === "general" ? "block space-y-4" : "hidden"}>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tỉ lệ khung hình</label>
+                          <label className="text-xs font-semibold text-foreground mb-1.5 block">Tỉ lệ khung hình</label>
                           <RatioPicker 
                             value={outputRatio} 
                             onChange={(val) => {
@@ -2302,45 +2339,73 @@ export function RemixStudio({
                         
                         {outputKind === "video" && (
                           <>
-                            <Checkbox
-                              label="Bỏ audio gốc"
-                              description="Dùng khi chỉ cần hình + phụ đề."
-                              checked={muteOriginal}
-                              onChange={(e) => setMuteOriginal(e.target.checked)}
-                            />
-                            <div className="px-1 pt-3">
-                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <Field label="Dùng video từ giây">
-                                  {(p) => (
-                                    <input
-                                      {...p}
-                                      type="number"
-                                      min={0}
-                                      value={trimStartInput || ""}
-                                      onChange={(e) => setTrimStartInput(e.target.value)}
-                                      placeholder="0"
-                                      className={`${p.className} bg-background`}
-                                    />
-                                  )}
-                                </Field>
-                                <Field label="Đến giây">
-                                  {(p) => (
-                                    <input
-                                      {...p}
-                                      type="number"
-                                      min={1}
-                                      max={600}
-                                      value={trimEndInput || ""}
-                                      onChange={(e) => setTrimEndInput(e.target.value)}
-                                      placeholder="30"
-                                      className={`${p.className} bg-background`}
-                                    />
-                                  )}
-                                </Field>
+                            <div className="px-1 pt-2 space-y-3">
+                              <div>
+                                <label className="text-xs font-semibold text-foreground mb-1.5 block">Thời lượng video</label>
+                                <div className="flex gap-2">
+                                  {[
+                                    { value: "full", label: "▶ Dùng full thời lượng" },
+                                    { value: "trim", label: "✂ Cắt đoạn" },
+                                  ].map(opt => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      onClick={() => {
+                                        if (opt.value === "full") {
+                                          setTrimStartInput("");
+                                          setTrimEndInput("");
+                                        }
+                                        setTrimMode(opt.value as "full" | "trim");
+                                      }}
+                                      className={`flex-1 rounded-md border px-3 py-1.5 text-xs font-medium transition-all ${
+                                        trimMode === opt.value
+                                          ? "border-primary bg-primary/10 text-primary"
+                                          : "border-border bg-background hover:bg-muted text-muted-foreground"
+                                      }`}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
+
+                              {trimMode === "trim" && (
+                                <div className="rounded-lg border border-border bg-muted/20 p-3">
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <Field label="Từ giây">
+                                      {(p) => (
+                                        <input
+                                          {...p}
+                                          type="number"
+                                          min={0}
+                                          value={trimStartInput || ""}
+                                          onChange={(e) => setTrimStartInput(e.target.value)}
+                                          placeholder="0"
+                                          className={`${p.className} bg-background`}
+                                        />
+                                      )}
+                                    </Field>
+                                    <Field label="Đến giây">
+                                      {(p) => (
+                                        <input
+                                          {...p}
+                                          type="number"
+                                          min={1}
+                                          max={600}
+                                          value={trimEndInput || ""}
+                                          onChange={(e) => setTrimEndInput(e.target.value)}
+                                          placeholder="30"
+                                          className={`${p.className} bg-background`}
+                                        />
+                                      )}
+                                    </Field>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-2">Chỉ xử lý đoạn từ giây <strong>{trimStartInput || "0"}</strong> đến giây <strong>{trimEndInput || "?"}</strong> của video gốc.</p>
+                                </div>
+                              )}
                             </div>
                             <div className="px-1 pt-3">
-                              <label className="text-xs font-medium text-foreground mb-2 block">Chất lượng video (CRF)</label>
+                              <label className="text-xs font-semibold text-foreground mb-2 block">Chất lượng video (CRF)</label>
                               <div className="space-y-1.5">
                                 {QUALITY_PRESETS.map(preset => {
                                   const isActive = outputCrf === preset.crf;
@@ -2387,7 +2452,7 @@ export function RemixStudio({
                         <>
                           <div className={manualVideoTab === "voice" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
                           <div className="bg-muted/30 p-3 rounded-md border border-border/60">
-                            <label className="text-xs font-medium text-muted-foreground mb-2 block uppercase tracking-wider">Ngôn ngữ dịch & lồng tiếng</label>
+                            <label className="text-xs font-semibold text-foreground mb-2 block uppercase tracking-wider">Ngôn ngữ dịch & lồng tiếng</label>
                             <div className="flex gap-1 bg-background/80 border border-input p-1 rounded-md w-fit shadow-sm">
                               <button
                                 type="button"
@@ -2410,77 +2475,53 @@ export function RemixStudio({
 
                           <div className="space-y-2">
                             <div className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3">
-                              <label className="text-xs font-medium text-muted-foreground block uppercase tracking-wider">Nguồn script cho voice/subtitle</label>
-                              <div className="flex gap-1 bg-background/80 border border-input p-1 rounded-md w-fit shadow-sm">
-                                <button
-                                  type="button"
-                                  className={`px-3 py-1 text-xs rounded-sm transition-all ${scriptInputMode === 'from_video_audio' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-                                  onClick={() => setScriptInputMode('from_video_audio')}
-                                >
-                                  Lấy từ audio video
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`px-3 py-1 text-xs rounded-sm transition-all ${scriptInputMode === 'manual_script' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-                                  onClick={() => setScriptInputMode('manual_script')}
-                                >
-                                  Nhập script trực tiếp
-                                </button>
+                              <label className="text-xs font-semibold text-foreground block uppercase tracking-wider">Nguồn script cho voice/subtitle</label>
+                              <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                  <input
+                                    type="radio"
+                                    name="scriptInputMode"
+                                    value="from_video_audio"
+                                    checked={scriptInputMode === 'from_video_audio'}
+                                    onChange={() => setScriptInputMode('from_video_audio')}
+                                    className="accent-primary"
+                                  />
+                                  <span>🤖 Tự động lấy script từ video gốc (Speech-to-Text)</span>
+                                </label>
+                                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                  <input
+                                    type="radio"
+                                    name="scriptInputMode"
+                                    value="manual_script"
+                                    checked={scriptInputMode === 'manual_script'}
+                                    onChange={() => setScriptInputMode('manual_script')}
+                                    className="accent-primary"
+                                  />
+                                  <span>✍️ Nhập script thủ công (dùng khi video không có audio hoặc cần sửa lời)</span>
+                                </label>
                               </div>
                               {scriptInputMode === 'manual_script' && (
-                                <Textarea
+                                <textarea
                                   value={manualScript}
                                   onChange={(e) => setManualScript(e.target.value)}
                                   placeholder="Paste script để generate voice và subtitle trực tiếp..."
-                                  className="min-h-[130px] bg-background"
+                                  className="w-full min-h-[130px] bg-background rounded-md border border-input p-2.5 text-sm"
                                 />
                               )}
                             </div>
-                          </div>
-                          </div>
-
-                          <div className={manualVideoTab === "subtitle" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
+                            
                             <Checkbox
-                              label={`Hiện text lồng tiếng ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'} trên video`}
-                              description="Hiển thị lời thoại đã dịch/lồng tiếng trực tiếp trên video."
-                              checked={vietsub}
-                              onChange={(e) => setVietsub(e.target.checked)}
-                            />
-                            {vietsub && (
-                              <div className="mt-2 ml-7 mb-4 space-y-4">
-                                <SubtitleConfig
-                                  value={subtitleSettings}
-                                  onChange={setSubtitleSettings}
-                                  title="Cấu hình text lồng tiếng"
-                                  sampleText="Đây là text lồng tiếng mẫu"
-                                  autoDescription="AI tự chọn vị trí an toàn cho text lồng tiếng sau khi xử lý vùng chữ gốc. Nếu không phát hiện được, mặc định đặt ở dưới cùng."
-                                />
-                                <BlurRegionPicker 
-                                  region={blurRegion}
-                                  onChange={setBlurRegion}
-                                  defaultEnabled={blurOriginalSub}
-                                  onToggle={(v) => {
-                                    setBlurOriginalSub(v);
-                                    if (!v) setAutoDetectSub(false);
-                                  }}
-                                  autoDetect={autoDetectSub}
-                                  onAutoDetectChange={setAutoDetectSub}
-                                  label="Blur text on-screen gốc"
-                                  autoDetectLabel="AI tự phát hiện vùng text on-screen gốc"
-                                  autoDetectDescription="Gemini Vision phân tích nhiều khung hình để xác định chính xác vùng chữ gốc. Nếu không tìm thấy, video sẽ không bị làm mờ."
-                                />
-                              </div>
-                            )}
-                          </div>
-
-                          <div className={manualVideoTab === "voice" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
-                            <Checkbox
-                              label={`Lồng tiếng ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'} (AI Dubbing)`}
-                              description="Thay audio bằng giọng đọc AI."
-                              checked={dubVi}
+                              label="Tạo lồng tiếng AI (TTS)"
+                              description="Tự động dịch nội dung và lồng tiếng lại theo ngôn ngữ đích."
+                              checked={dubMode !== 'none'}
                               onChange={(e) => {
-                                setDubVi(e.target.checked);
-                                setDubMode(e.target.checked ? 'full' : 'none');
+                                if (e.target.checked) {
+                                  setDubMode('full');
+                                  setDubVi(true);
+                                } else {
+                                  setDubMode('none');
+                                  setDubVi(false);
+                                }
                               }}
                             />
                             {/* Dubbing mode picker (expanded) */}
@@ -2508,7 +2549,7 @@ export function RemixStudio({
                                       </div>
                                     </div>
                                     <div>
-                                      <span className="font-medium">{opt.icon} {opt.label}</span>
+                                      <span className="font-semibold text-foreground">{opt.icon} {opt.label}</span>
                                       <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
                                     </div>
                                   </label>
@@ -2561,6 +2602,41 @@ export function RemixStudio({
                                 )}
                               </div>
                             )}
+                            </div>
+                          </div>
+
+                          <div className={manualVideoTab === "subtitle" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
+                            <Checkbox
+                              label={`Hiện text lồng tiếng ${targetLanguage === 'en' ? 'Tiếng Anh' : 'Tiếng Việt'} trên video`}
+                              description="Hiển thị lời thoại đã dịch/lồng tiếng trực tiếp trên video."
+                              checked={vietsub}
+                              onChange={(e) => setVietsub(e.target.checked)}
+                            />
+                            {vietsub && (
+                              <div className="mt-2 ml-7 mb-4 space-y-4">
+                                <SubtitleConfig
+                                  value={subtitleSettings}
+                                  onChange={setSubtitleSettings}
+                                  title="Cấu hình text lồng tiếng"
+                                  sampleText="Đây là text lồng tiếng mẫu"
+                                  autoDescription="AI tự chọn vị trí an toàn cho text lồng tiếng sau khi xử lý vùng chữ gốc. Nếu không phát hiện được, mặc định đặt ở dưới cùng."
+                                />
+                                <BlurRegionPicker 
+                                  region={blurRegion}
+                                  onChange={setBlurRegion}
+                                  defaultEnabled={blurOriginalSub}
+                                  onToggle={(v) => {
+                                    setBlurOriginalSub(v);
+                                    if (!v) setAutoDetectSub(false);
+                                  }}
+                                  autoDetect={autoDetectSub}
+                                  onAutoDetectChange={setAutoDetectSub}
+                                  label="Blur text on-screen gốc"
+                                  autoDetectLabel="AI tự phát hiện vùng text on-screen gốc"
+                                  autoDetectDescription="Gemini Vision phân tích nhiều khung hình để xác định chính xác vùng chữ gốc. Nếu không tìm thấy, video sẽ không bị làm mờ."
+                                />
+                              </div>
+                            )}
                           </div>
                           
                           <div className={manualVideoTab === "onscreen" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
@@ -2595,8 +2671,8 @@ export function RemixStudio({
                                       onClick={() => applyOnScreenTextPreset(key)}
                                       className={`rounded-md border px-3 py-2 text-left text-xs transition-colors ${
                                         onScreenTextPreset === key
-                                          ? "border-primary bg-primary/10 text-primary"
-                                          : "border-border bg-background hover:bg-muted"
+                                          ? "border-primary bg-primary/10 text-primary font-semibold"
+                                          : "border-border bg-background hover:bg-muted font-medium"
                                       }`}
                                     >
                                       {style.label}
@@ -2647,10 +2723,9 @@ export function RemixStudio({
                                   </Field>
                                 </div>
 
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-2">
                                   {[
                                     ["Màu chữ", onScreenTextColor, setOnScreenTextColor],
-                                    ["Màu nền", onScreenTextBgColor, setOnScreenTextBgColor],
                                     ["Màu viền", onScreenTextOutlineColor, setOnScreenTextOutlineColor],
                                   ].map(([label, value, setter]) => (
                                     <ColorFieldWithOpacity
@@ -2662,39 +2737,72 @@ export function RemixStudio({
                                     />
                                   ))}
                                 </div>
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div className="space-y-3">
                                   <div>
-                                    <label className="mb-1 block text-xs text-muted-foreground">Kiểu nền</label>
-                                    <select
-                                      value={onScreenTextBackgroundStyle}
-                                      onChange={(e) => setOnScreenTextBackgroundStyle(e.target.value as "solid" | "blur")}
-                                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                                    >
-                                      <option value="solid">Solid</option>
-                                      <option value="blur">Blur background</option>
-                                    </select>
+                                    <label className="mb-1.5 block text-xs font-semibold text-foreground">Kiểu nền</label>
+                                    <div className="flex gap-2">
+                                      {(["solid", "blur"] as const).map((style) => (
+                                        <button
+                                          key={style}
+                                          type="button"
+                                          onClick={() => setOnScreenTextBackgroundStyle(style)}
+                                          className={`flex-1 rounded-md border px-3 py-1.5 text-xs font-semibold transition-all ${
+                                            onScreenTextBackgroundStyle === style
+                                              ? "border-primary bg-primary/10 text-primary"
+                                              : "border-border bg-background hover:bg-muted text-muted-foreground"
+                                          }`}
+                                        >
+                                          {style === "solid" ? "🎨 Solid" : "🌫️ Blur"}
+                                        </button>
+                                      ))}
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label className="mb-1 block text-xs text-muted-foreground">Opacity nền {onScreenTextBackgroundOpacity.toFixed(2)}</label>
-                                    <input
-                                      type="range"
-                                      min="0"
-                                      max="1"
-                                      step="0.01"
-                                      value={onScreenTextBackgroundOpacity}
-                                      onChange={(e) => setOnScreenTextBackgroundOpacity(Number(e.target.value))}
-                                      className="mt-2 w-full"
-                                    />
-                                  </div>
+
+                                  {onScreenTextBackgroundStyle === "solid" && (
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                      <ColorFieldWithOpacity
+                                        label="Màu nền"
+                                        value={onScreenTextBgColor}
+                                        onChange={setOnScreenTextBgColor}
+                                        fallback="#000000"
+                                      />
+                                      <div>
+                                        <label className="mb-1 block text-xs font-semibold text-foreground">Opacity nền ({onScreenTextBackgroundOpacity.toFixed(2)})</label>
+                                        <input
+                                          type="range"
+                                          min="0"
+                                          max="1"
+                                          step="0.01"
+                                          value={onScreenTextBackgroundOpacity}
+                                          onChange={(e) => setOnScreenTextBackgroundOpacity(Number(e.target.value))}
+                                          className="mt-2 w-full"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {onScreenTextBackgroundStyle === "blur" && (
+                                    <p className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2 border border-border/50">
+                                      🌫️ Blur tự động làm mờ vùng phía sau chữ — không cần chọn màu hay opacity.
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="flex flex-wrap gap-4">
-                                  <label className="flex items-center gap-2 text-sm">
+                                  <label className="flex items-center gap-2 text-sm font-semibold text-foreground cursor-pointer">
                                     <input
                                       type="checkbox"
                                       checked={onScreenTextBold}
                                       onChange={(e) => setOnScreenTextBold(e.target.checked)}
                                     />
-                                    Đậm
+                                    In đậm
+                                  </label>
+                                  <label className="flex items-center gap-2 text-sm font-semibold text-foreground cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={onScreenTextItalic}
+                                      onChange={(e) => setOnScreenTextItalic(e.target.checked)}
+                                    />
+                                    In nghiêng
                                   </label>
                                 </div>
 
@@ -2705,11 +2813,12 @@ export function RemixStudio({
                                       fontFamily: onScreenTextFont,
                                       fontSize: `${Math.min(Number(onScreenTextSize) || 34, 42)}px`,
                                       color: onScreenTextColor,
-                                      backgroundColor: onScreenTextBackgroundStyle === "blur" ? `rgba(15,23,42,${onScreenTextBackgroundOpacity})` : onScreenTextBgColor,
+                                      backgroundColor: onScreenTextBackgroundStyle === "blur" ? "rgba(15,23,42,0.5)" : onScreenTextBgColor,
                                       backdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                                       WebkitBackdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                                       WebkitTextStroke: `1px ${onScreenTextOutlineColor}`,
                                       fontWeight: onScreenTextBold ? 800 : 500,
+                                      fontStyle: onScreenTextItalic ? "italic" : "normal",
                                     }}
                                   >
                                     Text on-screen mẫu
@@ -2723,67 +2832,178 @@ export function RemixStudio({
                       )}
                       
                       <div className={manualVideoTab === "watermark" ? "block space-y-4 pt-2 border-t border-border/50" : "hidden"}>
-                        <Field label="Loại watermark">
-                          {(p) => (
-                            <select {...p} value={watermarkMode} onChange={(e) => setWatermarkMode(e.target.value as any)}>
-                              <option value="disabled">Không dùng</option>
-                              <option value="text">Text</option>
-                              <option value="image">Ảnh</option>
-                            </select>
-                          )}
-                        </Field>
-                        {watermarkMode === "text" && (
-                          <Field label="Nội dung text watermark">
-                            {(p) => <input {...p} value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} placeholder="@yourbrand" className={`${p.className} bg-background`} />}
-                          </Field>
-                        )}
-                        {watermarkMode === "image" && (
-                          <Field label="Tải lên hình watermark" hint="Ảnh PNG nền trong suốt">
-                            {(p) => (
-                              <input
-                                {...p}
-                                type="file"
-                                accept="image/png,image/jpeg"
-                                disabled={uploadingLogo}
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) void handleUploadLogo(f);
-                                }}
-                              />
-                            )}
-                          </Field>
-                        )}
-                        {watermarkMode !== "disabled" && (
-                          <div className="grid gap-3 sm:grid-cols-3">
-                            <Field label="Opacity">
-                              {(p) => <input {...p} type="number" min={0} max={1} step="0.05" value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(e.target.value)} className={`${p.className} bg-background`} />}
-                            </Field>
-                            <Field label="Scale">
-                              {(p) => <input {...p} type="number" min={0.03} max={1} step="0.01" value={watermarkScale} onChange={(e) => setWatermarkScale(e.target.value)} className={`${p.className} bg-background`} />}
-                            </Field>
-                            <Field label="Vị trí">
+                        <div className="grid gap-6 lg:grid-cols-2">
+                          <div className="space-y-4">
+                            <Field label="Loại watermark">
                               {(p) => (
-                                <select {...p} value={watermarkPosition} onChange={(e) => setWatermarkPosition(e.target.value)} className={`${p.className} bg-background`}>
-                                  <option value="top-left">Top left</option>
-                                  <option value="top-right">Top right</option>
-                                  <option value="bottom-left">Bottom left</option>
-                                  <option value="bottom-right">Bottom right</option>
-                                  <option value="custom">Tùy chỉnh (X, Y)</option>
+                                <select {...p} value={watermarkMode} onChange={(e) => setWatermarkMode(e.target.value as any)}>
+                                  <option value="disabled">Không dùng</option>
+                                  <option value="text">Text</option>
+                                  <option value="image">Ảnh</option>
                                 </select>
                               )}
                             </Field>
+                            {watermarkMode === "text" && (
+                              <Field label="Nội dung text watermark">
+                                {(p) => <input {...p} value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} placeholder="@yourbrand" className={`${p.className} bg-background`} />}
+                              </Field>
+                            )}
+                            {watermarkMode === "image" && (
+                              <Field label="Tải lên hình watermark" hint="Ảnh PNG nền trong suốt">
+                                {(p) => (
+                                  <input
+                                    {...p}
+                                    type="file"
+                                    accept="image/png,image/jpeg"
+                                    disabled={uploadingLogo}
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0];
+                                      if (f) void handleUploadLogo(f);
+                                    }}
+                                  />
+                                )}
+                              </Field>
+                            )}
+                            {watermarkMode !== "disabled" && (
+                              <div className="space-y-4">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <Field label="Opacity">
+                                    {(p) => <input {...p} type="number" min={0} max={1} step="0.05" value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(e.target.value)} className={`${p.className} bg-background`} />}
+                                  </Field>
+                                  <Field label="Scale">
+                                    {(p) => <input {...p} type="number" min={0.03} max={1} step="0.01" value={watermarkScale} onChange={(e) => setWatermarkScale(e.target.value)} className={`${p.className} bg-background`} />}
+                                  </Field>
+                                </div>
+
+                                {/* Per-ratio position settings */}
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="text-xs font-semibold text-foreground mb-1 block">Vị trí watermark theo tỉ lệ khung hình</label>
+                                    <p className="text-xs text-muted-foreground mb-2">Tuỳ chỉnh vị trí riêng cho từng tỉ lệ — giúp watermark không bị lệch khung.</p>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                      {WATERMARK_RATIOS.map(r => (
+                                        <button
+                                          key={r}
+                                          type="button"
+                                          onClick={() => setWatermarkRatioTab(r)}
+                                          className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-all ${
+                                            watermarkRatioTab === r
+                                              ? "border-primary bg-primary/10 text-primary font-semibold"
+                                              : "border-border bg-background hover:bg-muted text-muted-foreground"
+                                          }`}
+                                        >
+                                          {r === "9:16" ? "📱 9:16 Dọc" : r === "16:9" ? "🖥️ 16:9 Ngang" : r === "1:1" ? "⬛ 1:1 Vuông" : "🖼️ 4:5 Chân dung"}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
+                                    <Field label="Vị trí mặc định">
+                                      {(p) => (
+                                        <select
+                                          {...p}
+                                          value={watermarkPositionsByRatio[watermarkRatioTab].position}
+                                          onChange={(e) => setWatermarkPositionsByRatio(prev => ({
+                                            ...prev,
+                                            [watermarkRatioTab]: { ...prev[watermarkRatioTab], position: e.target.value }
+                                          }))}
+                                          className={`${p.className} bg-background`}
+                                        >
+                                          <option value="top-left">Top left</option>
+                                          <option value="top-right">Top right</option>
+                                          <option value="bottom-left">Bottom left</option>
+                                          <option value="bottom-right">Bottom right</option>
+                                          <option value="custom">Tùy chỉnh (X, Y)</option>
+                                        </select>
+                                      )}
+                                    </Field>
+
+                                    {watermarkPositionsByRatio[watermarkRatioTab].position === "custom" && (
+                                      <div className="grid gap-3 sm:grid-cols-2">
+                                        <Field label={`Vị trí X (${watermarkPositionsByRatio[watermarkRatioTab].positionX})`}>
+                                          {(p) => <input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionsByRatio[watermarkRatioTab].positionX} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], positionX: e.target.value } }))} className="w-full" />}
+                                        </Field>
+                                        <Field label={`Vị trí Y (${watermarkPositionsByRatio[watermarkRatioTab].positionY})`}>
+                                          {(p) => <input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionsByRatio[watermarkRatioTab].positionY} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], positionY: e.target.value } }))} className="w-full" />}
+                                        </Field>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {watermarkMode !== "disabled" && watermarkPosition === "custom" && (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <Field label={`Vị trí X (${watermarkPositionX})`}>
-                              {(p) => <input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionX} onChange={(e) => setWatermarkPositionX(e.target.value)} className="w-full" />}
-                            </Field>
-                            <Field label={`Vị trí Y (${watermarkPositionY})`}>
-                              {(p) => <input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionY} onChange={(e) => setWatermarkPositionY(e.target.value)} className="w-full" />}
-                            </Field>
-                          </div>
-                        )}
+
+                          {watermarkMode !== "disabled" && (
+                            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3 flex flex-col justify-between">
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-sm font-semibold text-foreground">Watermark Preview</h4>
+                                  <span className="text-xs text-muted-foreground font-mono bg-background px-2 py-0.5 rounded border border-border">
+                                    {watermarkRatioTab}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-center p-3 bg-zinc-900/50 rounded-lg border border-border/40 min-h-[220px]">
+                                  <div
+                                    className="relative rounded-md overflow-hidden bg-zinc-950 border border-border/50 shadow-inner w-full flex items-center justify-center transition-all"
+                                    style={{
+                                      aspectRatio: watermarkRatioTab === "9:16" ? "9/16" : watermarkRatioTab === "16:9" ? "16/9" : watermarkRatioTab === "1:1" ? "1/1" : "4/5",
+                                      maxHeight: 220,
+                                      maxWidth: watermarkRatioTab === "16:9" ? 280 : watermarkRatioTab === "1:1" ? 200 : 160,
+                                    }}
+                                  >
+                                    <div className="absolute inset-0 flex flex-col gap-1 items-center justify-center opacity-10 pointer-events-none p-2">
+                                      {Array.from({ length: 6 }).map((_, i) => (
+                                        <div key={i} className="w-full h-3 bg-zinc-600 rounded" />
+                                      ))}
+                                    </div>
+                                    <div
+                                      className="absolute text-white font-bold whitespace-nowrap pointer-events-none transition-all"
+                                      style={{
+                                        opacity: Number(watermarkOpacity),
+                                        fontSize: `${Math.round(Number(watermarkScale) * 140)}px`,
+                                        top: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                                          ? `${Number(watermarkPositionsByRatio[watermarkRatioTab].positionY) * 100}%`
+                                          : watermarkPositionsByRatio[watermarkRatioTab].position.startsWith("top")
+                                            ? "6%"
+                                            : undefined,
+                                        bottom: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                                          ? undefined
+                                          : watermarkPositionsByRatio[watermarkRatioTab].position.startsWith("bottom")
+                                            ? "8%"
+                                            : undefined,
+                                        left: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                                          ? `${Number(watermarkPositionsByRatio[watermarkRatioTab].positionX) * 100}%`
+                                          : watermarkPositionsByRatio[watermarkRatioTab].position.endsWith("left")
+                                            ? "5%"
+                                            : undefined,
+                                        right: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                                          ? undefined
+                                          : watermarkPositionsByRatio[watermarkRatioTab].position.endsWith("right")
+                                            ? "5%"
+                                            : undefined,
+                                        transform: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                                          ? "translate(-50%, -50%)"
+                                          : undefined,
+                                        textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+                                      }}
+                                    >
+                                      {watermarkMode === "text" ? (
+                                        watermarkText || "@yourbrand"
+                                      ) : uploadedLogo?.url ? (
+                                        <img src={uploadedLogo.url} alt="Watermark" className="max-h-10 max-w-[80px] object-contain" />
+                                      ) : (
+                                        "🖼️ Logo"
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground text-center">Preview vị trí và tỉ lệ watermark trên khung hình {watermarkRatioTab}.</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2794,7 +3014,7 @@ export function RemixStudio({
               {/* --- 3. Caption --- */}
               <section className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-foreground">3. Nội dung Bài đăng (Caption)</h4>
+                  <h4 className="font-semibold text-foreground">3. Nội dung Bài đăng (Caption)</h4>
                   <p className="text-sm text-muted-foreground">AI sẽ viết đoạn văn bản và hashtag để đính kèm lên bài đăng.</p>
                 </div>
                 
@@ -3150,6 +3370,7 @@ export function RemixStudio({
                     bgColor: bgColor,
                     outlineColor: outlineColor,
                     bold: bold,
+                    italic: textStyle.italic ?? false,
                     backgroundStyle: backgroundStyle,
                     backgroundOpacity: backgroundOpacity,
                     sizeMode: textStyle.sizeMode ?? 'fixed' as const,

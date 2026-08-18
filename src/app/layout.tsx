@@ -1,17 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { Outfit, Fira_Code } from "next/font/google";
+import { Be_Vietnam_Pro, Fira_Code } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 
 /**
- * Fonts: Outfit (geometric sans, Playful & Friendly SaaS vibe) +
+ * Fonts: Be Vietnam Pro (native Vietnamese neo-grotesque font, perfect diacritics) +
  *        Fira Code (monospace for KPI values, code, tabular numbers).
  * Self-hosted via next/font — non-blocking, no external network request,
- * Vietnamese subset included for diacritics.
+ * Full Vietnamese subset included for flawless diacritics.
  */
-const outfit = Outfit({
-  subsets: ["latin", "latin-ext"],
-  weight: ["300", "400", "500", "600", "700"],
+const beVietnamPro = Be_Vietnam_Pro({
+  subsets: ["vietnamese", "latin", "latin-ext"],
+  weight: ["300", "400", "500", "600", "700", "800"],
   variable: "--font-sans",
   display: "swap",
 });
@@ -46,7 +46,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body
-        className={`${outfit.variable} ${firaCode.variable} min-h-screen bg-background font-sans text-foreground antialiased`}
+        className={`${beVietnamPro.variable} ${firaCode.variable} min-h-screen bg-background font-sans text-foreground antialiased`}
       >
         {children}
         <Toaster

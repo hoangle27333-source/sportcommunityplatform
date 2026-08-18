@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeVideoOps } from "./planner";
 import {
+  buildTightTextBlurRegions,
   buildAssSubtitles,
   buildSrt,
   fitTextToRegion,
@@ -649,7 +650,7 @@ describe("fitTextToRegion", () => {
     expect(fitted.lines.length).toBeLessThanOrEqual(2);
   });
 
-  it("bẻ hoặc cắt token dài để không vượt quá box", () => {
+  it("bẻ token dài mà không cắt mất nội dung", () => {
     const fitted = fitTextToRegion("SuperHyperUltraMegaLongOverlayWord", {
       width: 120,
       height: 40,
@@ -658,8 +659,88 @@ describe("fitTextToRegion", () => {
       maxFontSize: 28,
     });
 
-    expect(fitted.lines.length).toBeLessThanOrEqual(2);
-    expect(fitted.text.length).toBeGreaterThan(0);
+    expect(fitted.text.replace(/[-\n ]/g, "")).toBe("SuperHyperUltraMegaLongOverlayWord");
+  });
+
+  it("giữ đủ text nhiều dòng thay vì truncate im lặng", () => {
+    const source = [
+      'Me: "Listen to your body"',
+      'My body: "We’re dying"',
+      'Me: "Shut up, we’re having fun"',
+    ].join("\n");
+    const fitted = fitTextToRegion(source, {
+      width: 180,
+      height: 54,
+      desiredFontSize: 32,
+      minFontSize: 10,
+      maxFontSize: 32,
+    });
+
+    expect(fitted.text).toContain("Listen");
+    expect(fitted.text).toContain("dying");
+    expect(fitted.text.replace(/\s+/g, " ")).toContain("having fun");
+  });
+});
+
+describe("buildTightTextBlurRegions", () => {
+  it("tách multiline thành nhiều blur region nhỏ hơn", () => {
+    const regions = buildTightTextBlurRegions({
+      region: { x: 0.2, y: 0.3, w: 0.4, h: 0.18 },
+      lines: ["Dong mot", "Dong hai"],
+      fontSize: 34,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      minimumWidthRatio: 0.22,
+    });
+
+    expect(regions).toHaveLength(2);
+    expect(regions[0]!.y).toBeLessThan(regions[1]!.y);
+  });
+
+  it("giữ tổng vùng blur nhỏ hơn khung overlay gốc", () => {
+    const region = { x: 0.18, y: 0.32, w: 0.48, h: 0.16 };
+    const regions = buildTightTextBlurRegions({
+      region,
+      lines: ["Nghe co the cua ban"],
+      fontSize: 32,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      minimumWidthRatio: 0.18,
+    });
+
+    const sourceArea = region.w * region.h;
+    const blurArea = regions.reduce((sum, item) => sum + item.w * item.h, 0);
+    expect(blurArea).toBeLessThan(sourceArea);
+  });
+
+  it("kẹp blur region trong khung video", () => {
+    const regions = buildTightTextBlurRegions({
+      region: { x: 0.82, y: 0.9, w: 0.16, h: 0.09 },
+      lines: ["Vuot mep"],
+      fontSize: 28,
+      frameWidth: 1080,
+      frameHeight: 1920,
+    });
+
+    expect(regions[0]!.x).toBeGreaterThanOrEqual(0);
+    expect(regions[0]!.y).toBeGreaterThanOrEqual(0);
+    expect(regions[0]!.x + regions[0]!.w).toBeLessThanOrEqual(1);
+    expect(regions[0]!.y + regions[0]!.h).toBeLessThanOrEqual(1);
+  });
+
+  it("giữ xuống dòng tay thành các khối blur riêng", () => {
+    const lines = "Toi:\n\"Im di, chung ta dang vui ma\"".split("\n");
+    const regions = buildTightTextBlurRegions({
+      region: { x: 0.3, y: 0.62, w: 0.32, h: 0.18 },
+      lines,
+      fontSize: 30,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      minimumWidthRatio: 0.3,
+    });
+
+    expect(regions).toHaveLength(2);
+    expect(regions[1]!.w).toBeGreaterThan(regions[0]!.w);
   });
 });
 
@@ -692,8 +773,12 @@ describe("buildRemixOptionsFromPreset", () => {
       on_screen_text_size_mode: "auto_fit",
       on_screen_text_color: "#FFFF00",
       on_screen_text_bg_color: "#111111",
+      on_screen_text_background_style: "blur",
+      on_screen_text_background_opacity: 0,
       on_screen_text_outline_color: "#000000",
+      on_screen_text_outline_width: 4,
       on_screen_text_bold: true,
+      on_screen_text_italic: true,
       watermark_defaults: {
         enabled: true,
         type: "text",
@@ -709,6 +794,10 @@ describe("buildRemixOptionsFromPreset", () => {
     expect(options.subtitleConfig?.animation).toBe("reveal_words");
     expect(options.onScreenTextStyle?.sizeMode).toBe("auto_fit");
     expect(options.onScreenTextStyle?.color).toBe("#FFFF00");
+    expect(options.onScreenTextStyle?.backgroundStyle).toBe("blur");
+    expect(options.onScreenTextStyle?.backgroundOpacity).toBe(0);
+    expect(options.onScreenTextStyle?.outlineWidth).toBe(4);
+    expect(options.onScreenTextStyle?.italic).toBe(true);
     expect(options.watermarkConfig?.perRatioScale?.["9:16"]).toBe(0.18);
     expect(options.dubMode).toBe("preserve_bgm");
   });

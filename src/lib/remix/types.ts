@@ -186,7 +186,9 @@ export interface RemixOptions {
     backgroundStyle?: "solid" | "blur";
     backgroundOpacity?: number;
     outlineColor?: string;
+    outlineWidth?: number;
     bold?: boolean;
+    italic?: boolean;
   };
   /**
    * @deprecated Trước đây là text chèn trực tiếp. Nay chỉ dùng như hint/ngữ cảnh
@@ -245,6 +247,7 @@ export interface RemixOptions {
     backgroundStyle?: "solid" | "blur";
     backgroundOpacity?: number;
     outlineColor?: string;
+    outlineWidth?: number;
     bold?: boolean;
     italic?: boolean;
     sizeMode?: "auto_fit" | "fixed";
@@ -321,6 +324,7 @@ export type VideoOp =
   | {
       op: "overlayText";
       text: string;
+      sourceText?: string;
       startSec?: number;
       endSec?: number;
       position?: "top" | "center" | "bottom";
@@ -339,8 +343,10 @@ export type VideoOp =
       backgroundStyle?: "solid" | "blur";
       backgroundOpacity?: number;
       outlineColor?: string;
+      outlineWidth?: number;
       boxOpacity?: number;
       bold?: boolean;
+      italic?: boolean;
       animation?: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
     }
   /** Chỉnh màu: brightness/contrast/saturation nhẹ. */

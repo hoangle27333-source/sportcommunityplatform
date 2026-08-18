@@ -143,6 +143,13 @@ export default function PresetPage() {
   const [watermarkPosition, setWatermarkPosition] = React.useState("bottom-right");
   const [watermarkPositionX, setWatermarkPositionX] = React.useState("0.5");
   const [watermarkPositionY, setWatermarkPositionY] = React.useState("0.5");
+  // Per-ratio watermark positions
+  const WATERMARK_RATIOS = ["9:16", "16:9", "1:1", "4:5"] as const;
+  type WatermarkRatioKey = typeof WATERMARK_RATIOS[number];
+  const [watermarkRatioTab, setWatermarkRatioTab] = React.useState<WatermarkRatioKey>("9:16");
+  const [watermarkPositionsByRatio, setWatermarkPositionsByRatio] = React.useState<Record<WatermarkRatioKey, { position: string; positionX: string; positionY: string }>>(
+    () => Object.fromEntries(["9:16", "16:9", "1:1", "4:5"].map(r => [r, { position: "bottom-right", positionX: "0.5", positionY: "0.5" }])) as Record<WatermarkRatioKey, { position: string; positionX: string; positionY: string }>
+  );
 
   const [templateImage, setTemplateImage] = React.useState<{ id: string; url: string } | null>(null);
   const [templateLoading, setTemplateLoading] = React.useState(false);
@@ -252,6 +259,17 @@ export default function PresetPage() {
     setWatermarkPosition(wm.position ?? "bottom-right");
     setWatermarkPositionX(String(wm.positionX ?? 0.5));
     setWatermarkPositionY(String(wm.positionY ?? 0.5));
+    // Load per-ratio positions
+    {
+      const defaultPos = { position: wm.position ?? "bottom-right", positionX: String(wm.positionX ?? 0.5), positionY: String(wm.positionY ?? 0.5) };
+      setWatermarkPositionsByRatio(
+        Object.fromEntries((["9:16", "16:9", "1:1", "4:5"] as const).map(r => {
+          const rp = (wm.positionsByRatio as any)?.[r];
+          return [r, rp ? { position: rp.position ?? defaultPos.position, positionX: String(rp.positionX ?? 0.5), positionY: String(rp.positionY ?? 0.5) } : { ...defaultPos }];
+        })) as Record<WatermarkRatioKey, { position: string; positionX: string; positionY: string }>
+      );
+      setWatermarkRatioTab("9:16");
+    }
 
     if (kind === "video") {
       setVoice(row.voice_name ?? "vi-VN-WaveNet-A");
@@ -303,6 +321,13 @@ export default function PresetPage() {
 
   function buildWatermarkDefaults() {
     if (watermarkMode === "disabled") return {};
+    const positionsByRatio = Object.fromEntries(
+      (["9:16", "16:9", "1:1", "4:5"] as const).map(r => {
+        const p = watermarkPositionsByRatio[r];
+        return [r, { position: p.position, positionX: p.position === "custom" ? Number(p.positionX) : undefined, positionY: p.position === "custom" ? Number(p.positionY) : undefined }];
+      })
+    );
+    const legacy = watermarkPositionsByRatio["9:16"];
     return {
       enabled: true,
       type: watermarkMode,
@@ -310,9 +335,11 @@ export default function PresetPage() {
       imageMediaId: watermarkMode === "image" ? watermarkImageMediaId.trim() || undefined : undefined,
       opacity: Number(watermarkOpacity),
       scale: Number(watermarkScale),
-      position: watermarkPosition,
-      positionX: watermarkPosition === "custom" ? Number(watermarkPositionX) : undefined,
-      positionY: watermarkPosition === "custom" ? Number(watermarkPositionY) : undefined,
+      // Legacy fallback = 9:16 position
+      position: legacy.position,
+      positionX: legacy.position === "custom" ? Number(legacy.positionX) : undefined,
+      positionY: legacy.position === "custom" ? Number(legacy.positionY) : undefined,
+      positionsByRatio,
     };
   }
 
@@ -660,7 +687,6 @@ export default function PresetPage() {
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <ColorFieldWithOpacity label="Màu chữ" value={onScreenTextColor} onChange={setOnScreenTextColor} fallback="#FFFFFF" />
-                        <ColorFieldWithOpacity label="Màu nền" value={onScreenTextBgColor} onChange={setOnScreenTextBgColor} fallback="#000000" />
                         <ColorFieldWithOpacity label="Màu viền" value={onScreenTextOutlineColor} onChange={setOnScreenTextOutlineColor} fallback="#000000" />
                         <Field label={`Độ dày viền (${onScreenTextOutlineWidth}px)`}>
                           {(p) => (
@@ -676,31 +702,57 @@ export default function PresetPage() {
                           )}
                         </Field>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-3">
                         <Field label="Kiểu nền">
                           {(p) => (
-                            <Select {...p} value={onScreenTextBackgroundStyle} onChange={(e) => setOnScreenTextBackgroundStyle(e.target.value as "solid" | "blur")}>
-                              <option value="solid">Solid</option>
-                              <option value="blur">Blur background</option>
-                            </Select>
+                            <div className="flex gap-2">
+                              {(["solid", "blur"] as const).map((style) => (
+                                <button
+                                  key={style}
+                                  type="button"
+                                  onClick={() => setOnScreenTextBackgroundStyle(style)}
+                                  className={`flex-1 rounded-md border px-3 py-2 text-sm transition-all ${
+                                    onScreenTextBackgroundStyle === style
+                                      ? "border-primary bg-primary/10 text-primary font-medium"
+                                      : "border-border bg-background hover:bg-muted text-muted-foreground"
+                                  }`}
+                                >
+                                  {style === "solid" ? "🎨 Solid" : "🌫️ Blur"}
+                                </button>
+                              ))}
+                            </div>
                           )}
                         </Field>
-                        <Field label={`Opacity nền (${onScreenTextBackgroundOpacity.toFixed(2)})`}>
-                          {(p) => (
-                            <input
-                              {...p}
-                              type="range"
-                              min="0"
-                              max="1"
-                              step="0.01"
-                              value={onScreenTextBackgroundOpacity}
-                              onChange={(e) => setOnScreenTextBackgroundOpacity(Number(e.target.value))}
-                            />
-                          )}
-                        </Field>
+
+                        {onScreenTextBackgroundStyle === "solid" && (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <ColorFieldWithOpacity label="Màu nền" value={onScreenTextBgColor} onChange={setOnScreenTextBgColor} fallback="#000000" />
+                            <Field label={`Opacity nền (${onScreenTextBackgroundOpacity.toFixed(2)})`}>
+                              {(p) => (
+                                <input
+                                  {...p}
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.01"
+                                  value={onScreenTextBackgroundOpacity}
+                                  onChange={(e) => setOnScreenTextBackgroundOpacity(Number(e.target.value))}
+                                />
+                              )}
+                            </Field>
+                          </div>
+                        )}
+
+                        {onScreenTextBackgroundStyle === "blur" && (
+                          <p className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2 border border-border/50">
+                            🌫️ Blur background tự động làm mờ vùng phía sau chữ — không cần chọn màu hay opacity.
+                          </p>
+                        )}
                       </div>
-                      <Checkbox label="In đậm" checked={onScreenTextBold} onChange={(e) => setOnScreenTextBold(e.target.checked)} />
-                      <Checkbox label="In nghiêng" checked={onScreenTextItalic} onChange={(e) => setOnScreenTextItalic(e.target.checked)} />
+                      <div className="flex flex-wrap gap-4">
+                        <Checkbox label="In đậm" checked={onScreenTextBold} onChange={(e) => setOnScreenTextBold(e.target.checked)} />
+                        <Checkbox label="In nghiêng" checked={onScreenTextItalic} onChange={(e) => setOnScreenTextItalic(e.target.checked)} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -716,10 +768,11 @@ export default function PresetPage() {
                               fontFamily: onScreenTextFont,
                               fontSize: onScreenTextSizeMode === "fixed" ? `${onScreenTextSize}px` : "28px",
                               color: onScreenTextColor,
-                              backgroundColor: onScreenTextBackgroundStyle === "solid"
-                                ? `${onScreenTextBgColor}${Math.round(onScreenTextBackgroundOpacity * 255).toString(16).padStart(2, '0')}`
-                                : `${onScreenTextBgColor}${Math.round(onScreenTextBackgroundOpacity * 128).toString(16).padStart(2, '0')}`,
+                              backgroundColor: onScreenTextBackgroundStyle === "blur"
+                                ? "rgba(15,23,42,0.5)"
+                                : `${onScreenTextBgColor}${Math.round(onScreenTextBackgroundOpacity * 255).toString(16).padStart(2, '0')}`,
                               backdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
+                              WebkitBackdropFilter: onScreenTextBackgroundStyle === "blur" ? "blur(10px)" : undefined,
                               WebkitTextStroke: onScreenTextOutlineColor && onScreenTextOutlineColor !== "transparent" && onScreenTextOutlineWidth > 0 ? `${onScreenTextOutlineWidth}px ${onScreenTextOutlineColor}` : undefined,
                               fontWeight: onScreenTextBold ? 800 : 500,
                               fontStyle: onScreenTextItalic ? "italic" : "normal",
@@ -743,30 +796,62 @@ export default function PresetPage() {
                 </div>
                 {watermarkMode !== "disabled" && (
                   <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
-                    <h4 className="text-sm font-medium">Watermark Preview</h4>
-                    <div className="relative rounded-md overflow-hidden bg-zinc-950 border border-border/50" style={{ aspectRatio: "9/16", maxHeight: 260 }}>
-                      <div className="absolute inset-0 flex flex-col gap-1 items-center justify-center opacity-10">
-                        {Array.from({ length: 6 }).map((_, i) => (
-                          <div key={i} className="w-full h-5 bg-zinc-600 rounded" />
-                        ))}
-                      </div>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-medium">Watermark Preview</h4>
+                      <span className="text-xs text-muted-foreground font-mono bg-background px-2 py-0.5 rounded border border-border">
+                        {watermarkRatioTab}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center p-3 bg-zinc-900/50 rounded-lg border border-border/40 min-h-[220px]">
                       <div
-                        className="absolute text-white font-bold whitespace-nowrap"
+                        className="relative rounded-md overflow-hidden bg-zinc-950 border border-border/50 shadow-inner w-full flex items-center justify-center transition-all"
                         style={{
-                          opacity: Number(watermarkOpacity),
-                          fontSize: `${Math.round(Number(watermarkScale) * 160)}px`,
-                          top: watermarkPosition === "custom" ? `${Number(watermarkPositionY) * 100}%` : watermarkPosition.startsWith("top") ? "6%" : undefined,
-                          bottom: watermarkPosition === "custom" ? undefined : watermarkPosition.startsWith("bottom") ? "8%" : undefined,
-                          left: watermarkPosition === "custom" ? `${Number(watermarkPositionX) * 100}%` : watermarkPosition.endsWith("left") ? "5%" : undefined,
-                          right: watermarkPosition === "custom" ? undefined : watermarkPosition.endsWith("right") ? "5%" : undefined,
-                          transform: watermarkPosition === "custom" ? "translate(-50%, -50%)" : undefined,
-                          textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+                          aspectRatio: watermarkRatioTab === "9:16" ? "9/16" : watermarkRatioTab === "16:9" ? "16/9" : watermarkRatioTab === "1:1" ? "1/1" : "4/5",
+                          maxHeight: 220,
+                          maxWidth: watermarkRatioTab === "16:9" ? 280 : watermarkRatioTab === "1:1" ? 200 : 160,
                         }}
                       >
-                        {watermarkMode === "text" ? (watermarkText || "@yourbrand") : "🖼️"}
+                        <div className="absolute inset-0 flex flex-col gap-1 items-center justify-center opacity-10 pointer-events-none p-2">
+                          {Array.from({ length: 6 }).map((_, i) => (
+                            <div key={i} className="w-full h-3 bg-zinc-600 rounded" />
+                          ))}
+                        </div>
+                        <div
+                          className="absolute text-white font-bold whitespace-nowrap pointer-events-none transition-all"
+                          style={{
+                            opacity: Number(watermarkOpacity),
+                            fontSize: `${Math.round(Number(watermarkScale) * 140)}px`,
+                            top: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                              ? `${Number(watermarkPositionsByRatio[watermarkRatioTab].positionY) * 100}%`
+                              : watermarkPositionsByRatio[watermarkRatioTab].position.startsWith("top")
+                                ? "6%"
+                                : undefined,
+                            bottom: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                              ? undefined
+                              : watermarkPositionsByRatio[watermarkRatioTab].position.startsWith("bottom")
+                                ? "8%"
+                                : undefined,
+                            left: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                              ? `${Number(watermarkPositionsByRatio[watermarkRatioTab].positionX) * 100}%`
+                              : watermarkPositionsByRatio[watermarkRatioTab].position.endsWith("left")
+                                ? "5%"
+                                : undefined,
+                            right: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                              ? undefined
+                              : watermarkPositionsByRatio[watermarkRatioTab].position.endsWith("right")
+                                ? "5%"
+                                : undefined,
+                            transform: watermarkPositionsByRatio[watermarkRatioTab].position === "custom"
+                              ? "translate(-50%, -50%)"
+                              : undefined,
+                            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+                          }}
+                        >
+                          {watermarkMode === "text" ? (watermarkText || "@yourbrand") : "🖼️"}
+                        </div>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground text-center">Preview minh họa vị trí và độ mờ của watermark.</p>
+                    <p className="text-xs text-muted-foreground text-center">Preview minh họa vị trí và độ mờ của watermark trên khung {watermarkRatioTab}.</p>
                   </div>
                 )}
               </div>
@@ -1004,34 +1089,64 @@ export default function PresetPage() {
           </Field>
         )}
         {watermarkMode !== "disabled" && (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Opacity">
-              {(p) => <Input {...p} type="number" min={0} max={1} step="0.05" value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(e.target.value)} />}
-            </Field>
-            <Field label="Scale">
-              {(p) => <Input {...p} type="number" min={0.03} max={1} step="0.01" value={watermarkScale} onChange={(e) => setWatermarkScale(e.target.value)} />}
-            </Field>
-            <Field label="Position">
-              {(p) => (
-                <Select {...p} value={watermarkPosition} onChange={(e) => setWatermarkPosition(e.target.value)}>
-                  <option value="top-left">Top left</option>
-                  <option value="top-right">Top right</option>
-                  <option value="bottom-left">Bottom left</option>
-                  <option value="bottom-right">Bottom right</option>
-                  <option value="custom">Tùy chỉnh (X, Y)</option>
-                </Select>
-              )}
-            </Field>
-          </div>
-        )}
-        {watermarkMode !== "disabled" && watermarkPosition === "custom" && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={`Vị trí X (${watermarkPositionX})`}>
-              {(p) => <Input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionX} onChange={(e) => setWatermarkPositionX(e.target.value)} />}
-            </Field>
-            <Field label={`Vị trí Y (${watermarkPositionY})`}>
-              {(p) => <Input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionY} onChange={(e) => setWatermarkPositionY(e.target.value)} />}
-            </Field>
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Opacity">
+                {(p) => <Input {...p} type="number" min={0} max={1} step="0.05" value={watermarkOpacity} onChange={(e) => setWatermarkOpacity(e.target.value)} />}
+              </Field>
+              <Field label="Scale">
+                {(p) => <Input {...p} type="number" min={0.03} max={1} step="0.01" value={watermarkScale} onChange={(e) => setWatermarkScale(e.target.value)} />}
+              </Field>
+            </div>
+
+            {/* Per-ratio position settings */}
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-foreground mb-1 block">Vị trí watermark theo tỉ lệ khung hình</label>
+                <p className="text-xs text-muted-foreground mb-2">Tuỳ chỉnh vị trí riêng cho từng tỉ lệ — giúp watermark không bị lệch khung.</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {(["9:16", "16:9", "1:1", "4:5"] as const).map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setWatermarkRatioTab(r)}
+                      className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-all ${
+                        watermarkRatioTab === r
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-background hover:bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {r === "9:16" ? "📱 9:16 Dọc" : r === "16:9" ? "🖥️ 16:9 Ngang" : r === "1:1" ? "⬛ 1:1 Vuông" : "🖼️ 4:5 Chân dung"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
+                <Field label="Vị trí mặc định">
+                  {(p) => (
+                    <Select {...p} value={watermarkPositionsByRatio[watermarkRatioTab].position} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], position: e.target.value } }))}>
+                      <option value="top-left">Top left</option>
+                      <option value="top-right">Top right</option>
+                      <option value="bottom-left">Bottom left</option>
+                      <option value="bottom-right">Bottom right</option>
+                      <option value="custom">Tùy chỉnh (X, Y)</option>
+                    </Select>
+                  )}
+                </Field>
+
+                {watermarkPositionsByRatio[watermarkRatioTab].position === "custom" && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label={`Vị trí X (${watermarkPositionsByRatio[watermarkRatioTab].positionX})`}>
+                      {(p) => <Input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionsByRatio[watermarkRatioTab].positionX} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], positionX: e.target.value } }))} />}
+                    </Field>
+                    <Field label={`Vị trí Y (${watermarkPositionsByRatio[watermarkRatioTab].positionY})`}>
+                      {(p) => <Input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionsByRatio[watermarkRatioTab].positionY} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], positionY: e.target.value } }))} />}
+                    </Field>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

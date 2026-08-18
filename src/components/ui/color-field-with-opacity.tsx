@@ -66,7 +66,7 @@ export function ColorFieldWithOpacity({
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       {/* Label */}
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="text-xs font-semibold text-foreground">{label}</span>
 
       {/* Row: color swatch + opacity value */}
       <div className="flex items-center gap-2">

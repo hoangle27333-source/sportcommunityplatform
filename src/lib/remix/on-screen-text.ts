@@ -355,7 +355,7 @@ Return ONLY JSON:
     {
       "id": "frame${input.frameOffset}-item0",
       "detectedText": "original visible text",
-      "translatedText": "direct ${input.targetLanguage} translation of detectedText only, max 2 lines",
+      "translatedText": "direct ${input.targetLanguage} translation of the full detectedText only",
       "region": { "x": 0.08, "y": 0.10, "w": 0.84, "h": 0.12 },
       "frameIndex": ${input.frameOffset},
       "timestampSec": ${input.timestamps[0] ?? 0},
@@ -372,6 +372,7 @@ Rules for items:
 - Return one item per distinct visual text block, not one combined translation for the whole video.
 - If multiple words belong to the same label/card/caption, keep them together as one detectedText, preserving line breaks when helpful. For example "BALLS\\nFROM" must not become only "BALLS".
 - translatedText must translate detectedText only. Never use dialogue/script context as replacement text for a visual label.
+- translatedText must include every visible word from detectedText. Do not shorten, summarize, or drop speaker labels/quoted text.
 - Do not keep text unchanged just because it is ALL CAPS. Translate ALL CAPS labels into the target language too.
 - Keep text unchanged only when it exactly matches a protected term.
 - For single-word object labels, translate the word literally and tersely; do not infer a different object/action from the scene.
@@ -1058,7 +1059,11 @@ function trackScore(track: OnScreenTextTranslation): number {
 
 function normalizeTranslatedText(detectedText: string, translatedText: string): string {
   const detected = detectedText.trim();
-  const translated = translatedText.trim();
+  const translated = translatedText
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\\n/g, "\n")
+    .trim();
   const literal = literalVietnameseVisualLabel(detected);
   if (
     literal &&
@@ -1066,9 +1071,6 @@ function normalizeTranslatedText(detectedText: string, translatedText: string): 
       translationLooksUntranslated(detected, translated))
   ) {
     return literal;
-  }
-  if (normalizedText(translated).includes(normalizedText(detected)) && translated.length > detected.length * 2.2) {
-    return translated.slice(0, Math.max(1, detected.length * 2)).trim();
   }
   return translated;
 }
