@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireEditor, AuthError } from "@/lib/auth/require-user";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -8,31 +9,30 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { db, user } = await requireEditor();
+    await requireEditor();
     const { id } = await params;
+    const adminDb = createAdminClient();
 
-    const { data: targetPreset, error: targetError } = await db
+    const { data: targetPreset, error: targetError } = await adminDb
       .from("remix_image_presets")
       .select("id")
       .eq("id", id)
-      .eq("org_id", user.id)
       .maybeSingle();
 
     if (targetError) return NextResponse.json({ error: targetError.message }, { status: 500 });
-    if (!targetPreset) return NextResponse.json({ error: "Image preset không tồn tại hoặc bạn không có quyền truy cập." }, { status: 404 });
+    if (!targetPreset) return NextResponse.json({ error: "Image preset không tồn tại." }, { status: 404 });
 
-    const { error: resetError } = await db
+    const { error: resetError } = await adminDb
       .from("remix_image_presets")
       .update({ is_default: false })
-      .eq("org_id", user.id);
+      .neq("id", id);
 
     if (resetError) return NextResponse.json({ error: resetError.message }, { status: 500 });
 
-    const { data, error } = await db
+    const { data, error } = await adminDb
       .from("remix_image_presets")
       .update({ is_default: true })
       .eq("id", id)
-      .eq("org_id", user.id)
       .select("*")
       .single();
 

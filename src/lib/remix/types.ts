@@ -40,6 +40,7 @@ export type ScriptInputMode = "from_video_audio" | "manual_script";
 export type SubtitleAnimation = "static" | "word_highlight" | "reveal_words";
 export type SubtitlePosition = "top" | "bottom" | "auto" | "custom";
 export type TextOnScreenOverlaySource = "ocr_auto" | "manual";
+export type NormalizedTextRegion = { x: number; y: number; w: number; h: number };
 export type SubtitlePreset =
   | "tiktok_bold"
   | "meme"
@@ -237,6 +238,7 @@ export interface RemixOptions {
     status?: "pending" | "approved" | "disabled";
     ocrTrackId?: string;
     sourceText?: string;
+    textRegions?: NormalizedTextRegion[];
     position: { x: number; y: number };
     box?: { x: number; y: number; w: number; h: number };
     eraseBox?: { x: number; y: number; w: number; h: number };
@@ -330,6 +332,7 @@ export type VideoOp =
       position?: "top" | "center" | "bottom";
       region?: { x: number; y: number; w: number; h: number };
       eraseRegion?: { x: number; y: number; w: number; h: number };
+      textRegions?: NormalizedTextRegion[];
       fitToRegion?: boolean;
       sizeMode?: "auto_fit" | "fixed";
       coverRegion?: boolean;

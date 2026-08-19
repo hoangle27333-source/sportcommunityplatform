@@ -28,12 +28,14 @@ const RAILWAY_REDIS_FALLBACK = "redis://default:spnaHoyhqyOMfPTkThHhjTHRuqrkRhpd
 
 export function getRedisUrl(): string {
   const envUrl = process.env.REDIS_URL?.trim();
-  if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
-    return envUrl;
+  // Trên Vercel (cloud), localhost không truy cập được -> dùng fallback Railway nếu chưa cấu hình URL ngoài
+  if (process.env.VERCEL) {
+    if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+      return envUrl;
+    }
+    return RAILWAY_REDIS_FALLBACK;
   }
-  if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-    return envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1") ? envUrl : RAILWAY_REDIS_FALLBACK;
-  }
+  // Môi trường local / localhost: luôn ưu tiên env REDIS_URL hoặc mặc định localhost:6379
   return envUrl || "redis://localhost:6379";
 }
 
@@ -106,7 +108,7 @@ export async function enqueue(
     }
   } catch (e) {
     throw new Error(
-      `Hệ thống hàng đợi (Redis) không phản hồi (${(e as Error).message}). Hãy kiểm tra kết nối Railway Redis.`,
+      `Hệ thống hàng đợi (Redis) không phản hồi (${(e as Error).message}). Hãy kiểm tra kết nối Redis (REDIS_URL=${getRedisUrl()}).`,
     );
   }
 

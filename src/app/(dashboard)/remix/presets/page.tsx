@@ -119,6 +119,8 @@ export default function PresetPage() {
   const [crf, setCrf] = React.useState("18");
   const [blurOriginalSub, setBlurOriginalSub] = React.useState(false);
   const [autoDetectSub, setAutoDetectSub] = React.useState(false);
+  const [disableSubtitle, setDisableSubtitle] = React.useState(false);
+  const [subtitleLanguage, setSubtitleLanguage] = React.useState<"vi" | "en">("vi");
   const [blurRegion, setBlurRegion] = React.useState<BlurRegion>({ x: 0, y: 0.82, w: 1, h: 0.18 });
   const [translateOnScreenText, setTranslateOnScreenText] = React.useState(false);
   const [onScreenTextPreset, setOnScreenTextPreset] = React.useState<OnScreenTextPreset>("meme");
@@ -295,6 +297,8 @@ export default function PresetPage() {
       setBlurOriginalSub(Boolean(row.blur_original_sub));
       setAutoDetectSub(Boolean(row.auto_detect_subtitle_region));
       setBlurRegion(row.blur_region ?? { x: 0, y: 0.82, w: 1, h: 0.18 });
+      setDisableSubtitle(Boolean(row.disable_subtitle));
+      setSubtitleLanguage((row.subtitle_language === "en" ? "en" : "vi") as "vi" | "en");
       setTranslateOnScreenText(Boolean(row.translate_on_screen_text));
       setOnScreenTextPreset((row.on_screen_text_preset ?? "meme") as OnScreenTextPreset);
       setOnScreenTextFont(row.on_screen_text_font ?? "Anton");
@@ -372,6 +376,8 @@ export default function PresetPage() {
           blurOriginalSub,
           autoDetectSubtitleRegion: autoDetectSub,
           blurRegion,
+          disableSubtitle,
+          subtitleLanguage,
           translateOnScreenText,
           onScreenTextPreset,
           onScreenTextFont,
@@ -611,29 +617,80 @@ export default function PresetPage() {
             )}
 
             {videoTab === "subtitle" && (
-              <div className="grid gap-6 lg:grid-cols-2">
-                <div className="space-y-4">
-                  <SubtitleConfig
-                    value={subtitleConfig}
-                    onChange={setSubtitleConfig}
-                    title="Cấu hình phụ đề"
-                    sampleText="Đây là subtitle demo theo preset"
-                    autoDescription="Preset này sẽ áp dụng cho subtitle burn-in khi job video dùng preset."
-                  />
+              <div className="space-y-5">
+                {/* Row 1: Enable/Disable + Language picker side by side */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Enable/Disable toggle */}
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <div
+                      onClick={() => setDisableSubtitle(v => !v)}
+                      className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        !disableSubtitle ? "bg-primary" : "bg-muted-foreground/30"
+                      }`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                        !disableSubtitle ? "translate-x-5" : "translate-x-0"
+                      }`} />
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold text-foreground">
+                        {disableSubtitle ? "🔕 Tắt phụ đề" : "✅ Bật phụ đề"}
+                      </span>
+                      <p className="text-xs text-muted-foreground">
+                        {disableSubtitle ? "Không burn-in phụ đề vào video" : "Tạo và burn-in phụ đề dịch"}
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Language picker — only shown when subtitle is enabled */}
+                  {!disableSubtitle && (
+                    <div className="flex items-center gap-2 ml-auto">
+                      <span className="text-xs font-semibold text-foreground">Ngôn ngữ phụ đề:</span>
+                      {(["vi", "en"] as const).map((lang) => (
+                        <button
+                          key={lang}
+                          type="button"
+                          onClick={() => setSubtitleLanguage(lang)}
+                          className={`px-3 py-1 rounded-full border text-xs font-medium transition-all ${
+                            subtitleLanguage === lang
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-background hover:bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {lang === "vi" ? "🇻🇳 Tiếng Việt" : "🇺🇸 English"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="space-y-4">
-                  <BlurRegionPicker
-                    region={blurRegion}
-                    onChange={setBlurRegion}
-                    defaultEnabled={blurOriginalSub}
-                    onToggle={(value) => setBlurOriginalSub(value)}
-                    autoDetect={autoDetectSub}
-                    onAutoDetectChange={setAutoDetectSub}
-                    label="Blur subtitle gốc"
-                    autoDetectLabel="AI tự phát hiện vùng subtitle gốc"
-                    autoDetectDescription="Dùng khi source đã có phụ đề và cần che trước khi burn-in phụ đề mới."
-                  />
-                </div>
+
+                {/* Subtitle config — hidden when disabled */}
+                {!disableSubtitle && (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    <div className="space-y-4">
+                      <SubtitleConfig
+                        value={subtitleConfig}
+                        onChange={setSubtitleConfig}
+                        title="Cấu hình phụ đề"
+                        sampleText="Đây là subtitle demo theo preset"
+                        autoDescription="Preset này sẽ áp dụng cho subtitle burn-in khi job video dùng preset."
+                      />
+                    </div>
+                    <div className="space-y-4">
+                      <BlurRegionPicker
+                        region={blurRegion}
+                        onChange={setBlurRegion}
+                        defaultEnabled={blurOriginalSub}
+                        onToggle={(value) => setBlurOriginalSub(value)}
+                        autoDetect={autoDetectSub}
+                        onAutoDetectChange={setAutoDetectSub}
+                        label="Blur subtitle gốc"
+                        autoDetectLabel="AI tự phát hiện vùng subtitle gốc"
+                        autoDetectDescription="Dùng khi source đã có phụ đề và cần che trước khi burn-in phụ đề mới."
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

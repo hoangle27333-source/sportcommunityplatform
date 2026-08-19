@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { RawOnScreenTextItem } from "./on-screen-text";
+import type { NormalizedTextRegion } from "./types";
 
 export interface PaddleOcrDetectionResult {
   items: RawOnScreenTextItem[];
@@ -25,6 +26,9 @@ interface PaddleOcrServiceItem {
   sampleCount?: unknown;
   maxGapSec?: unknown;
   source?: unknown;
+  textRegions?: unknown;
+  lineRegions?: unknown;
+  wordRegions?: unknown;
 }
 
 interface PaddleOcrServiceResponse {
@@ -96,6 +100,7 @@ function normalizePaddleOcrItem(
   if (!detectedText) return null;
   const region = normalizeRegion(item.region);
   if (!region) return null;
+  const textRegions = normalizeTextRegions(item);
   const timestampSec = clampNumber(Number(item.timestampSec), 0, durationSec, 0);
   const firstSeenSec = clampNumber(Number(item.firstSeenSec), 0, durationSec, timestampSec);
   const lastSeenSec = clampNumber(Number(item.lastSeenSec), firstSeenSec, durationSec, timestampSec);
@@ -119,6 +124,7 @@ function normalizePaddleOcrItem(
     detectedText,
     translatedText: detectedText,
     region,
+    textRegions,
     timestampSec,
     startSec,
     endSec,
@@ -133,6 +139,31 @@ function normalizePaddleOcrItem(
       `maxGapSec=${clampNumber(Number(item.maxGapSec), 0.25, 9, Math.max(0.25, sampleIntervalSec * 6)).toFixed(2)}`,
     ],
   };
+}
+
+function normalizeTextRegions(item: PaddleOcrServiceItem): NormalizedTextRegion[] | undefined {
+  for (const value of [item.textRegions, item.lineRegions, item.wordRegions]) {
+    const regions = normalizeRegionArray(value);
+    if (regions.length) return regions;
+  }
+  return undefined;
+}
+
+function normalizeRegionArray(value: unknown): NormalizedTextRegion[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((region) => normalizeRegion(regionCandidate(region)))
+    .filter((region): region is NormalizedTextRegion => Boolean(region))
+    .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+    .slice(0, 48);
+}
+
+function regionCandidate(value: unknown): PaddleOcrServiceItem["region"] {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  return (record.region && typeof record.region === "object"
+    ? record.region
+    : value) as PaddleOcrServiceItem["region"];
 }
 
 function normalizeRegion(region: PaddleOcrServiceItem["region"]): RawOnScreenTextItem["region"] | null {

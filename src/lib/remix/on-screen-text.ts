@@ -5,7 +5,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { extractJson } from "@/lib/ai/json";
-import type { RemixOptions } from "./types";
+import type { NormalizedTextRegion, RemixOptions } from "./types";
 import { detectOnScreenTextWithPaddleOcr, shouldUsePaddleOcr } from "./ocr-service";
 
 const _require = createRequire(import.meta.url);
@@ -35,6 +35,7 @@ export interface OnScreenTextTranslation {
   detectedText: string;
   translatedText: string;
   region: { x: number; y: number; w: number; h: number };
+  textRegions?: NormalizedTextRegion[];
   startSec: number;
   endSec: number;
   toneMood: string;
@@ -53,6 +54,9 @@ export interface RawOnScreenTextItem {
     w?: number;
     h?: number;
   };
+  textRegions?: unknown;
+  lineRegions?: unknown;
+  wordRegions?: unknown;
   frameIndex?: number;
   timestampSec?: number;
   startSec?: number;
@@ -357,6 +361,10 @@ Return ONLY JSON:
       "detectedText": "original visible text",
       "translatedText": "direct ${input.targetLanguage} translation of the full detectedText only",
       "region": { "x": 0.08, "y": 0.10, "w": 0.84, "h": 0.12 },
+      "textRegions": [
+        { "x": 0.08, "y": 0.10, "w": 0.84, "h": 0.05 },
+        { "x": 0.18, "y": 0.16, "w": 0.64, "h": 0.05 }
+      ],
       "frameIndex": ${input.frameOffset},
       "timestampSec": ${input.timestamps[0] ?? 0},
       "startSec": 0.0,
@@ -371,6 +379,7 @@ Return ONLY JSON:
 Rules for items:
 - Return one item per distinct visual text block, not one combined translation for the whole video.
 - If multiple words belong to the same label/card/caption, keep them together as one detectedText, preserving line breaks when helpful. For example "BALLS\\nFROM" must not become only "BALLS".
+- When possible, include textRegions as tight normalized boxes for each visible line or word inside region. Include punctuation, quote marks, emoji/sticker speaker icons, and text outline/shadow in these boxes.
 - translatedText must translate detectedText only. Never use dialogue/script context as replacement text for a visual label.
 - translatedText must include every visible word from detectedText. Do not shorten, summarize, or drop speaker labels/quoted text.
 - Do not keep text unchanged just because it is ALL CAPS. Translate ALL CAPS labels into the target language too.
@@ -433,6 +442,7 @@ function normalizeDetection(
   if (!translatedText) return null;
   const region = normalizeRegion(raw.region);
   if (!region) return null;
+  const textRegions = normalizeTextRegions(raw);
 
   const maxDuration = Math.max(0.2, durationSec);
   const timestamp = normalizeTimestamp(raw, allTimestamps, batchOffset, maxDuration);
@@ -457,6 +467,7 @@ function normalizeDetection(
     detectedText,
     translatedText: normalizedTranslation,
     region,
+    textRegions,
     startSec: start,
     endSec: end,
     timestampSec: timestamp,
@@ -828,13 +839,22 @@ export function classifyOnScreenTextTrack(track: OnScreenTextTranslation): OnScr
   const normalizedLength = normalizedText(track.detectedText).length;
   const detections = onScreenTextDetectionCount(track);
 
-  if (normalizedLength <= 2) return { keep: false, reason: "too_short" };
   if (!/[a-zA-ZÀ-ỹ]/.test(track.detectedText) || /^[\d\s.:-]+$/.test(track.detectedText.trim())) {
     return { keep: false, reason: "ocr_noise" };
   }
   if (area < 0.0016 || track.region.h < 0.018) return { keep: false, reason: "too_small" };
   if (track.region.w < 0.075) return { keep: false, reason: "too_narrow" };
   if (detections < 2 && track.confidence < 0.58) return { keep: false, reason: "low_confidence" };
+
+  const shortProminentOverlay =
+    normalizedLength <= 3 &&
+    track.region.w >= 0.1 &&
+    track.region.h >= 0.04 &&
+    area >= 0.006 &&
+    (detections >= 2 || track.confidence >= 0.72);
+  if (shortProminentOverlay) return { keep: true, reason: "dominant_overlay" };
+
+  if (normalizedLength <= 2) return { keep: false, reason: "too_short" };
 
   const captionLike =
     words >= 4 &&
@@ -937,11 +957,13 @@ function mergeTrack(track: OnScreenTextDetection[], durationSec: number): OnScre
 
   // Dùng unionRegion để đảm bảo blur bao trùm toàn bộ vùng text thực tế
   const region = unionRegion(sorted.map((item) => item.region));
+  const textRegions = mergeTextRegions(sorted, region);
 
   return {
     detectedText,
     translatedText,
     region,
+    textRegions,
     startSec,
     endSec: Math.max(startSec + 0.3, endSec),
     toneMood: first.toneMood,
@@ -1205,6 +1227,53 @@ function unionRegion(regions: Array<{ x: number; y: number; w: number; h: number
     w: clamp(right - left, 0.02, 1 - left),
     h: clamp(bottom - top, 0.02, 1 - top),
   };
+}
+
+function normalizeTextRegions(raw: RawOnScreenTextItem): NormalizedTextRegion[] | undefined {
+  const candidates = [raw.textRegions, raw.lineRegions, raw.wordRegions];
+  for (const candidate of candidates) {
+    const regions = normalizeRegionArray(candidate);
+    if (regions.length) return regions;
+  }
+  return undefined;
+}
+
+function normalizeRegionArray(value: unknown): NormalizedTextRegion[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => normalizeRegion(regionCandidate(item)))
+    .filter((item): item is NormalizedTextRegion => Boolean(item))
+    .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+    .slice(0, 24);
+}
+
+function regionCandidate(value: unknown): RawOnScreenTextItem["region"] {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  return (record.region && typeof record.region === "object"
+    ? record.region
+    : value) as RawOnScreenTextItem["region"];
+}
+
+function mergeTextRegions(
+  detections: OnScreenTextDetection[],
+  fallbackRegion: NormalizedTextRegion,
+): NormalizedTextRegion[] | undefined {
+  const regionSets = detections
+    .map((item) => (item.textRegions?.length ? item.textRegions : [item.region]))
+    .filter((items) => items.length);
+  if (!regionSets.length) return undefined;
+  const maxRegions = Math.max(...regionSets.map((items) => items.length));
+  if (maxRegions <= 1) return [fallbackRegion];
+
+  const merged: NormalizedTextRegion[] = [];
+  for (let index = 0; index < maxRegions; index += 1) {
+    const byIndex = regionSets
+      .map((items) => items[index])
+      .filter((item): item is NormalizedTextRegion => Boolean(item));
+    if (byIndex.length) merged.push(unionRegion(byIndex));
+  }
+  return merged.length ? merged.slice(0, 24) : undefined;
 }
 
 function medianRegion(regions: Array<{ x: number; y: number; w: number; h: number }>) {

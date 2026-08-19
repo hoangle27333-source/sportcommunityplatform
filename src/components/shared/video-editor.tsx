@@ -202,18 +202,177 @@ function getLogicalFrameSize(
 function getOverlayPreviewModel(input: {
   text: string;
   box: { x: number; y: number; w: number; h: number };
-  overlay?: Pick<TextOnScreenOverlay, "fontSize" | "sizeMode">;
+  overlay?: Pick<TextOnScreenOverlay, "fontSize" | "sizeMode" | "source" | "bold" | "outlineWidth">;
   previewFrameSize: FrameSize;
   logicalFrameSize: FrameSize;
 }) {
   const { text, overlay, previewFrameSize, logicalFrameSize } = input;
-  const scale = logicalFrameSize.height > 0
-    ? previewFrameSize.height / logicalFrameSize.height
-    : 1;
+  const scale = Math.max(
+    0.01,
+    logicalFrameSize.height > 0
+      ? previewFrameSize.height / logicalFrameSize.height
+      : 1,
+  );
   const baseFontSize = clampNumber(overlay?.fontSize ?? 32, 1, 120);
+  const isAutoFit = overlay?.sizeMode === "auto_fit";
+  const normalizedText = normalizePreviewText(text);
+  const effectiveBox = isAutoFit
+    ? expandPreviewRegionForFullText(
+        input.box,
+        normalizedText,
+        logicalFrameSize,
+        1,
+      )
+    : input.box;
+  const boxWidth = Math.max(1, Math.round(effectiveBox.w * logicalFrameSize.width));
+  const boxHeight = Math.max(1, Math.round(effectiveBox.h * logicalFrameSize.height));
+  const fontSizeBoostPx = overlay?.source === "ocr_auto" && isAutoFit ? 3 : 0;
+  const desiredFontSize = isAutoFit
+    ? clampNumber(Math.round(boxHeight * 0.5) + fontSizeBoostPx, 1, 120)
+    : baseFontSize;
+  const maxFontSize = isAutoFit
+    ? Math.max(desiredFontSize, Math.round(boxHeight * 0.72) + fontSizeBoostPx)
+    : baseFontSize;
+  const fitted = fitPreviewTextToRegion(normalizedText, {
+    width: boxWidth,
+    height: boxHeight,
+    desiredFontSize,
+    minFontSize: 1,
+    maxFontSize,
+  });
+  const boldScale = overlay?.bold ? 1.08 : 1;
+  const finalFontSize = Math.round(fitted.fontSize * boldScale);
+  const outlineWidth = Math.max(0, Math.round(overlay?.outlineWidth ?? finalFontSize * 0.08));
   return {
-    text: text || "",
-    fontSizePx: Math.max(1, Math.round(baseFontSize * Math.max(scale, 0.01))),
+    text: fitted.text,
+    fontSizePx: Math.max(1, Math.round(finalFontSize * scale)),
+    lineSpacingPx: Math.max(0, Math.round(finalFontSize * 0.14 * scale)),
+    outlineWidthPx: Math.max(0, Math.round(outlineWidth * scale)),
+  };
+}
+
+function fitPreviewTextToRegion(
+  text: string,
+  input: {
+    width: number;
+    height: number;
+    desiredFontSize: number;
+    minFontSize: number;
+    maxFontSize: number;
+  },
+): { text: string; fontSize: number; lines: string[] } {
+  const maxFontSize = clampNumber(input.maxFontSize, 1, Math.max(1, input.desiredFontSize));
+  const minFontSize = clampNumber(input.minFontSize, 1, maxFontSize);
+  const maxLines = Math.max(1, Math.min(6, Math.floor(input.height / Math.max(1, minFontSize * 1.14))));
+  const contentWidth = Math.max(1, input.width * 0.86);
+  const contentHeight = Math.max(1, input.height * 0.74);
+
+  for (let size = Math.round(maxFontSize); size >= minFontSize; size -= 1) {
+    const maxCharsPerLine = Math.max(4, Math.floor(contentWidth / (size * 0.58)));
+    const lines = wrapPreviewText(text, maxCharsPerLine, maxLines);
+    const renderedHeight = lines.length * size + Math.max(0, lines.length - 1) * Math.round(size * 0.14);
+    const widestLine = Math.max(...lines.map((line) => estimatedPreviewTextWidth(line, size)), 0);
+    if (previewPreservesAllText(text, lines) && renderedHeight <= contentHeight && widestLine <= contentWidth) {
+      return { text: lines.join("\n"), fontSize: size, lines };
+    }
+  }
+
+  const fallbackChars = Math.max(4, Math.floor(contentWidth / (minFontSize * 0.58)));
+  const lines = wrapPreviewText(text, fallbackChars, Number.POSITIVE_INFINITY);
+  return { text: lines.join("\n"), fontSize: minFontSize, lines };
+}
+
+function wrapPreviewText(text: string, maxCharsPerLine: number, maxLines: number): string[] {
+  const paragraphs = text
+    .split(/\n+/)
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+  const sourceLines = paragraphs.length ? paragraphs : [text.replace(/\s+/g, " ").trim()];
+  const words = sourceLines.flatMap((line, lineIndex) => {
+    const lineWords = line
+      .split(" ")
+      .filter(Boolean)
+      .flatMap((word) => splitPreviewLongToken(word, maxCharsPerLine));
+    return lineIndex === sourceLines.length - 1 ? lineWords : [...lineWords, "\n"];
+  });
+  if (words.length === 0) return [""];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (word === "\n") {
+      if (current) lines.push(current);
+      current = "";
+      if (lines.length >= maxLines) break;
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+    if (lines.length === maxLines) break;
+  }
+  if (lines.length < maxLines && current) lines.push(current);
+  return lines.length > maxLines ? lines.slice(0, maxLines) : lines;
+}
+
+function splitPreviewLongToken(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text];
+  const parts: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxChars) {
+    parts.push(`${remaining.slice(0, Math.max(1, maxChars - 1))}-`);
+    remaining = remaining.slice(Math.max(1, maxChars - 1));
+  }
+  if (remaining) parts.push(remaining);
+  return parts;
+}
+
+function previewPreservesAllText(source: string, lines: string[]): boolean {
+  return normalizePreviewFitText(lines.join(" ")).includes(normalizePreviewFitText(source));
+}
+
+function normalizePreviewFitText(text: string): string {
+  return text.replace(/[-\s]+/g, "").trim();
+}
+
+function estimatedPreviewTextWidth(text: string, fontSize: number): number {
+  return text.length * fontSize * 0.58;
+}
+
+function normalizePreviewText(text: string): string {
+  return (text || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
+}
+
+function expandPreviewRegionForFullText(
+  region: { x: number; y: number; w: number; h: number },
+  text: string,
+  frame: FrameSize,
+  minFontSize: number,
+): { x: number; y: number; w: number; h: number } {
+  const contentWidth = Math.max(1, region.w * frame.width * 0.86);
+  const charsPerLine = Math.max(4, Math.floor(contentWidth / (Math.max(1, minFontSize) * 0.58)));
+  const lines = wrapPreviewText(text, charsPerLine, Number.POSITIVE_INFINITY);
+  const widestLine = Math.max(...lines.map((line) => estimatedPreviewTextWidth(line, minFontSize)), 0);
+  const renderedHeight = lines.length * minFontSize + Math.max(0, lines.length - 1) * Math.round(minFontSize * 0.14);
+  const neededW = Math.min(0.96, Math.max(region.w, (widestLine / 0.86) / Math.max(1, frame.width)));
+  const neededH = Math.min(0.9, Math.max(region.h, (renderedHeight / 0.74) / Math.max(1, frame.height)));
+  if (neededW <= region.w && neededH <= region.h) return region;
+
+  const centerX = region.x + region.w / 2;
+  const centerY = region.y + region.h / 2;
+  return {
+    x: Math.max(0, Math.min(Math.max(0, 1 - neededW), centerX - neededW / 2)),
+    y: Math.max(0, Math.min(Math.max(0, 1 - neededH), centerY - neededH / 2)),
+    w: neededW,
+    h: neededH,
   };
 }
 
@@ -973,8 +1132,8 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                     fontWeight: overlay.bold ? 800 : 400,
                     fontStyle: overlay.italic ? 'italic' : 'normal',
                     color: overlay.fontColor,
-                    WebkitTextStroke: overlay.outlineColor && overlay.outlineColor !== '#000000' && overlay.outlineColor !== 'transparent'
-                      ? `1px ${overlay.outlineColor}`
+                    WebkitTextStroke: previewModel.outlineWidthPx > 0 && overlay.outlineColor && overlay.outlineColor !== 'transparent'
+                      ? `${previewModel.outlineWidthPx}px ${overlay.outlineColor}`
                       : undefined,
                     backgroundColor:
                       overlay.backgroundStyle === "blur"
@@ -998,7 +1157,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                       width: "max-content",
                       maxWidth: "none",
                       whiteSpace: "pre",
-                      lineHeight: 1.14,
+                      lineHeight: `${previewModel.fontSizePx + previewModel.lineSpacingPx}px`,
                     }}
                   >
                     {previewModel.text}
@@ -2072,9 +2231,9 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                       width: "max-content",
                                       maxWidth: "none",
                                       whiteSpace: "pre",
-                                      lineHeight: 1.14,
-                                      WebkitTextStroke: overlay.outlineColor && overlay.outlineColor !== '#000000' && overlay.outlineColor !== 'transparent'
-                                        ? `1px ${overlay.outlineColor}`
+                                      lineHeight: `${previewModel.fontSizePx + previewModel.lineSpacingPx}px`,
+                                      WebkitTextStroke: previewModel.outlineWidthPx > 0 && overlay.outlineColor && overlay.outlineColor !== 'transparent'
+                                        ? `${previewModel.outlineWidthPx}px ${overlay.outlineColor}`
                                         : undefined,
                                       backgroundColor:
                                         overlay.backgroundStyle === "blur"

@@ -556,6 +556,34 @@ describe("on-screen text tracking", () => {
     expect(filterForegroundOnScreenTextTracks([track])).toHaveLength(1);
   });
 
+  it("giữ meme text ngắn nhưng lớn để blur không sót chữ gốc", () => {
+    const tracks = [
+      {
+        detectedText: "Me:",
+        translatedText: "Tôi:",
+        region: { x: 0.42, y: 0.72, w: 0.18, h: 0.07 },
+        startSec: 0,
+        endSec: 7,
+        toneMood: "meme",
+        confidence: 0.88,
+        notes: ["detections=4"],
+      },
+      {
+        detectedText: "fun",
+        translatedText: "vui",
+        region: { x: 0.38, y: 0.82, w: 0.22, h: 0.08 },
+        startSec: 0,
+        endSec: 7,
+        toneMood: "meme",
+        confidence: 0.84,
+        notes: ["detections=3"],
+      },
+    ];
+
+    expect(tracks.map(classifyOnScreenTextTrack).every((item) => item.keep)).toBe(true);
+    expect(filterForegroundOnScreenTextTracks(tracks)).toHaveLength(2);
+  });
+
   it("giữ top title ngắn nếu đủ lớn và ổn định", () => {
     const track = {
       detectedText: "Ghost Rider",
@@ -792,6 +820,118 @@ describe("buildTightTextBlurRegions", () => {
     });
 
     expect(thick[0]!.w * thick[0]!.h).toBeGreaterThan(thin[0]!.w * thin[0]!.h);
+  });
+
+  it("ưu tiên OCR text regions thật thay vì ước lượng chiều dài chuỗi", () => {
+    const regions = buildTightTextBlurRegions({
+      region: { x: 0.15, y: 0.4, w: 0.7, h: 0.2 },
+      textRegions: [
+        { x: 0.18, y: 0.43, w: 0.52, h: 0.05 },
+        { x: 0.25, y: 0.51, w: 0.34, h: 0.05 },
+      ],
+      lines: ["short", "x"],
+      fontSize: 34,
+      frameWidth: 1080,
+      frameHeight: 1920,
+      outlineWidth: 4,
+      coverOriginalText: true,
+    });
+
+    expect(regions).toHaveLength(2);
+    expect(regions[0]!.w).toBeGreaterThan(0.52);
+    expect(regions[1]!.w).toBeGreaterThan(0.34);
+    expect(regions[1]!.w).toBeLessThan(regions[0]!.w);
+  });
+});
+
+describe("OCR text regions", () => {
+  it("normalize PaddleOCR line regions để renderer dùng bbox thật", () => {
+    const result = normalizePaddleOcrResponse(
+      {
+        items: [
+          {
+            detectedText: "Listen\nto your body",
+            region: { x: 0.2, y: 0.4, w: 0.5, h: 0.16 },
+            lineRegions: [
+              { x: 0.21, y: 0.41, w: 0.42, h: 0.06 },
+              { x: 0.27, y: 0.49, w: 0.28, h: 0.05 },
+            ],
+            confidence: 0.9,
+          },
+        ],
+      },
+      7,
+    );
+
+    expect(result.items[0]!.textRegions).toEqual([
+      { x: 0.21, y: 0.41, w: 0.42, h: 0.06 },
+      { x: 0.27, y: 0.49, w: 0.28, h: 0.05 },
+    ]);
+  });
+
+  it("normalize PaddleOCR word regions dạng { text, region }", () => {
+    const result = normalizePaddleOcrResponse(
+      {
+        items: [
+          {
+            detectedText: "Listen",
+            region: { x: 0.2, y: 0.4, w: 0.5, h: 0.12 },
+            wordRegions: [
+              { text: "Listen", region: { x: 0.22, y: 0.42, w: 0.2, h: 0.05 } },
+            ],
+            confidence: 0.9,
+          },
+        ],
+      },
+      7,
+    );
+
+    expect(result.items[0]!.textRegions).toEqual([
+      { x: 0.22, y: 0.42, w: 0.2, h: 0.05 },
+    ]);
+  });
+
+  it("group track union từng text region theo dòng", () => {
+    const tracks = groupOnScreenTextTracks(
+      [
+        {
+          detectedText: "A\nB",
+          translatedText: "A\nB",
+          region: { x: 0.2, y: 0.4, w: 0.5, h: 0.2 },
+          textRegions: [
+            { x: 0.2, y: 0.42, w: 0.4, h: 0.05 },
+            { x: 0.3, y: 0.52, w: 0.2, h: 0.05 },
+          ],
+          timestampSec: 1,
+          startSec: 0.8,
+          endSec: 1.2,
+          toneMood: "meme",
+          confidence: 0.9,
+          notes: [],
+        },
+        {
+          detectedText: "A\nB",
+          translatedText: "A\nB",
+          region: { x: 0.22, y: 0.41, w: 0.5, h: 0.2 },
+          textRegions: [
+            { x: 0.22, y: 0.43, w: 0.42, h: 0.05 },
+            { x: 0.29, y: 0.53, w: 0.22, h: 0.05 },
+          ],
+          timestampSec: 1.2,
+          startSec: 1,
+          endSec: 1.4,
+          toneMood: "meme",
+          confidence: 0.9,
+          notes: [],
+        },
+      ],
+      7,
+    );
+
+    expect(tracks[0]!.textRegions).toHaveLength(2);
+    expect(tracks[0]!.textRegions![0]!.x).toBeCloseTo(0.2);
+    expect(tracks[0]!.textRegions![0]!.w).toBeCloseTo(0.44);
+    expect(tracks[0]!.textRegions![1]!.w).toBeCloseTo(0.22);
   });
 });
 

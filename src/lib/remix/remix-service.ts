@@ -27,6 +27,7 @@ import {
   buildSrt,
   buildAssSubtitles,
   subtitlePlacementForBlurRegion,
+  transformRegionForReframe,
   writeTemp,
   type SubtitleCue,
   type VideoInfo,
@@ -1493,6 +1494,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
           op: "overlayText",
           text: translation.translatedText,
           sourceText: translation.detectedText,
+          textRegions: translation.textRegions?.length ? translation.textRegions : undefined,
           startSec,
           endSec,
           region: replacementRegions.overlay,
@@ -1537,6 +1539,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
             source: "ocr_auto" as const,
             ocrTrackId: buildOcrTrackId(translation),
             sourceText: translation.detectedText,
+            textRegions: translation.textRegions?.length ? translation.textRegions : undefined,
             position: {
               x: translation.region?.x ?? 0.5,
               y: translation.region?.y ?? 0.1,
@@ -1625,13 +1628,44 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       endSec: Math.max((region.startSec ?? 0) + 0.1, region.endSec ?? (videoInfo?.durationSec ?? 30)),
     }));
 
-  const outPath = await applyVideoOps({ 
+  let outPath = await applyVideoOps({ 
     inputPath: sourcePath, 
     ops, 
     workDir,
     blurRegion: applyBlurRegion,
     blurRegions: [...watermarkCoverRegions, ...manualBlurRegions],
   });
+
+  const renderDurationSec = (ops.find((op) => op.op === "trim") as Extract<VideoOp, { op: "trim" }> | undefined)?.duration
+    ?? videoInfo?.durationSec
+    ?? 30;
+  const textBlurQaTargets = buildTextBlurQaTargets({
+    ops,
+    videoInfo,
+  });
+  if (textBlurQaTargets.length) {
+    const retryRegions = await detectResidualTextBlurRegions({
+      renderedPath: outPath,
+      durationSec: renderDurationSec,
+      fps: videoInfo?.fps,
+      options,
+      targets: textBlurQaTargets,
+      plan,
+    });
+    if (retryRegions.length) {
+      plan.warnings.push(
+        `Post-render OCR phát hiện ${retryRegions.length} vùng text gốc còn lộ; đã render lại với vùng blur bổ sung.`,
+      );
+      outPath = await applyVideoOps({
+        inputPath: sourcePath,
+        ops,
+        workDir,
+        blurRegion: applyBlurRegion,
+        blurRegions: [...watermarkCoverRegions, ...manualBlurRegions],
+        postReframeBlurRegions: retryRegions,
+      });
+    }
+  }
   
   // --- Intro/Outro: concat nếu preset đã cấu hình ---
   let finalPath = outPath;
@@ -1899,7 +1933,7 @@ function filterSubtitleLikeOnScreenTextTracks<T extends OnScreenTextTranslation>
   const foregroundTracks = filterForegroundOnScreenTextTracks(tracks);
   return foregroundTracks.filter((track) => {
     const normalized = normalizeOverlayTextForFilter(track.detectedText);
-    if (looksLikeFragmentOrOcrNoise(track.detectedText, track.translatedText)) return false;
+    if (looksLikeFragmentOrOcrNoise(track)) return false;
     if (normalized.length < 4 && !track.notes.some((note) => note.startsWith("foreground=dominant_overlay"))) return false;
     return true;
   });
@@ -1915,11 +1949,19 @@ function normalizeOverlayTextForFilter(text: string): string {
   return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
 }
 
-function looksLikeFragmentOrOcrNoise(sourceText: string, translatedText: string): boolean {
-  const source = sourceText.trim();
-  const translated = translatedText.trim();
+function looksLikeFragmentOrOcrNoise(track: OnScreenTextTranslation): boolean {
+  const source = track.detectedText.trim();
+  const translated = track.translatedText.trim();
+  const area = track.region.w * track.region.h;
+  const prominentShortText =
+    normalizeOverlayTextForFilter(source).length <= 4 &&
+    track.region.w >= 0.1 &&
+    track.region.h >= 0.04 &&
+    area >= 0.006 &&
+    (onScreenTextDetectionCount(track) >= 2 || track.confidence >= 0.72);
   if (!/[a-zA-ZÀ-ỹ]/.test(source)) return true;
   if (/^[\d\s.:-]+$/.test(source)) return true;
+  if (prominentShortText) return false;
   if (source.split(/\s+/).length === 1 && source.length <= 4 && translated.length <= 6) return true;
   if (/^[A-ZÀ-Ỹ][a-zà-ỹ]{2,5}$/.test(source) && translated.length <= 8) return true;
   return false;
@@ -2013,6 +2055,7 @@ function appendCustomTextOverlayOps(input: {
       op: "overlayText",
       text: overlay.text.trim(),
       sourceText: overlay.sourceText?.trim() || undefined,
+      textRegions: normalizeTextOverlayRegions(overlay.textRegions),
       startSec,
       endSec,
       region,
@@ -2039,6 +2082,28 @@ function appendCustomTextOverlayOps(input: {
     regions.push({ ...(inferOverlaySource(overlay) === "ocr_auto" ? eraseRegion : region), startSec, endSec });
   }
   return regions;
+}
+
+function normalizeTextOverlayRegions(
+  regions: NonNullable<RemixOptions["textOnScreenOverlays"]>[number]["textRegions"] | undefined,
+): Array<{ x: number; y: number; w: number; h: number }> | undefined {
+  if (!Array.isArray(regions)) return undefined;
+  const normalized = regions
+    .map((box) => {
+      const x = clampNumber(box?.x, 0, 0.98, Number.NaN);
+      const y = clampNumber(box?.y, 0, 0.98, Number.NaN);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return {
+        x,
+        y,
+        w: clampNumber(box?.w, 0.01, 1 - x, 0.01),
+        h: clampNumber(box?.h, 0.01, 1 - y, 0.01),
+      };
+    })
+    .filter((box): box is { x: number; y: number; w: number; h: number } => Boolean(box))
+    .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+    .slice(0, 48);
+  return normalized.length ? normalized : undefined;
 }
 
 function normalizeTextOverlayRegion(
@@ -2150,6 +2215,183 @@ function hasRenderableTextOnScreenOverlays(
         overlay.status !== "disabled",
     ),
   );
+}
+
+type TextBlurQaTarget = {
+  sourceText: string;
+  region: { x: number; y: number; w: number; h: number };
+  startSec: number;
+  endSec: number;
+};
+
+function buildTextBlurQaTargets(input: {
+  ops: VideoOp[];
+  videoInfo?: VideoInfo | null;
+}): TextBlurQaTarget[] {
+  const reframe = input.ops.find((op) => op.op === "reframe") as Extract<VideoOp, { op: "reframe" }> | undefined;
+  const sourceWidth = input.videoInfo?.width ?? reframe?.width ?? 1080;
+  const sourceHeight = input.videoInfo?.height ?? reframe?.height ?? 1920;
+  return input.ops
+    .filter((op): op is Extract<VideoOp, { op: "overlayText" }> => op.op === "overlayText")
+    .filter((op) => op.coverRegion === true && op.backgroundStyle === "blur" && Boolean(op.sourceText?.trim()))
+    .map((op) => {
+      const baseRegion = op.eraseRegion ?? op.region ?? { x: 0, y: 0, w: 1, h: 1 };
+      return {
+        sourceText: op.sourceText!.trim(),
+        region: transformRegionForReframe(baseRegion, sourceWidth, sourceHeight, reframe),
+        startSec: Math.max(0, op.startSec ?? 0),
+        endSec: Math.max(Math.max(0, op.startSec ?? 0) + 0.1, op.endSec ?? input.videoInfo?.durationSec ?? 30),
+      };
+    });
+}
+
+async function detectResidualTextBlurRegions(input: {
+  renderedPath: string;
+  durationSec: number;
+  fps?: number;
+  options: RemixOptions;
+  targets: TextBlurQaTarget[];
+  plan: RemixPlan;
+}): Promise<Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }>> {
+  try {
+    const detections = await detectOnScreenTextLayoutFromVideo({
+      videoPath: input.renderedPath,
+      durationSec: input.durationSec,
+      fps: input.fps,
+      options: input.options,
+    });
+    if (!detections.length) return [];
+
+    const retryRegions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
+    for (const detection of detections) {
+      const matchingTarget = input.targets.find((target) => residualDetectionMatchesTarget(detection, target));
+      if (!matchingTarget) continue;
+      const detailRegions = detection.textRegions?.length ? detection.textRegions : [detection.region];
+      for (const region of detailRegions) {
+        const paddedResidual = padRegion(region, Math.max(0.012, Math.min(0.035, region.h * 0.55)));
+        const shouldUseTargetWidth =
+          regionOverlapRatio(detection.region, matchingTarget.region) >= 0.28 ||
+          regionCenterInside(detection.region, matchingTarget.region);
+        const retryRegion = shouldUseTargetWidth
+          ? unionQaRegion(paddedResidual, padRegion(matchingTarget.region, 0.006))
+          : paddedResidual;
+        retryRegions.push({
+          ...retryRegion,
+          startSec: matchingTarget.startSec,
+          endSec: matchingTarget.endSec,
+        });
+      }
+    }
+    return mergeNearbyQaRegions(retryRegions).slice(0, 48);
+  } catch (err) {
+    input.plan.warnings.push(`Bỏ qua post-render OCR blur QA: ${(err as Error).message}`);
+    return [];
+  }
+}
+
+function residualDetectionMatchesTarget(
+  detection: OnScreenTextTranslation,
+  target: TextBlurQaTarget,
+): boolean {
+  if (Math.max(detection.startSec, target.startSec) >= Math.min(detection.endSec, target.endSec)) return false;
+  const overlap = regionOverlapRatio(detection.region, target.region);
+  if (overlap < 0.12 && !regionCenterInside(detection.region, target.region)) return false;
+  return textLikelySame(detection.detectedText, target.sourceText) || overlap >= 0.28 || regionCenterInside(detection.region, target.region);
+}
+
+function textLikelySame(a: string, b: string): boolean {
+  const left = normalizeOverlayTextForFilter(a);
+  const right = normalizeOverlayTextForFilter(b);
+  if (!left || !right) return false;
+  if (left.includes(right) || right.includes(left)) return true;
+  const prefix = Math.min(left.length, right.length, 12);
+  if (prefix >= 5 && left.slice(0, prefix) === right.slice(0, prefix)) return true;
+  return characterDiceCoefficient(left, right) >= 0.56;
+}
+
+function characterDiceCoefficient(a: string, b: string): number {
+  const grams = (value: string) => {
+    if (value.length < 2) return new Map([[value, 1]]);
+    const out = new Map<string, number>();
+    for (let idx = 0; idx < value.length - 1; idx += 1) {
+      const gram = value.slice(idx, idx + 2);
+      out.set(gram, (out.get(gram) ?? 0) + 1);
+    }
+    return out;
+  };
+  const left = grams(a);
+  const right = grams(b);
+  let overlap = 0;
+  for (const [gram, count] of left) {
+    overlap += Math.min(count, right.get(gram) ?? 0);
+  }
+  const total = [...left.values()].reduce((sum, count) => sum + count, 0) +
+    [...right.values()].reduce((sum, count) => sum + count, 0);
+  return total > 0 ? (2 * overlap) / total : 0;
+}
+
+function regionOverlapRatio(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): number {
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.w, b.x + b.w);
+  const bottom = Math.min(a.y + a.h, b.y + b.h);
+  const area = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const smaller = Math.min(a.w * a.h, b.w * b.h);
+  return smaller > 0 ? area / smaller : 0;
+}
+
+function regionCenterInside(
+  inner: { x: number; y: number; w: number; h: number },
+  outer: { x: number; y: number; w: number; h: number },
+): boolean {
+  const centerX = inner.x + inner.w / 2;
+  const centerY = inner.y + inner.h / 2;
+  return centerX >= outer.x &&
+    centerX <= outer.x + outer.w &&
+    centerY >= outer.y &&
+    centerY <= outer.y + outer.h;
+}
+
+function mergeNearbyQaRegions(
+  regions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }>,
+): Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> {
+  const merged: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
+  for (const region of regions) {
+    const existing = merged.find((item) =>
+      Math.abs((item.startSec ?? 0) - (region.startSec ?? 0)) < 0.05 &&
+      Math.abs((item.endSec ?? 0) - (region.endSec ?? 0)) < 0.05 &&
+      regionOverlapRatio(item, region) > 0.45,
+    );
+    if (!existing) {
+      merged.push(region);
+      continue;
+    }
+    const unioned = clampRegionSize({
+      x: Math.min(existing.x, region.x),
+      y: Math.min(existing.y, region.y),
+      w: Math.max(existing.x + existing.w, region.x + region.w) - Math.min(existing.x, region.x),
+      h: Math.max(existing.y + existing.h, region.y + region.h) - Math.min(existing.y, region.y),
+    }, 1, 1);
+    existing.x = unioned.x;
+    existing.y = unioned.y;
+    existing.w = unioned.w;
+    existing.h = unioned.h;
+  }
+  return merged;
+}
+
+function unionQaRegion(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): { x: number; y: number; w: number; h: number } {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  const right = Math.max(a.x + a.w, b.x + b.w);
+  const bottom = Math.max(a.y + a.h, b.y + b.h);
+  return clampRegionSize({ x, y, w: right - x, h: bottom - y }, 1, 1);
 }
 
 function replacementRegionToOverlayBox(region: { x: number; y: number; w: number; h: number }) {

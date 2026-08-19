@@ -606,6 +606,7 @@ export interface ApplyOpsInput {
   isImage?: boolean;
   blurRegion?: { x: number; y: number; w: number; h: number };
   blurRegions?: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }>;
+  postReframeBlurRegions?: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }>;
 }
 
 export function subtitlePlacementForBlurRegion(
@@ -627,6 +628,7 @@ export function subtitlePlacementForBlurRegion(
 
 export function buildTightTextBlurRegions(input: {
   region: { x: number; y: number; w: number; h: number };
+  textRegions?: Array<{ x: number; y: number; w: number; h: number }>;
   lines: string[];
   fontSize: number;
   frameWidth: number;
@@ -641,6 +643,32 @@ export function buildTightTextBlurRegions(input: {
   const fontSize = clamp(Math.round(input.fontSize), 1, 240);
   const outlineWidth = clamp(Math.round(input.outlineWidth ?? Math.round(fontSize * 0.08)), 0, 24);
   const coverOriginalText = input.coverOriginalText === true;
+  if (input.textRegions?.length) {
+    const padX = clamp(
+      Math.round(fontSize * (coverOriginalText ? 0.22 : 0.14)) + outlineWidth * 2,
+      coverOriginalText ? 6 : 4,
+      Math.round(frameWidth * (coverOriginalText ? 0.035 : 0.02)),
+    );
+    const padY = clamp(
+      Math.round(fontSize * (coverOriginalText ? 0.2 : 0.12)) + outlineWidth * 2,
+      coverOriginalText ? 5 : 3,
+      Math.round(frameHeight * (coverOriginalText ? 0.025 : 0.015)),
+    );
+    return input.textRegions
+      .map((item) => clampRegion(item))
+      .map((item) => {
+        const x = item.x * frameWidth - padX;
+        const y = item.y * frameHeight - padY;
+        const w = item.w * frameWidth + padX * 2;
+        const h = item.h * frameHeight + padY * 2;
+        return clampRegion({
+          x: x / frameWidth,
+          y: y / frameHeight,
+          w: w / frameWidth,
+          h: h / frameHeight,
+        });
+      });
+  }
   const lines = input.lines
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
@@ -787,6 +815,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     ...(input.blurRegions ?? []).map((region) =>
       transformRegionForReframe(region, info.width, info.height, reframe),
     ),
+    ...(input.postReframeBlurRegions ?? []).map((region) => ({ ...clampRegion(region), startSec: region.startSec, endSec: region.endSec })),
   ];
   for (const region of blurRegions) {
     const fw = reframe ? reframe.width : info.width;
@@ -931,6 +960,8 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     const tightBlurRegions = blurTargetRegion && textOverlay.backgroundStyle === "blur"
       ? buildTightTextBlurRegions({
           region: blurTargetRegion,
+          textRegions: textOverlay.textRegions
+            ?.map((item) => transformRegionForReframe(item, info.width, info.height, reframe)),
           lines: blurFitted.lines,
           fontSize: Math.round(blurFitted.fontSize * boldScale),
           frameWidth: fw,
