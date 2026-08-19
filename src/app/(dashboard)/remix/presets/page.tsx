@@ -296,9 +296,7 @@ export default function PresetPage() {
       setCrf(String(row.output_crf ?? 18));
       setBlurOriginalSub(Boolean(row.blur_original_sub));
       setAutoDetectSub(Boolean(row.auto_detect_subtitle_region));
-      setBlurRegion(row.blur_region ?? { x: 0, y: 0.82, w: 1, h: 0.18 });
-      setDisableSubtitle(Boolean(row.disable_subtitle));
-      setSubtitleLanguage((row.subtitle_language === "en" ? "en" : "vi") as "vi" | "en");
+      setDisableSubtitle(row.auto_vietsub === false);
       setTranslateOnScreenText(Boolean(row.translate_on_screen_text));
       setOnScreenTextPreset((row.on_screen_text_preset ?? "meme") as OnScreenTextPreset);
       setOnScreenTextFont(row.on_screen_text_font ?? "Anton");
@@ -376,8 +374,7 @@ export default function PresetPage() {
           blurOriginalSub,
           autoDetectSubtitleRegion: autoDetectSub,
           blurRegion,
-          disableSubtitle,
-          subtitleLanguage,
+          autoVietsub: !disableSubtitle,
           translateOnScreenText,
           onScreenTextPreset,
           onScreenTextFont,
@@ -1215,8 +1212,9 @@ export default function PresetPage() {
       return (
         <>
           <p>Tỉ lệ: <span className="font-medium text-foreground">{preset.output_ratio || "9:16"}</span></p>
-          <p>Voice: <span className="font-medium text-foreground">{preset.voice_name || "Mặc định"}</span></p>
-          <p>Subtitle: <span className="font-medium text-foreground">{preset.subtitle_preset || "tiktok_bold"}</span></p>
+          <p>Voice: <span className="font-medium text-foreground">{preset.dub_mode === "none" ? "Không lồng tiếng" : (preset.voice_name || "Mặc định")}</span></p>
+          <p>Subtitle: <span className="font-medium text-foreground">{preset.auto_vietsub === false ? "Tắt" : (preset.subtitle_preset || "tiktok_bold")}</span></p>
+          <p>Text on-screen: <span className="font-medium text-foreground">{preset.translate_on_screen_text ? "Dịch & đè text" : "Tắt"}</span></p>
         </>
       );
     }
