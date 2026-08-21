@@ -1,5 +1,4 @@
 .venv*
-.venv-ocr
 venv
 __pycache__
 *.pyc
@@ -11,12 +10,5 @@ test_remix_temp
 *.m4a
 *.aac
 *.log
-.git
-.claude
-supabase
-specs
-design-system
-test*
-check*
-*.mjs
-*.cjs
+/specs
+/design-system
