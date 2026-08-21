@@ -103,6 +103,8 @@ const optionsSchema = z
       outlineWidth: z.number().min(0).max(10).optional(),
       bold: z.boolean().optional(),
       italic: z.boolean().optional(),
+      textAlign: z.enum(["left", "center", "right"]).optional(),
+      wrapMode: z.enum(["manual", "auto"]).optional(),
     }).optional(),
     textOverlay: z.string().max(2000).optional(),
     textOnScreenOverlays: z.array(z.object({
@@ -160,7 +162,9 @@ const optionsSchema = z
       outlineWidth: z.number().min(0).max(10).optional(),
       bold: z.boolean().optional(),
       italic: z.boolean().optional(),
+      textAlign: z.enum(["left", "center", "right"]).optional(),
       sizeMode: z.enum(["auto_fit", "fixed"]).optional(),
+      wrapMode: z.enum(["manual", "auto"]).optional(),
       animation: z.enum(["none", "fade_in", "fade_out", "slide_up", "slide_down", "scale_in"]),
     })).max(80).optional(),
     manualBlurRegions: z.array(z.object({

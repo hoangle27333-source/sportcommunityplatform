@@ -3,10 +3,12 @@ import { sanitizeVideoOps } from "./planner";
 import {
   buildBoxBlurOverlayFilter,
   buildDrawtextTextfileParam,
+  buildOverlayTextXExpression,
   buildTightTextBlurRegions,
   buildAssSubtitles,
   buildSrt,
   fitTextToRegion,
+  layoutOverlayTextForRender,
   reviewRenderedVideo,
   sanitizeTranscriptText,
   scriptToCues,
@@ -14,16 +16,20 @@ import {
 } from "./video-ops";
 import {
   buildPaddleOcrSampleTimestamps,
+  buildPaddleOcrRenderSampleTimestamps,
+  buildPaddleOcrMaskRepairTimestamps,
   buildSampleTimestamps,
   classifyOnScreenTextTrack,
   clampSameSlotTiming,
   filterForegroundOnScreenTextTracks,
   groupOnScreenTextTracks,
+  inferOnScreenTextAlign,
 } from "./on-screen-text";
 import { buildFacebookCopyrightPreflight } from "./copyright-preflight";
 import { normalizePaddleOcrResponse } from "./ocr-service";
 import { buildRemixOptionsFromPreset } from "./preset-options";
 import { buildTextInpaintRegions, buildTextInpaintTracks, hasManualTextOnScreenOverlays, hasRenderableTextOnScreenOverlays } from "./remix-service";
+import { regionalBlurRadius, resolveOverlayTextLayout } from "./text-overlay-layout";
 import type { VideoInfo } from "./video-ops";
 
 /**
@@ -38,6 +44,74 @@ const INFO: VideoInfo = {
   fps: 30,
   hasAudio: true,
 };
+
+describe("on-screen text alignment", () => {
+  it("detects left, center, and right alignment from line regions", () => {
+    const region = { x: 0.2, y: 0.1, w: 0.6, h: 0.18 };
+
+    expect(inferOnScreenTextAlign(region, [
+      { x: 0.21, y: 0.1, w: 0.42, h: 0.06 },
+      { x: 0.21, y: 0.17, w: 0.26, h: 0.06 },
+    ])).toBe("left");
+
+    expect(inferOnScreenTextAlign(region, [
+      { x: 0.29, y: 0.1, w: 0.42, h: 0.06 },
+      { x: 0.37, y: 0.17, w: 0.26, h: 0.06 },
+    ])).toBe("center");
+
+    expect(inferOnScreenTextAlign(region, [
+      { x: 0.37, y: 0.1, w: 0.42, h: 0.06 },
+      { x: 0.53, y: 0.17, w: 0.26, h: 0.06 },
+    ])).toBe("right");
+  });
+
+  it("falls back to source box position when line regions are unavailable", () => {
+    expect(inferOnScreenTextAlign({ x: 0.02, y: 0.2, w: 0.2, h: 0.08 })).toBe("left");
+    expect(inferOnScreenTextAlign({ x: 0.4, y: 0.2, w: 0.2, h: 0.08 })).toBe("center");
+    expect(inferOnScreenTextAlign({ x: 0.78, y: 0.2, w: 0.2, h: 0.08 })).toBe("right");
+  });
+});
+
+describe("overlay text x expression", () => {
+  it("uses alignment-aware x expressions inside a region", () => {
+    const region = { x: 0.1, y: 0.2, w: 0.4, h: 0.1 };
+    expect(buildOverlayTextXExpression(region, 1000, "left")).toBe("max(0\\,min(100+24\\,976-text_w))");
+    expect(buildOverlayTextXExpression(region, 1000, "center")).toBe("max(0\\,min(100+(400-text_w)/2\\,1000-text_w))");
+    expect(buildOverlayTextXExpression(region, 1000, "right")).toBe("max(0\\,min(max(100+24\\,100+400-text_w-24)\\,976-text_w))");
+  });
+});
+
+describe("overlay text layout", () => {
+  it("manual wrap mode preserves user newlines and does not auto-wrap by box width", () => {
+    const fitted = layoutOverlayTextForRender("Cơ thể tôi:\n\"Chúng ta đang kiệt sức\"", {
+      width: 120,
+      height: 90,
+      desiredFontSize: 32,
+      minFontSize: 1,
+      maxFontSize: 32,
+      fitToRegion: true,
+      wrapMode: "manual",
+    });
+
+    expect(fitted.text).toBe("Cơ thể tôi:\n\"Chúng ta đang kiệt sức\"");
+    expect(fitted.lines).toEqual(["Cơ thể tôi:", "\"Chúng ta đang kiệt sức\""]);
+    expect(fitted.fontSize).toBe(32);
+  });
+
+  it("auto wrap mode keeps the previous fit-to-region behavior", () => {
+    const fitted = layoutOverlayTextForRender("Cơ thể tôi: Chúng ta đang kiệt sức", {
+      width: 120,
+      height: 90,
+      desiredFontSize: 32,
+      minFontSize: 1,
+      maxFontSize: 32,
+      fitToRegion: true,
+      wrapMode: "auto",
+    });
+
+    expect(fitted.text).toContain("\n");
+  });
+});
 
 describe("sanitizeVideoOps", () => {
   it("bỏ op không có trong whitelist", () => {
@@ -250,6 +324,42 @@ describe("on-screen text tracking", () => {
   it("sample PaddleOCR bám theo FPS video để tránh duplicate frame quá mức", () => {
     const timestamps = buildPaddleOcrSampleTimestamps(10, 24);
     expect(timestamps[1]! - timestamps[0]!).toBeCloseTo(0.04, 2);
+  });
+
+  it("giới hạn OCR render CPU nhưng vẫn trải đều toàn video", () => {
+    const timestamps = buildPaddleOcrRenderSampleTimestamps(40, 30);
+    expect(timestamps.length).toBeLessThanOrEqual(480);
+    expect(timestamps[0]).toBeGreaterThanOrEqual(0.2);
+    expect(timestamps[timestamps.length - 1]).toBeGreaterThan(39);
+  });
+
+  it("mask repair chỉ sample trong timing các track thiếu mask", () => {
+    const timestamps = buildPaddleOcrMaskRepairTimestamps([
+      {
+        detectedText: "matamos o filmmaker",
+        translatedText: "Chúng tôi làm người quay phim mệt rồi",
+        region: { x: 0.15, y: 0.65, w: 0.7, h: 0.07 },
+        startSec: 7.6,
+        endSec: 11.95,
+        toneMood: "fun",
+        confidence: 0.98,
+        notes: [],
+      },
+      {
+        detectedText: "already repaired",
+        translatedText: "đã sửa",
+        region: { x: 0.2, y: 0.2, w: 0.4, h: 0.05 },
+        startSec: 1,
+        endSec: 2,
+        toneMood: "neutral",
+        confidence: 0.9,
+        notes: [],
+        sourceMaskFrames: [{ timestampSec: 1.5, regions: [{ x: 0.2, y: 0.2, w: 0.4, h: 0.05 }] }],
+      },
+    ], 27.7);
+
+    expect(timestamps.length).toBeGreaterThanOrEqual(2);
+    expect(timestamps.every((timestamp) => timestamp >= 7.6 && timestamp <= 11.95)).toBe(true);
   });
 
   it("gom cùng text qua nhiều frame thành một track", () => {
@@ -872,6 +982,63 @@ describe("buildTightTextBlurRegions", () => {
     expect(regions[0]!.w).toBeGreaterThan(0.52);
     expect(regions[1]!.w).toBeGreaterThan(0.34);
     expect(regions[1]!.w).toBeLessThan(regions[0]!.w);
+  });
+});
+
+describe("shared text overlay layout", () => {
+  it("không phóng auto-fit vượt quá cỡ chữ đã cấu hình", () => {
+    const layout = resolveOverlayTextLayout({
+      text: "Chúng ta đang kiệt sức",
+      region: { x: 0.25, y: 0.46, w: 0.5, h: 0.12 },
+      frame: { width: 1080, height: 1920 },
+      fontSize: 34,
+      maxFontSize: 34,
+      fontSizeBoostPx: 3,
+      sizeMode: "auto_fit",
+      wrapMode: "manual",
+      bold: true,
+    });
+
+    expect(layout.fontSize).toBeLessThanOrEqual(34);
+  });
+
+  it("giữ manual newline và không tự wrap khi box hẹp", () => {
+    const region = { x: 0.25, y: 0.46, w: 0.18, h: 0.12 };
+    const layout = resolveOverlayTextLayout({
+      text: "Cơ thể tôi:\nChúng ta đang kiệt sức",
+      region,
+      frame: { width: 1080, height: 1920 },
+      fontSize: 34,
+      sizeMode: "auto_fit",
+      wrapMode: "manual",
+      bold: true,
+    });
+
+    expect(layout.text).toBe("Cơ thể tôi:\nChúng ta đang kiệt sức");
+    expect(layout.lines).toEqual(["Cơ thể tôi:", "Chúng ta đang kiệt sức"]);
+    expect(layout.region).toEqual(region);
+  });
+
+  it("chỉ mở rộng auto-fit region khi auto wrap được bật", () => {
+    const region = { x: 0.4, y: 0.5, w: 0.08, h: 0.01 };
+    const layout = resolveOverlayTextLayout({
+      text: "Chúng ta đang kiệt sức",
+      region,
+      frame: { width: 1080, height: 1920 },
+      fontSize: 34,
+      minFontSize: 30,
+      sizeMode: "auto_fit",
+      wrapMode: "auto",
+    });
+
+    expect(layout.region.h).toBeGreaterThan(region.h);
+  });
+
+  it("dùng cùng blur radius theo kích thước region trên logical frame", () => {
+    expect(regionalBlurRadius(
+      { x: 0.2, y: 0.4, w: 0.5, h: 0.08 },
+      { width: 1080, height: 1920 },
+    )).toBe(42);
   });
 });
 

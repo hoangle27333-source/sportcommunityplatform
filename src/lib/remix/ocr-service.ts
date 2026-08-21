@@ -64,9 +64,15 @@ export async function detectOnScreenTextWithPaddleOcr(input: {
   sampleTimestamps: number[];
   lang?: string;
   frameWidthLimit?: number;
+  timeoutMs?: number;
 }): Promise<PaddleOcrDetectionResult> {
   const serviceUrl = (process.env.PADDLEOCR_SERVICE_URL ?? "http://ocr:8080").replace(/\/+$/, "");
-  const timeoutMs = clampNumber(Number(process.env.PADDLEOCR_TIMEOUT_MS), 5_000, 600_000, 120_000);
+  const timeoutMs = clampNumber(
+    Number(input.timeoutMs ?? process.env.PADDLEOCR_TIMEOUT_MS),
+    5_000,
+    900_000,
+    600_000,
+  );
   const video = await readFile(input.videoPath);
 
   const form = new FormData();
@@ -90,6 +96,11 @@ export async function detectOnScreenTextWithPaddleOcr(input: {
     }
     const json = JSON.parse(text) as PaddleOcrServiceResponse;
     return normalizePaddleOcrResponse(json, input.durationSec);
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new Error(`PaddleOCR timeout sau ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
@@ -106,7 +117,7 @@ export async function inpaintVideoTextWithPaddleOcr(input: {
     throw new Error("No OCR mask tracks supplied for CPU text removal");
   }
   const serviceUrl = (process.env.PADDLEOCR_SERVICE_URL ?? "http://ocr:8080").replace(/\/+$/, "");
-  const timeoutMs = clampNumber(Number(process.env.PADDLEOCR_INPAINT_TIMEOUT_MS), 5_000, 900_000, 300_000);
+  const timeoutMs = clampNumber(Number(process.env.PADDLEOCR_INPAINT_TIMEOUT_MS), 5_000, 900_000, 600_000);
   const form = new FormData();
   const video = await readFile(input.videoPath);
   form.set("file", new Blob([new Uint8Array(video)], { type: "video/mp4" }), "input.mp4");
@@ -127,9 +138,21 @@ export async function inpaintVideoTextWithPaddleOcr(input: {
     const rawDiagnostics = res.headers.get("x-text-inpaint-diagnostics");
     await writeFile(input.outputPath, Buffer.from(await res.arrayBuffer()));
     return normalizeCpuInpaintDiagnostics(rawDiagnostics, input.tracks);
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new Error(`PaddleOCR inpaint timeout sau ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function isAbortError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    (err.name === "AbortError" || err.message.toLowerCase().includes("aborted"))
+  );
 }
 
 function normalizeCpuInpaintDiagnostics(raw: string | null, tracks: CpuTextInpaintTrack[]): CpuTextInpaintDiagnostics {

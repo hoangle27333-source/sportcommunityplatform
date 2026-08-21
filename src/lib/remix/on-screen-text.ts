@@ -37,6 +37,7 @@ export interface OnScreenTextTranslation {
   region: { x: number; y: number; w: number; h: number };
   textRegions?: NormalizedTextRegion[];
   sourceMaskFrames?: TextInpaintMaskFrame[];
+  textAlign?: "left" | "center" | "right";
   startSec: number;
   endSec: number;
   toneMood: string;
@@ -59,6 +60,7 @@ export interface RawOnScreenTextItem {
   lineRegions?: unknown;
   wordRegions?: unknown;
   maskFrames?: unknown;
+  textAlign?: unknown;
   frameIndex?: number;
   timestampSec?: number;
   startSec?: number;
@@ -123,16 +125,16 @@ export async function translateOnScreenTextFromVideo(input: {
   options: RemixOptions;
   prompt?: string | null;
 }): Promise<OnScreenTextTranslation[]> {
-  const timestamps = shouldUsePaddleOcr()
-    ? buildPaddleOcrSampleTimestamps(input.durationSec, input.fps)
-    : buildSampleTimestamps(input.durationSec);
+  const paddleTimestamps = buildPaddleOcrRenderSampleTimestamps(input.durationSec, input.fps);
+  const visionTimestamps = buildSampleTimestamps(input.durationSec);
+  let paddleFailure: string | undefined;
 
   if (shouldUsePaddleOcr()) {
     try {
       const result = await detectOnScreenTextWithPaddleOcr({
         videoPath: input.videoPath,
         durationSec: input.durationSec,
-        sampleTimestamps: timestamps,
+        sampleTimestamps: paddleTimestamps,
         lang: process.env.PADDLEOCR_LANG ?? "en",
         frameWidthLimit: Number(process.env.PADDLEOCR_FRAME_WIDTH_LIMIT ?? 1920),
       });
@@ -142,7 +144,7 @@ export async function translateOnScreenTextFromVideo(input: {
             item,
             "OCR local PaddleOCR; translation refined separately",
             input.durationSec,
-            timestamps,
+            paddleTimestamps,
             0,
           ),
         )
@@ -160,9 +162,10 @@ export async function translateOnScreenTextFromVideo(input: {
       });
       return clampSameSlotTiming(forced, input.durationSec).slice(0, 64);
     } catch (err) {
+      paddleFailure = (err as Error).message;
       console.warn(
         "detectOnScreenTextWithPaddleOcr fallback:",
-        (err as Error).message,
+        paddleFailure,
       );
     }
   }
@@ -172,6 +175,10 @@ export async function translateOnScreenTextFromVideo(input: {
 
   const workDir = await mkdtemp(path.join(tmpdir(), "text-translate-"));
   try {
+    // Gemini is a visual fallback, not a frame-level OCR engine. Reusing the
+    // dense Paddle list here can create hundreds of frames and still cannot
+    // provide source polygons required by the removal stage.
+    const timestamps = visionTimestamps;
     const framePaths: string[] = [];
     for (let i = 0; i < timestamps.length; i++) {
       const framePath = path.join(workDir, `frame${i}.jpg`);
@@ -260,7 +267,16 @@ export async function translateOnScreenTextFromVideo(input: {
       options: input.options,
       prompt: input.prompt,
     });
-    return clampSameSlotTiming(forced, input.durationSec).slice(0, 64);
+    const normalized = clampSameSlotTiming(forced, input.durationSec).slice(0, 64);
+    if (!shouldUsePaddleOcr() || normalized.every((track) => track.sourceMaskFrames?.length)) {
+      return normalized;
+    }
+    return repairMissingSourceMasksWithPaddleOcr({
+      videoPath: input.videoPath,
+      durationSec: input.durationSec,
+      translations: normalized,
+      paddleFailure,
+    });
   } catch (err) {
     console.warn("translateOnScreenTextFromVideo:", (err as Error).message);
     return [];
@@ -276,7 +292,7 @@ export async function detectOnScreenTextLayoutFromVideo(input: {
   options: RemixOptions;
 }): Promise<OnScreenTextTranslation[]> {
   const timestamps = shouldUsePaddleOcr()
-    ? buildPaddleOcrSampleTimestamps(input.durationSec, input.fps)
+    ? buildPaddleOcrPreflightSampleTimestamps(input.durationSec, input.fps)
     : buildSampleTimestamps(input.durationSec);
 
   if (!shouldUsePaddleOcr()) return [];
@@ -432,6 +448,133 @@ export function buildPaddleOcrSampleTimestamps(durationSec: number, fps?: number
   return Array.from(new Set(timestamps)).sort((a, b) => a - b).slice(0, safeMaxFrames);
 }
 
+/**
+ * Full frame-level sampling is useful as a primitive, but is too expensive for
+ * the CPU render path on medium videos. Keep evenly distributed samples so
+ * short text remains detectable without routinely timing out the whole job.
+ */
+export function buildPaddleOcrRenderSampleTimestamps(durationSec: number, fps?: number): number[] {
+  const full = buildPaddleOcrSampleTimestamps(durationSec, fps);
+  const maxFrames = Math.round(clamp(
+    Number(process.env.PADDLEOCR_RENDER_MAX_SAMPLE_FRAMES ?? 480),
+    24,
+    2400,
+  ));
+  return thinTimestamps(full, maxFrames);
+}
+
+function buildPaddleOcrPreflightSampleTimestamps(durationSec: number, fps?: number): number[] {
+  const full = buildPaddleOcrSampleTimestamps(durationSec, fps);
+  const maxFrames = Math.round(clamp(Number(process.env.PADDLEOCR_PREFLIGHT_MAX_SAMPLE_FRAMES ?? 240), 12, 1200));
+  return thinTimestamps(full, maxFrames);
+}
+
+function thinTimestamps(timestamps: number[], maxFrames: number): number[] {
+  if (timestamps.length <= maxFrames) return timestamps;
+  if (maxFrames <= 1) return timestamps.slice(0, 1);
+  const selected = Array.from({ length: maxFrames }, (_, index) => {
+    const sourceIndex = Math.round(index * (timestamps.length - 1) / (maxFrames - 1));
+    return timestamps[sourceIndex];
+  });
+  return Array.from(new Set(selected)).sort((a, b) => a - b);
+}
+
+export function buildPaddleOcrMaskRepairTimestamps(
+  translations: OnScreenTextTranslation[],
+  durationSec: number,
+): number[] {
+  const duration = Math.max(0.2, durationSec || 0.2);
+  const timestamps: number[] = [];
+  for (const track of translations.filter((item) => !item.sourceMaskFrames?.length)) {
+    const start = clamp(track.startSec, 0, duration);
+    const end = clamp(track.endSec, start, duration);
+    const span = Math.max(0.2, end - start);
+    const sampleCount = Math.min(6, Math.max(2, Math.ceil(span / 0.65) + 1));
+    for (let index = 0; index < sampleCount; index += 1) {
+      const ratio = sampleCount === 1 ? 0.5 : index / (sampleCount - 1);
+      const timestamp = clamp(start + span * ratio, 0.05, Math.max(0.05, duration - 0.05));
+      timestamps.push(Math.round(timestamp * 100) / 100);
+    }
+  }
+  return Array.from(new Set(timestamps)).sort((a, b) => a - b).slice(0, 120);
+}
+
+async function repairMissingSourceMasksWithPaddleOcr(input: {
+  videoPath: string;
+  durationSec: number;
+  translations: OnScreenTextTranslation[];
+  paddleFailure?: string;
+}): Promise<OnScreenTextTranslation[]> {
+  const sampleTimestamps = buildPaddleOcrMaskRepairTimestamps(input.translations, input.durationSec);
+  if (!sampleTimestamps.length) return input.translations;
+
+  try {
+    const result = await detectOnScreenTextWithPaddleOcr({
+      videoPath: input.videoPath,
+      durationSec: input.durationSec,
+      sampleTimestamps,
+      lang: process.env.PADDLEOCR_LANG ?? "en",
+      frameWidthLimit: Number(process.env.PADDLEOCR_MASK_REPAIR_FRAME_WIDTH_LIMIT ?? 1280),
+      timeoutMs: Number(process.env.PADDLEOCR_MASK_REPAIR_TIMEOUT_MS ?? 240_000),
+    });
+    const repairs = result.items
+      .map((item) => normalizeDetection(
+        item,
+        "PaddleOCR targeted source-mask repair",
+        input.durationSec,
+        sampleTimestamps,
+        0,
+      ))
+      .filter((item): item is OnScreenTextDetection => Boolean(item?.sourceMaskFrames?.length));
+
+    return input.translations.map((translation) => {
+      if (translation.sourceMaskFrames?.length) return translation;
+      const match = bestMaskRepairMatch(translation, repairs);
+      if (!match) {
+        return {
+          ...translation,
+          notes: [...translation.notes, `maskRepair=missing${input.paddleFailure ? ` after ${input.paddleFailure}` : ""}`].slice(0, 10),
+        };
+      }
+      return {
+        ...translation,
+        textRegions: match.textRegions?.length ? match.textRegions : translation.textRegions,
+        sourceMaskFrames: match.sourceMaskFrames,
+        notes: [...translation.notes, `maskRepair=attached:${match.sourceMaskFrames?.length ?? 0}`].slice(0, 10),
+      };
+    });
+  } catch (err) {
+    const message = (err as Error).message;
+    console.warn("PaddleOCR targeted mask repair failed:", message);
+    return input.translations.map((translation) => translation.sourceMaskFrames?.length
+      ? translation
+      : { ...translation, notes: [...translation.notes, `maskRepair=failed:${message}`].slice(0, 10) });
+  }
+}
+
+function bestMaskRepairMatch(
+  translation: OnScreenTextTranslation,
+  candidates: OnScreenTextDetection[],
+): OnScreenTextDetection | undefined {
+  return candidates
+    .map((candidate) => {
+      const overlapStart = Math.max(translation.startSec, candidate.startSec);
+      const overlapEnd = Math.min(translation.endSec, candidate.endSec);
+      const temporalOverlap = Math.max(0, overlapEnd - overlapStart);
+      const spatialIou = regionIou(translation.region, candidate.region);
+      const distance = centerDistance(translation.region, candidate.region);
+      const similarity = textSimilarity(translation.detectedText, candidate.detectedText);
+      const eligible = temporalOverlap > 0 && (spatialIou >= 0.08 || distance <= 0.16);
+      return {
+        candidate,
+        eligible,
+        score: similarity * 5 + spatialIou * 4 + Math.max(0, 0.2 - distance) * 3,
+      };
+    })
+    .filter((item) => item.eligible)
+    .sort((a, b) => b.score - a.score)[0]?.candidate;
+}
+
 function normalizeDetection(
   raw: RawOnScreenTextItem,
   toneMood: string,
@@ -446,6 +589,7 @@ function normalizeDetection(
   if (!region) return null;
   const textRegions = normalizeTextRegions(raw);
   const sourceMaskFrames = normalizeMaskFrames(raw.maskFrames);
+  const textAlign = normalizeTextAlign(raw.textAlign) ?? inferOnScreenTextAlign(region, textRegions);
 
   const maxDuration = Math.max(0.2, durationSec);
   const timestamp = normalizeTimestamp(raw, allTimestamps, batchOffset, maxDuration);
@@ -472,6 +616,7 @@ function normalizeDetection(
     region,
     textRegions,
     sourceMaskFrames,
+    textAlign,
     startSec: start,
     endSec: end,
     timestampSec: timestamp,
@@ -963,6 +1108,7 @@ function mergeTrack(track: OnScreenTextDetection[], durationSec: number): OnScre
   const region = unionRegion(sorted.map((item) => item.region));
   const textRegions = mergeTextRegions(sorted, region);
   const sourceMaskFrames = mergeMaskFrames(sorted);
+  const textAlign = mostCommonTextAlign(sorted.map((item) => item.textAlign)) ?? inferOnScreenTextAlign(region, textRegions);
 
   return {
     detectedText,
@@ -970,6 +1116,7 @@ function mergeTrack(track: OnScreenTextDetection[], durationSec: number): OnScre
     region,
     textRegions,
     sourceMaskFrames,
+    textAlign,
     startSec,
     endSec: Math.max(startSec + 0.3, endSec),
     toneMood: first.toneMood,
@@ -1343,6 +1490,65 @@ function mergeTextRegions(
     if (byIndex.length) merged.push(unionRegion(byIndex));
   }
   return merged.length ? merged.slice(0, 24) : undefined;
+}
+
+function normalizeTextAlign(value: unknown): "left" | "center" | "right" | undefined {
+  return value === "left" || value === "center" || value === "right" ? value : undefined;
+}
+
+function mostCommonTextAlign(
+  values: Array<"left" | "center" | "right" | undefined>,
+): "left" | "center" | "right" | undefined {
+  const counts = new Map<"left" | "center" | "right", number>();
+  for (const value of values) {
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+export function inferOnScreenTextAlign(
+  region: { x: number; y: number; w: number; h: number },
+  textRegions?: Array<{ x: number; y: number; w: number; h: number }>,
+): "left" | "center" | "right" {
+  const lines = (textRegions ?? []).filter((item) =>
+    Number.isFinite(item.x) &&
+    Number.isFinite(item.w) &&
+    item.w > 0 &&
+    item.h > 0,
+  );
+  if (lines.length >= 2 && region.w > 0) {
+    const lefts = lines.map((item) => (item.x - region.x) / region.w);
+    const rights = lines.map((item) => (region.x + region.w - (item.x + item.w)) / region.w);
+    const centers = lines.map((item) => (item.x + item.w / 2 - (region.x + region.w / 2)) / region.w);
+    const leftSpread = averageAbsDeviation(lefts);
+    const rightSpread = averageAbsDeviation(rights);
+    const centerSpread = averageAbsDeviation(centers);
+    const avgLeft = average(lefts);
+    const avgRight = average(rights);
+    const avgCenterAbs = Math.abs(average(centers));
+
+    if (avgCenterAbs <= 0.08 && centerSpread <= Math.min(leftSpread, rightSpread) * 1.08) {
+      return "center";
+    }
+    if (avgLeft + 0.06 < avgRight || leftSpread < rightSpread * 0.85) return "left";
+    if (avgRight + 0.06 < avgLeft || rightSpread < leftSpread * 0.85) return "right";
+    return "center";
+  }
+
+  const centerX = region.x + region.w / 2;
+  if (centerX < 0.38) return "left";
+  if (centerX > 0.62) return "right";
+  return "center";
+}
+
+function average(values: number[]): number {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function averageAbsDeviation(values: number[]): number {
+  const mean = average(values);
+  return average(values.map((value) => Math.abs(value - mean)));
 }
 
 function medianRegion(regions: Array<{ x: number; y: number; w: number; h: number }>) {

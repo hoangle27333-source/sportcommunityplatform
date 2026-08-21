@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { RemixFinalReview, VideoOp, RemixOptions } from "./types";
+import { regionalBlurRadius, resolveOverlayTextLayout } from "./text-overlay-layout";
 export { sanitizeTranscriptText } from "./utils";
 import { sanitizeTranscriptText } from "./utils";
 
@@ -785,11 +786,10 @@ export function buildBoxBlurOverlayFilter(input: {
   blurLabel: string;
 }): string {
   const region = toPixelRegion(input.region, input.frameWidth, input.frameHeight);
-  const radius = clamp(
-    Math.round(Math.min(region.w, region.h) * 0.28),
-    10,
-    42,
-  );
+  const radius = regionalBlurRadius(input.region, {
+    width: input.frameWidth,
+    height: input.frameHeight,
+  });
   const chromaRadius = Math.min(radius, 15);
   const enable = timelineEnable(region.startSec, region.endSec);
   return `[${input.inputLabel}]split=2[${input.baseLabel}][${input.cropInputLabel}];` +
@@ -840,6 +840,21 @@ function buildVideoFilterComplex(steps: VideoFilterStep[]): { graph: string; out
 
 export function buildDrawtextTextfileParam(textPath: string): string {
   return `textfile='${escapeFilterPath(textPath)}'`;
+}
+
+export function buildOverlayTextXExpression(
+  region: { x: number; y: number; w: number; h: number } | undefined,
+  frameWidth: number,
+  textAlign: "left" | "center" | "right" | undefined,
+): string {
+  if (!region) return "(w-text_w)/2";
+  const x = Math.round(region.x * frameWidth);
+  const width = Math.max(1, Math.round(region.w * frameWidth));
+  const padding = Math.max(2, Math.min(24, Math.round(width * 0.07)));
+  const maxX = `${Math.max(0, frameWidth - padding)}-text_w`;
+  if (textAlign === "left") return `max(0\\,min(${x}+${padding}\\,${maxX}))`;
+  if (textAlign === "right") return `max(0\\,min(max(${x}+${padding}\\,${x}+${width}-text_w-${padding})\\,${maxX}))`;
+  return `max(0\\,min(${x}+(${width}-text_w)/2\\,${frameWidth}-text_w))`;
 }
 
 /**
@@ -1028,31 +1043,32 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     const fw = reframe ? reframe.width : info.width;
     const fh = reframe ? reframe.height : info.height;
     const normalizedOverlayText = normalizeOverlayTextForDrawtext(textOverlay.text);
-    if (region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit") {
-      region = expandRegionForFullOverlayText(
-        region,
-        normalizedOverlayText,
-        fw,
-        fh,
-        clamp(textOverlay.minFontSize ?? 1, 1, textOverlay.maxFontSize ?? textOverlay.fontSize ?? 32),
-      );
-    }
+    const autoWrapText = textOverlay.wrapMode === "auto";
+    const autoSizeText = Boolean(region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit");
     const fontSizeBoostPx = Math.max(0, Math.round(textOverlay.fontSizeBoostPx ?? 0));
-    const baseFontSize = region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit"
-      ? clamp(Math.round(region.h * fh * 0.5) + fontSizeBoostPx, 1, 120)
-      : clamp(textOverlay.fontSize ?? 32, 1, 120);
-    const autoMaxFontSize = region && textOverlay.fitToRegion && textOverlay.sizeMode === "auto_fit"
-      ? Math.max(baseFontSize, Math.round(region.h * fh * 0.72) + fontSizeBoostPx)
-      : textOverlay.maxFontSize;
-    const fitted = region && textOverlay.fitToRegion
-      ? fitTextToRegion(normalizedOverlayText, {
-          width: Math.max(1, Math.round(region.w * fw)),
-          height: Math.max(1, Math.round(region.h * fh)),
-          desiredFontSize: baseFontSize,
+    const resolvedLayout = region
+      ? resolveOverlayTextLayout({
+          text: normalizedOverlayText,
+          region,
+          frame: { width: fw, height: fh },
+          fontSize: textOverlay.fontSize ?? 32,
           minFontSize: textOverlay.minFontSize,
-          maxFontSize: autoMaxFontSize,
+          maxFontSize: textOverlay.maxFontSize,
+          fontSizeBoostPx,
+          bold: textOverlay.bold,
+          outlineWidth: textOverlay.outlineWidth,
+          sizeMode: autoSizeText ? "auto_fit" : "fixed",
+          wrapMode: autoWrapText ? "auto" : "manual",
         })
-      : { text: normalizedOverlayText, fontSize: baseFontSize, lines: normalizedOverlayText.split("\n").filter(Boolean) };
+      : undefined;
+    if (resolvedLayout) region = resolvedLayout.region;
+    const fitted = resolvedLayout ?? layoutOverlayTextForRender(normalizedOverlayText, {
+      desiredFontSize: textOverlay.fontSize ?? 32,
+      minFontSize: textOverlay.minFontSize,
+      maxFontSize: textOverlay.maxFontSize,
+      fitToRegion: false,
+      wrapMode: autoWrapText ? "auto" : "manual",
+    });
     const textFilePath = path.join(workDir, `overlay-text-${chain.length}.txt`);
     await writeFile(textFilePath, fitted.text, "utf8");
     if (input.diagnostics) input.diagnostics.drawtextTextfileCount += 1;
@@ -1066,27 +1082,36 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       : clamp(textOverlay.backgroundOpacity ?? (textOverlay.boxOpacity ?? 0.75) * hexOpacity(textOverlay.bgColor), 0, 1);
     const outlineOpacity = hexOpacity(textOverlay.outlineColor);
     const fontOpt = getFontOptionForDrawtext(textOverlay.font);
-    const boldScale = textOverlay.bold ? 1.08 : 1;
-    const baseFinalFontSize = Math.round(fitted.fontSize * boldScale);
-    const outlineWidth = Math.max(0, Math.round(textOverlay.outlineWidth ?? baseFinalFontSize * 0.08));
+    const baseFinalFontSize = resolvedLayout
+      ? resolvedLayout.fontSize
+      : Math.round(fitted.fontSize);
+    const outlineWidth = resolvedLayout
+      ? resolvedLayout.outlineWidth
+      : Math.max(0, Math.round(textOverlay.outlineWidth ?? baseFinalFontSize * 0.08));
     const blurTargetRegion = textOverlay.coverRegion ? eraseRegion : region;
     const blurText = normalizeOverlayTextForDrawtext(textOverlay.sourceText ?? textOverlay.text);
-    const blurFitted = blurTargetRegion && textOverlay.fitToRegion
-      ? fitTextToRegion(blurText, {
-          width: Math.max(1, Math.round(blurTargetRegion.w * fw)),
-          height: Math.max(1, Math.round(blurTargetRegion.h * fh)),
-          desiredFontSize: baseFontSize,
+    const blurFitted = blurTargetRegion
+      ? resolveOverlayTextLayout({
+          text: blurText,
+          region: blurTargetRegion,
+          frame: { width: fw, height: fh },
+          fontSize: textOverlay.fontSize ?? 32,
           minFontSize: textOverlay.minFontSize,
-          maxFontSize: autoMaxFontSize,
+          maxFontSize: textOverlay.maxFontSize,
+          fontSizeBoostPx,
+          bold: textOverlay.bold,
+          outlineWidth: textOverlay.outlineWidth,
+          sizeMode: autoSizeText ? "auto_fit" : "fixed",
+          wrapMode: autoWrapText ? "auto" : "manual",
         })
-      : { text: blurText, fontSize: baseFontSize, lines: blurText.split("\n").filter(Boolean) };
+      : fitted;
     const tightBlurRegions = !textOverlay.sourceTextRemoved && blurTargetRegion && textOverlay.backgroundStyle === "blur"
       ? buildTightTextBlurRegions({
           region: blurTargetRegion,
           textRegions: textOverlay.textRegions
             ?.map((item) => transformRegionForReframe(item, info.width, info.height, reframe)),
           lines: blurFitted.lines,
-          fontSize: Math.round(blurFitted.fontSize * boldScale),
+          fontSize: blurFitted.fontSize,
           frameWidth: fw,
           frameHeight: fh,
           outlineWidth,
@@ -1095,9 +1120,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
         })
       : [];
     let finalFontSize: string | number = baseFinalFontSize;
-    let xExpr = region
-      ? `${Math.round(region.x * fw)}+(${Math.max(1, Math.round(region.w * fw))}-text_w)/2`
-      : "(w-text_w)/2";
+    let xExpr = buildOverlayTextXExpression(region, fw, textOverlay.textAlign);
     let yExpr = region
       ? `${Math.round(region.y * fh)}+(${Math.max(1, Math.round(region.h * fh))}-text_h)/2`
       : textOverlay.position === "top"
@@ -1143,12 +1166,32 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
         );
       }
     }
-    const boxParams = textOverlay.coverRegion || textOverlay.backgroundStyle === "blur"
+    const boxParams = textOverlay.backgroundStyle === "blur"
       ? "box=0"
       : `box=1:boxcolor=${bgColor}@${opacity}:boxborderw=${region ? fitBoxBorder(region, fw, fh) : 14}`;
     if (!textOverlay.coverRegion && tightBlurRegions.length) {
       for (const blurRegion of tightBlurRegions) {
         chain.push({ kind: "boxblur", region: { ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, frameWidth: fw, frameHeight: fh });
+        if (input.diagnostics) {
+          input.diagnostics.textBlurRegionCount += 1;
+          input.diagnostics.textBlurRenderer = "boxblur-overlay";
+        }
+      }
+    }
+    if (textOverlay.backgroundStyle === "blur" && region) {
+      const isSameAsSourceBlur = tightBlurRegions.some((item) =>
+        Math.abs(item.x - region!.x) < 0.002 &&
+        Math.abs(item.y - region!.y) < 0.002 &&
+        Math.abs(item.w - region!.w) < 0.002 &&
+        Math.abs(item.h - region!.h) < 0.002
+      );
+      if (!isSameAsSourceBlur) {
+        chain.push({
+          kind: "boxblur",
+          region: { ...region, startSec: textOverlay.startSec, endSec: textOverlay.endSec },
+          frameWidth: fw,
+          frameHeight: fh,
+        });
         if (input.diagnostics) {
           input.diagnostics.textBlurRegionCount += 1;
           input.diagnostics.textBlurRenderer = "boxblur-overlay";
@@ -1573,6 +1616,40 @@ function expandRegionForFullOverlayText(
   const x = clamp(centerX - neededW / 2, 0, Math.max(0, 1 - neededW));
   const y = clamp(centerY - neededH / 2, 0, Math.max(0, 1 - neededH));
   return clampRegion({ x, y, w: neededW, h: neededH });
+}
+
+export function layoutOverlayTextForRender(
+  text: string,
+  input: {
+    width?: number;
+    height?: number;
+    desiredFontSize: number;
+    minFontSize?: number;
+    maxFontSize?: number;
+    fitToRegion?: boolean;
+    wrapMode?: "manual" | "auto";
+  },
+): { text: string; fontSize: number; lines: string[] } {
+  const normalizedText = normalizeOverlayTextForDrawtext(text);
+  if (
+    input.wrapMode !== "auto" ||
+    !input.fitToRegion ||
+    !input.width ||
+    !input.height
+  ) {
+    return {
+      text: normalizedText,
+      fontSize: input.desiredFontSize,
+      lines: normalizedText.split("\n").filter(Boolean),
+    };
+  }
+  return fitTextToRegion(normalizedText, {
+    width: input.width,
+    height: input.height,
+    desiredFontSize: input.desiredFontSize,
+    minFontSize: input.minFontSize,
+    maxFontSize: input.maxFontSize,
+  });
 }
 
 export function fitTextToRegion(

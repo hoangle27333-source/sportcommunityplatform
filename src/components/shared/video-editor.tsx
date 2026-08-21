@@ -10,6 +10,14 @@ import { BlurRegionPicker, type BlurRegion } from "@/components/remix/blur-regio
 import { VoiceSelector } from "@/components/remix/voice-selector";
 import { buildFacebookCopyrightPreflight } from "@/lib/remix/copyright-preflight";
 import { VIETNAMESE_FONTS } from "@/lib/remix/fonts";
+import {
+  buildTightOverlayBlurRegions,
+  normalizeOverlayText,
+  regionalBlurRadius,
+  resolveOverlayTextLayout,
+  transformOverlayRegion,
+  type OverlayReframe,
+} from "@/lib/remix/text-overlay-layout";
 
 type OnScreenTextPreset = "meme" | "pop" | "bubble" | "neon" | "clean";
 
@@ -76,7 +84,9 @@ interface TextOnScreenOverlay {
   outlineWidth?: number;
   bold?: boolean;
   italic?: boolean;
+  textAlign?: "left" | "center" | "right";
   sizeMode?: "auto_fit" | "fixed";
+  wrapMode?: "manual" | "auto";
   animation: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
 }
 
@@ -165,7 +175,9 @@ function normalizeOverlay(raw: TextOnScreenOverlay): TextOnScreenOverlay {
     outlineColor: raw.outlineColor ?? "#000000",
     outlineWidth: Number.isFinite(raw.outlineWidth) ? Math.max(0, Math.min(10, raw.outlineWidth!)) : 2,
     bold: raw.bold ?? true,
+    textAlign: raw.textAlign ?? "center",
     sizeMode: raw.sizeMode ?? "fixed",
+    wrapMode: raw.wrapMode ?? "manual",
     position: raw.position ?? {
       x: (box.x ?? 0) + (box.w ?? 0.42) / 2,
       y: (box.y ?? 0) + (box.h ?? 0.1) / 2,
@@ -206,10 +218,29 @@ function getLogicalFrameSize(
   }
 }
 
+function getPreviewReframe(
+  outputRatio: string,
+  naturalVideoSize: FrameSize,
+): OverlayReframe | undefined {
+  if (outputRatio === "original" || naturalVideoSize.width <= 0 || naturalVideoSize.height <= 0) return undefined;
+  const target = getLogicalFrameSize(outputRatio, naturalVideoSize);
+  const isPortrait = target.height > target.width;
+  const isSquare = target.width === target.height;
+  const sourceIsLandscape = naturalVideoSize.width > naturalVideoSize.height;
+  return {
+    ...target,
+    mode: isSquare && naturalVideoSize.width !== naturalVideoSize.height
+      ? "crop"
+      : isPortrait && sourceIsLandscape
+        ? "crop"
+        : "pad",
+  };
+}
+
 function getOverlayPreviewModel(input: {
   text: string;
   box: { x: number; y: number; w: number; h: number };
-  overlay?: Pick<TextOnScreenOverlay, "fontSize" | "sizeMode" | "source" | "bold" | "outlineWidth">;
+  overlay?: Pick<TextOnScreenOverlay, "fontSize" | "sizeMode" | "source" | "bold" | "outlineWidth" | "wrapMode">;
   previewFrameSize: FrameSize;
   logicalFrameSize: FrameSize;
 }) {
@@ -220,167 +251,82 @@ function getOverlayPreviewModel(input: {
       ? previewFrameSize.height / logicalFrameSize.height
       : 1,
   );
-  const baseFontSize = clampNumber(overlay?.fontSize ?? 32, 1, 120);
-  const isAutoFit = overlay?.sizeMode === "auto_fit";
-  const normalizedText = normalizePreviewText(text);
-  const effectiveBox = isAutoFit
-    ? expandPreviewRegionForFullText(
-        input.box,
-        normalizedText,
-        logicalFrameSize,
-        1,
-      )
-    : input.box;
-  const boxWidth = Math.max(1, Math.round(effectiveBox.w * logicalFrameSize.width));
-  const boxHeight = Math.max(1, Math.round(effectiveBox.h * logicalFrameSize.height));
-  const fontSizeBoostPx = overlay?.source === "ocr_auto" && isAutoFit ? 3 : 0;
-  const desiredFontSize = isAutoFit
-    ? clampNumber(Math.round(boxHeight * 0.5) + fontSizeBoostPx, 1, 120)
-    : baseFontSize;
-  const maxFontSize = isAutoFit
-    ? Math.max(desiredFontSize, Math.round(boxHeight * 0.72) + fontSizeBoostPx)
-    : baseFontSize;
-  const fitted = fitPreviewTextToRegion(normalizedText, {
-    width: boxWidth,
-    height: boxHeight,
-    desiredFontSize,
+  const layout = resolveOverlayTextLayout({
+    text,
+    region: input.box,
+    frame: logicalFrameSize,
+    fontSize: overlay?.fontSize ?? 32,
     minFontSize: 1,
-    maxFontSize,
+    fontSizeBoostPx: overlay?.source === "ocr_auto" && overlay?.sizeMode === "auto_fit" ? 3 : 0,
+    bold: overlay?.bold,
+    outlineWidth: overlay?.outlineWidth,
+    sizeMode: overlay?.sizeMode,
+    wrapMode: overlay?.wrapMode,
   });
-  const boldScale = overlay?.bold ? 1.08 : 1;
-  const finalFontSize = Math.round(fitted.fontSize * boldScale);
-  const outlineWidth = Math.max(0, Math.round(overlay?.outlineWidth ?? finalFontSize * 0.08));
   return {
-    text: fitted.text,
-    fontSizePx: Math.max(1, Math.round(finalFontSize * scale)),
-    lineSpacingPx: Math.max(0, Math.round(finalFontSize * 0.14 * scale)),
-    outlineWidthPx: Math.max(0, Math.round(outlineWidth * scale)),
+    region: layout.region,
+    lines: layout.lines,
+    text: layout.text,
+    fontSize: layout.fontSize,
+    fontSizePx: Math.max(1, Math.round(layout.fontSize * scale)),
+    lineSpacingPx: Math.max(0, Math.round(layout.lineSpacing * scale)),
+    outlineWidthPx: Math.max(0, Math.round(layout.outlineWidth * scale)),
+    horizontalPaddingPx: Math.max(2, Math.round(layout.horizontalPadding * scale)),
   };
 }
 
-function fitPreviewTextToRegion(
-  text: string,
-  input: {
-    width: number;
-    height: number;
-    desiredFontSize: number;
-    minFontSize: number;
-    maxFontSize: number;
-  },
-): { text: string; fontSize: number; lines: string[] } {
-  const maxFontSize = clampNumber(input.maxFontSize, 1, Math.max(1, input.desiredFontSize));
-  const minFontSize = clampNumber(input.minFontSize, 1, maxFontSize);
-  const maxLines = Math.max(1, Math.min(6, Math.floor(input.height / Math.max(1, minFontSize * 1.14))));
-  const contentWidth = Math.max(1, input.width * 0.86);
-  const contentHeight = Math.max(1, input.height * 0.74);
-
-  for (let size = Math.round(maxFontSize); size >= minFontSize; size -= 1) {
-    const maxCharsPerLine = Math.max(4, Math.floor(contentWidth / (size * 0.58)));
-    const lines = wrapPreviewText(text, maxCharsPerLine, maxLines);
-    const renderedHeight = lines.length * size + Math.max(0, lines.length - 1) * Math.round(size * 0.14);
-    const widestLine = Math.max(...lines.map((line) => estimatedPreviewTextWidth(line, size)), 0);
-    if (previewPreservesAllText(text, lines) && renderedHeight <= contentHeight && widestLine <= contentWidth) {
-      return { text: lines.join("\n"), fontSize: size, lines };
-    }
-  }
-
-  const fallbackChars = Math.max(4, Math.floor(contentWidth / (minFontSize * 0.58)));
-  const lines = wrapPreviewText(text, fallbackChars, Number.POSITIVE_INFINITY);
-  return { text: lines.join("\n"), fontSize: minFontSize, lines };
+function clampBox(box: { x: number; y: number; w: number; h: number }) {
+  const x = clamp01(box.x);
+  const y = clamp01(box.y);
+  return {
+    x,
+    y,
+    w: Math.max(0.001, Math.min(1 - x, box.w)),
+    h: Math.max(0.001, Math.min(1 - y, box.h)),
+  };
 }
 
-function wrapPreviewText(text: string, maxCharsPerLine: number, maxLines: number): string[] {
-  const paragraphs = text
-    .split(/\n+/)
-    .map((line) => line.replace(/[ \t]+/g, " ").trim())
-    .filter(Boolean);
-  const sourceLines = paragraphs.length ? paragraphs : [text.replace(/\s+/g, " ").trim()];
-  const words = sourceLines.flatMap((line, lineIndex) => {
-    const lineWords = line
-      .split(" ")
-      .filter(Boolean)
-      .flatMap((word) => splitPreviewLongToken(word, maxCharsPerLine));
-    return lineIndex === sourceLines.length - 1 ? lineWords : [...lineWords, "\n"];
-  });
-  if (words.length === 0) return [""];
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (word === "\n") {
-      if (current) lines.push(current);
-      current = "";
-      if (lines.length >= maxLines) break;
-      continue;
-    }
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxCharsPerLine || !current) {
-      current = candidate;
+function getSourceBlurPreviewRegions(
+  overlay: TextOnScreenOverlay,
+  currentTime: number,
+  naturalVideoSize: FrameSize,
+  logicalFrameSize: FrameSize,
+  reframe: OverlayReframe | undefined,
+): Array<{ x: number; y: number; w: number; h: number }> {
+  let regions: Array<{ x: number; y: number; w: number; h: number }>;
+  if (overlay.sourceMaskFrames?.length) {
+    const sorted = [...overlay.sourceMaskFrames].sort(
+      (a, b) => Math.abs(a.timestampSec - currentTime) - Math.abs(b.timestampSec - currentTime),
+    );
+    const frame = sorted[0];
+    if (frame?.regions?.length) {
+      regions = frame.regions;
     } else {
-      lines.push(current);
-      current = word;
+      regions = [];
     }
-    if (lines.length === maxLines) break;
-  }
-  if (lines.length < maxLines && current) lines.push(current);
-  return lines.length > maxLines ? lines.slice(0, maxLines) : lines;
-}
-
-function splitPreviewLongToken(text: string, maxChars: number): string[] {
-  if (text.length <= maxChars) return [text];
-  const parts: string[] = [];
-  let remaining = text;
-  while (remaining.length > maxChars) {
-    parts.push(`${remaining.slice(0, Math.max(1, maxChars - 1))}-`);
-    remaining = remaining.slice(Math.max(1, maxChars - 1));
-  }
-  if (remaining) parts.push(remaining);
-  return parts;
-}
-
-function previewPreservesAllText(source: string, lines: string[]): boolean {
-  return normalizePreviewFitText(lines.join(" ")).includes(normalizePreviewFitText(source));
-}
-
-function normalizePreviewFitText(text: string): string {
-  return text.replace(/[-\s]+/g, "").trim();
-}
-
-function estimatedPreviewTextWidth(text: string, fontSize: number): number {
-  return text.length * fontSize * 0.58;
-}
-
-function normalizePreviewText(text: string): string {
-  return (text || "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/\\n/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .trim();
-}
-
-function expandPreviewRegionForFullText(
-  region: { x: number; y: number; w: number; h: number },
-  text: string,
-  frame: FrameSize,
-  minFontSize: number,
-): { x: number; y: number; w: number; h: number } {
-  const contentWidth = Math.max(1, region.w * frame.width * 0.86);
-  const charsPerLine = Math.max(4, Math.floor(contentWidth / (Math.max(1, minFontSize) * 0.58)));
-  const lines = wrapPreviewText(text, charsPerLine, Number.POSITIVE_INFINITY);
-  const widestLine = Math.max(...lines.map((line) => estimatedPreviewTextWidth(line, minFontSize)), 0);
-  const renderedHeight = lines.length * minFontSize + Math.max(0, lines.length - 1) * Math.round(minFontSize * 0.14);
-  const neededW = Math.min(0.96, Math.max(region.w, (widestLine / 0.86) / Math.max(1, frame.width)));
-  const neededH = Math.min(0.9, Math.max(region.h, (renderedHeight / 0.74) / Math.max(1, frame.height)));
-  if (neededW <= region.w && neededH <= region.h) return region;
-
-  const centerX = region.x + region.w / 2;
-  const centerY = region.y + region.h / 2;
-  return {
-    x: Math.max(0, Math.min(Math.max(0, 1 - neededW), centerX - neededW / 2)),
-    y: Math.max(0, Math.min(Math.max(0, 1 - neededH), centerY - neededH / 2)),
-    w: neededW,
-    h: neededH,
-  };
+  } else if (overlay.textRegions?.length) regions = overlay.textRegions;
+  else if (overlay.eraseBox) regions = [overlay.eraseBox];
+  else regions = [overlay.box ?? defaultOverlayBox(overlay.position)];
+  const transformed = regions.map((region) => transformOverlayRegion(
+    clampBox(region),
+    naturalVideoSize.width,
+    naturalVideoSize.height,
+    reframe,
+  ));
+  const sourceRegion = overlay.eraseBox
+    ? transformOverlayRegion(clampBox(overlay.eraseBox), naturalVideoSize.width, naturalVideoSize.height, reframe)
+    : transformed[0] ?? clampBox(overlay.box ?? defaultOverlayBox(overlay.position));
+  return buildTightOverlayBlurRegions({
+    region: sourceRegion,
+    textRegions: transformed,
+    lines: normalizeOverlayText(overlay.sourceText ?? overlay.text).split("\n").filter(Boolean),
+    fontSize: overlay.fontSize,
+    frameWidth: logicalFrameSize.width,
+    frameHeight: logicalFrameSize.height,
+    outlineWidth: overlay.outlineWidth,
+    coverOriginalText: overlay.source === "ocr_auto",
+    minimumWidthRatio: overlay.source === "ocr_auto" ? 0.34 : 0.18,
+  });
 }
 
 function isTypingTarget(target: EventTarget | null) {
@@ -497,6 +443,9 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
     initialTextStyle.outlineColor || "#000000",
   );
   const [textBold, setTextBold] = useState<boolean>(initialTextStyle.bold ?? true);
+  const [textAlign, setTextAlign] = useState<"left" | "center" | "right">(
+    initialTextStyle.textAlign === "left" || initialTextStyle.textAlign === "right" ? initialTextStyle.textAlign : "center",
+  );
 
   // ── Custom Text Overlays ──────────────────────────────────────────────────────
   const [textOverlays, setTextOverlays] = useState<TextOnScreenOverlay[]>(
@@ -679,7 +628,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
       textOverlay: shouldAutoTranslateOnScreenText ? textOverlay.trim() : "",
       onScreenTextStyle: shouldAutoTranslateOnScreenText
         ? { preset: onScreenTextPreset, font: textFont, size: textFontSize, color: textColor,
-            bgColor: textBgColor, backgroundStyle: textBackgroundStyle, backgroundOpacity: textBackgroundOpacity, outlineColor: textOutlineColor, outlineWidth: 2, bold: textBold }
+            bgColor: textBgColor, backgroundStyle: textBackgroundStyle, backgroundOpacity: textBackgroundOpacity, outlineColor: textOutlineColor, outlineWidth: 2, bold: textBold, textAlign, wrapMode: "manual" as const }
         : undefined,
       textOnScreenOverlays: textOverlays.length > 0 ? textOverlays : undefined,
       manualBlurRegions: manualBlurRegions.length > 0 ? manualBlurRegions : undefined,
@@ -740,16 +689,6 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
     setTextBold(style.bold);
   };
 
-  const getFrameAspectClass = () => {
-    switch (outputRatio) {
-      case '9:16': return 'aspect-[9/16]';
-      case '16:9': return 'aspect-video';
-      case '1:1': return 'aspect-square';
-      case '4:5': return 'aspect-[4/5]';
-      default: return 'aspect-video';
-    }
-  };
-
   const getVideoFitClass = () => outputRatio === 'original' ? 'object-contain' : 'object-cover';
 
   const updateSegment = (index: number, patch: Partial<ScriptSegment>) => {
@@ -789,6 +728,8 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
       id: genId(), start: Math.floor(currentTime), end: Math.min(Math.floor(currentTime) + 5, duration || 10),
       text: 'Text mới', position: { x: box.x + box.w / 2, y: box.y + box.h / 2 }, box,
       fontFamily: 'Be Vietnam Pro', fontSize: 32, fontColor: '#FFFFFF', bgColor: '#000000CC', backgroundStyle: 'solid', backgroundOpacity: 0.72, animation: 'fade_in',
+      textAlign: 'center',
+      wrapMode: 'manual',
     };
     setTextOverlays(prev => [...prev, newOverlay]);
     setEditingOverlayId(newOverlay.id);
@@ -835,6 +776,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
           outlineColor: textOutlineColor,
           bold: textBold,
           italic: overlay.italic,
+          textAlign,
           isEdited: overlay.isEdited || overlay.source === "ocr_auto",
           status: overlay.status === "disabled" ? "approved" : overlay.status,
         })
@@ -1007,6 +949,8 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
   // Sub text đang active theo currentTime (dùng cho subtitle preview)
   const activeSubtitleSeg = scriptSegments.find(s => s.text?.trim() && currentTime >= s.start && currentTime <= s.end);
   const logicalFrameSize = getLogicalFrameSize(outputRatio, naturalVideoSize);
+  const previewReframe = getPreviewReframe(outputRatio, naturalVideoSize);
+  const previewIsPortrait = logicalFrameSize.height > logicalFrameSize.width;
 
   const ANIMATION_OPTIONS: Array<{ value: TextOnScreenOverlay['animation']; label: string }> = [
     { value: 'none', label: 'Không có' },
@@ -1054,10 +998,11 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
           <div className="flex-1 p-6 flex items-center justify-center bg-zinc-950">
             <div
               ref={videoContainerRef}
-              className={`relative max-h-full max-w-full overflow-hidden rounded-lg bg-black shadow-xl ring-1 ring-white/10 ${getFrameAspectClass()}`}
+              className="relative max-h-full max-w-full overflow-hidden rounded-lg bg-black shadow-xl ring-1 ring-white/10"
               style={{
-                height: outputRatio === '9:16' || outputRatio === '4:5' ? '100%' : undefined,
-                width: outputRatio === '16:9' || outputRatio === '1:1' || outputRatio === 'original' ? '100%' : undefined,
+                aspectRatio: `${logicalFrameSize.width} / ${logicalFrameSize.height}`,
+                height: previewIsPortrait ? '100%' : undefined,
+                width: previewIsPortrait ? undefined : '100%',
               }}
               onPointerMove={handlePointerMove}
               onPointerUp={() => setInteraction(null)}
@@ -1116,21 +1061,77 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
               )}
               {activeOverlays.map(overlay => (
                 (() => {
-                  const box = overlay.box ?? defaultOverlayBox(overlay.position);
+                  const sourceBox = overlay.box ?? defaultOverlayBox(overlay.position);
+                  const transformedBox = transformOverlayRegion(
+                    sourceBox,
+                    naturalVideoSize.width,
+                    naturalVideoSize.height,
+                    previewReframe,
+                  );
                   const previewModel = getOverlayPreviewModel({
                     text: overlay.text,
-                    box,
+                    box: transformedBox,
                     overlay,
                     previewFrameSize,
                     logicalFrameSize,
                   });
-                  const blurRadius = Math.max(6, Math.round(previewModel.fontSizePx * 0.18));
+                  const box = previewModel.region;
+                  const previewScale = logicalFrameSize.height > 0
+                    ? previewFrameSize.height / logicalFrameSize.height
+                    : 1;
+                  const replacementBlurRadius = Math.max(1, Math.round(
+                    regionalBlurRadius(box, logicalFrameSize) * previewScale,
+                  ));
+                  const sourceBlurRegions = overlay.backgroundStyle === "blur"
+                    ? getSourceBlurPreviewRegions(
+                        overlay,
+                        currentTime,
+                        naturalVideoSize,
+                        logicalFrameSize,
+                        previewReframe,
+                      )
+                    : [];
+                  const sourceBlurRegionsToRender = sourceBlurRegions.filter((region) => !(
+                    Math.abs(region.x - box.x) < 0.002 &&
+                    Math.abs(region.y - box.y) < 0.002 &&
+                    Math.abs(region.w - box.w) < 0.002 &&
+                    Math.abs(region.h - box.h) < 0.002
+                  ));
                   return (
+                    <React.Fragment key={overlay.id}>
+                      {sourceBlurRegionsToRender.map((region, index) => (
+                        <div
+                          key={`${overlay.id}-source-blur-${index}`}
+                          className="pointer-events-none absolute"
+                          style={{
+                            left: `${region.x * 100}%`,
+                            top: `${region.y * 100}%`,
+                            width: `${region.w * 100}%`,
+                            height: `${region.h * 100}%`,
+                            backgroundColor: "rgba(15,23,42,0.08)",
+                            backdropFilter: `blur(${Math.max(1, Math.round(regionalBlurRadius(region, logicalFrameSize) * previewScale))}px)`,
+                            WebkitBackdropFilter: `blur(${Math.max(1, Math.round(regionalBlurRadius(region, logicalFrameSize) * previewScale))}px)`,
+                          }}
+                        />
+                      ))}
+                      {overlay.backgroundStyle === "blur" && (
+                        <div
+                          className="pointer-events-none absolute"
+                          style={{
+                            left: `${box.x * 100}%`,
+                            top: `${box.y * 100}%`,
+                            width: `${box.w * 100}%`,
+                            height: `${box.h * 100}%`,
+                            backgroundColor: "rgba(15,23,42,0.08)",
+                            backdropFilter: `blur(${replacementBlurRadius}px)`,
+                            WebkitBackdropFilter: `blur(${replacementBlurRadius}px)`,
+                          }}
+                        />
+                      )}
                 <div
-                  key={overlay.id}
                   onPointerDown={(e) => beginMoveOverlay(overlay.id, e)}
                   onClick={() => { setActiveTab('text_overlay'); setEditingOverlayId(overlay.id); }}
-                  className={`absolute cursor-move overflow-visible rounded border px-2 py-1 text-sm font-semibold select-none transition-all ${
+                  className={`absolute cursor-move overflow-visible border select-none transition-all ${
                     editingOverlayId === overlay.id ? 'ring-2 ring-blue-400' : 'hover:ring-1 hover:ring-white/50'
                   }`}
                   style={{
@@ -1140,7 +1141,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                     height: `${box.h * 100}%`,
                     fontFamily: overlay.fontFamily,
                     fontSize: `${previewModel.fontSizePx}px`,
-                    fontWeight: overlay.bold ? 800 : 400,
+                    fontWeight: 400,
                     fontStyle: overlay.italic ? 'italic' : 'normal',
                     color: overlay.fontColor,
                     WebkitTextStroke: previewModel.outlineWidthPx > 0 && overlay.outlineColor && overlay.outlineColor !== 'transparent'
@@ -1148,23 +1149,20 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                       : undefined,
                     backgroundColor:
                       overlay.backgroundStyle === "blur"
-                        ? "rgba(15,23,42,0.08)"
+                        ? "transparent"
                         : overlay.bgColor,
-                    backdropFilter:
-                      overlay.backgroundStyle === "blur"
-                        ? `blur(${blurRadius}px)`
-                        : undefined,
-                    WebkitBackdropFilter:
-                      overlay.backgroundStyle === "blur"
-                        ? `blur(${blurRadius}px)`
-                        : undefined,
                     borderColor: editingOverlayId === overlay.id ? '#60a5fa' : 'rgba(255,255,255,0.28)',
                   }}
                 >
                   <span
-                    className="pointer-events-none absolute left-1/2 top-1/2 text-center"
+                    className="pointer-events-none absolute top-1/2"
                     style={{
-                      transform: "translate(-50%, -50%)",
+                      ...(overlay.textAlign === "left"
+                        ? { left: `${previewModel.horizontalPaddingPx}px`, transform: "translateY(-50%)" }
+                        : overlay.textAlign === "right"
+                          ? { right: `${previewModel.horizontalPaddingPx}px`, transform: "translateY(-50%)" }
+                          : { left: "50%", transform: "translate(-50%, -50%)" }),
+                      textAlign: overlay.textAlign ?? "center",
                       width: "max-content",
                       maxWidth: "none",
                       whiteSpace: "pre",
@@ -1190,6 +1188,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                     />
                   ))}
                 </div>
+                    </React.Fragment>
                   );
                 })()
               ))}
@@ -1901,6 +1900,24 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                     💡 Drag text trên video preview để đặt vị trí. Click text để chọn và chỉnh sửa.
                   </p>
 
+                  <div className="rounded-md border border-border bg-background p-3">
+                    <label className="mb-2 block text-xs font-medium text-muted-foreground">Căn lề khi apply style hàng loạt</label>
+                    <div className="grid grid-cols-3 gap-1 rounded-md bg-muted/50 p-1">
+                      {(["left", "center", "right"] as const).map((align) => (
+                        <button
+                          key={align}
+                          type="button"
+                          onClick={() => setTextAlign(align)}
+                          className={`rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+                            textAlign === align ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-background"
+                          }`}
+                        >
+                          {align === "left" ? "Left" : align === "right" ? "Right" : "Center"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {textOverlays.length > 0 && (
                     <div className="rounded-md border border-border bg-background p-3 space-y-3">
                       <div className="flex items-center justify-between gap-2">
@@ -2026,6 +2043,23 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                 <option value="approved">Approved - render vào video</option>
                                 <option value="disabled">Disabled - bỏ qua</option>
                               </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-muted-foreground">Căn lề text</label>
+                              <div className="grid grid-cols-3 gap-1 rounded-md bg-muted/50 p-1">
+                                {(["left", "center", "right"] as const).map((align) => (
+                                  <button
+                                    key={align}
+                                    type="button"
+                                    onClick={() => updateOverlay(overlay.id, { textAlign: align })}
+                                    className={`rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+                                      (overlay.textAlign ?? "center") === align ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-background"
+                                    }`}
+                                  >
+                                    {align === "left" ? "Left" : align === "right" ? "Right" : "Center"}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
@@ -2232,7 +2266,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                 });
                                 return (
                                   <span
-                                    className="inline-block rounded px-3 py-1 text-center"
+                                    className="inline-block rounded px-3 py-1"
                                     style={{
                                       fontFamily: overlay.fontFamily,
                                       fontSize: `${previewModel.fontSizePx}px`,
@@ -2242,6 +2276,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                       width: "max-content",
                                       maxWidth: "none",
                                       whiteSpace: "pre",
+                                      textAlign: overlay.textAlign ?? "center",
                                       lineHeight: `${previewModel.fontSizePx + previewModel.lineSpacingPx}px`,
                                       WebkitTextStroke: previewModel.outlineWidthPx > 0 && overlay.outlineColor && overlay.outlineColor !== 'transparent'
                                         ? `${previewModel.outlineWidthPx}px ${overlay.outlineColor}`
@@ -2278,6 +2313,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                                           outlineWidth: overlay.outlineWidth,
                                           bold: overlay.bold,
                                           italic: overlay.italic,
+                                          textAlign: overlay.textAlign,
                                           animation: overlay.animation,
                                         })
                                       : o
@@ -2302,7 +2338,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
                         onClick={() => {
                           const suggestions: TextOnScreenOverlay[] = [
                             normalizeOverlay({ id: genId(), start: 0, end: 4, text: 'Xem ngay!', position: { x: 0.5, y: 0.1 }, box: { x: 0.28, y: 0.05, w: 0.44, h: 0.1 }, fontFamily: 'Montserrat', fontSize: 36, fontColor: '#FFF200', bgColor: '#FF2A6D', animation: 'scale_in' }),
-                            normalizeOverlay({ id: genId(), start: 5, end: 10, text: 'Link bio', position: { x: 0.5, y: 0.85 }, box: { x: 0.32, y: 0.8, w: 0.36, h: 0.09 }, fontFamily: 'Be Vietnam Pro', fontSize: 28, fontColor: '#FFFFFF', bgColor: '#00000088', backgroundStyle: 'blur', backgroundOpacity: 0.58, animation: 'fade_in' }),
+                            normalizeOverlay({ id: genId(), start: 5, end: 10, text: 'Link bio', position: { x: 0.5, y: 0.85 }, box: { x: 0.32, y: 0.8, w: 0.36, h: 0.09 }, fontFamily: 'Be Vietnam Pro', fontSize: 28, fontColor: '#FFFFFF', bgColor: '#00000088', backgroundStyle: 'blur', backgroundOpacity: 0.58, wrapMode: 'manual', animation: 'fade_in' }),
                           ];
                           setTextOverlays(prev => [...prev, ...suggestions]);
                         }}

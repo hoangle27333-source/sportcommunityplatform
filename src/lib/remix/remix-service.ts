@@ -413,10 +413,9 @@ export async function runRemixJob(
             warnings.push("OCR preflight chưa xác định được text slot đủ tin cậy trước plan.");
           }
         } catch (ocrErr) {
-          throw new RemixError(
-            503,
-            `OCR text on-screen thất bại: ${(ocrErr as Error).message}. ` +
-              "Job đã dừng để tránh xuất video còn nguyên chữ nguồn nhưng thiếu bản dịch.",
+          warnings.push(
+            `OCR preflight tạm bỏ qua: ${(ocrErr as Error).message}. ` +
+              "Pipeline sẽ tiếp tục và thử lại ở bước render/dịch chính.",
           );
         }
       }
@@ -1474,6 +1473,8 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
   }
 
   const onScreenTextOccupiedRegions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
+  let ocrReplacementCandidateCount = 0;
+  let ocrReplacementMissingMaskCount = 0;
   if (options.translateOnScreenText === true) {
     const sourceTextTracks = preflightOnScreenTextTracks?.length
       ? preflightOnScreenTextTracks
@@ -1512,6 +1513,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
         if (trimEnd !== undefined && translation.startSec > trimEnd) continue;
         if (translation.endSec < trimStart) continue;
         const replacementRegions = textReplacementRegions(translation.region);
+        ocrReplacementCandidateCount += 1;
         onScreenTextOccupiedRegions.push({ ...replacementRegions.erase, startSec, endSec });
         ops.push({
           op: "overlayText",
@@ -1520,12 +1522,14 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
           ocrTrackId: buildOcrTrackId(translation),
           textRegions: translation.textRegions?.length ? translation.textRegions : undefined,
           sourceMaskFrames: translation.sourceMaskFrames,
+          textAlign: translation.textAlign,
           startSec,
           endSec,
           region: replacementRegions.overlay,
           eraseRegion: replacementRegions.erase,
           fitToRegion: true,
           sizeMode: textStyle.sizeMode,
+          wrapMode: textStyle.wrapMode,
           coverRegion: true,
           minFontSize: 1,
           maxFontSize: textStyle.size,
@@ -1548,6 +1552,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
           sourceText: translation.detectedText,
           translatedText: translation.translatedText,
           region: replacementRegions.base,
+          textAlign: translation.textAlign,
           confidence: translation.confidence,
         });
       }
@@ -1567,6 +1572,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
             sourceText: translation.detectedText,
             textRegions: translation.textRegions?.length ? translation.textRegions : undefined,
             sourceMaskFrames: translation.sourceMaskFrames,
+            textAlign: translation.textAlign,
             position: {
               x: translation.region?.x ?? 0.5,
               y: translation.region?.y ?? 0.1,
@@ -1584,6 +1590,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
             bold: textStyle.bold,
             italic: textStyle.italic,
             sizeMode: textStyle.sizeMode,
+            wrapMode: textStyle.wrapMode,
             animation: 'fade_in' as const,
           })),
         );
@@ -1665,6 +1672,7 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
     }
   }
   if (missingMaskTrackKeys.size) {
+    ocrReplacementMissingMaskCount = missingMaskTrackKeys.size;
     for (let index = ops.length - 1; index >= 0; index -= 1) {
       const op = ops[index];
       if (op.op === "overlayText" && op.coverRegion === true && missingMaskTrackKeys.has(sourceTrackKey(op))) {
@@ -1672,6 +1680,20 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       }
     }
     plan.warnings.push(`needs_review: bỏ ${missingMaskTrackKeys.size} OCR overlay không có source polygon/mask frame.`);
+  }
+
+  const renderableOcrReplacementCount = ops.filter((op) =>
+    op.op === "overlayText" && op.coverRegion === true && Boolean(op.ocrTrackId),
+  ).length;
+  if (
+    options.translateOnScreenText === true &&
+    ocrReplacementCandidateCount > 0 &&
+    renderableOcrReplacementCount === 0
+  ) {
+    throw new Error(
+      `Text on-screen đã dịch ${ocrReplacementCandidateCount} đoạn nhưng không thể render vì thiếu source mask. ` +
+      "Job đã dừng để tránh xuất video còn nguyên chữ nguồn.",
+    );
   }
 
   let renderInputPath = sourcePath;
@@ -1889,12 +1911,23 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       subtitlesPlanned: ops.some((o) => o.op === "subtitles"),
     },
   });
-  plan.finalReview = { ...review, outputPath: undefined };
-  if (review.status === "fail") {
-    throw new Error(`Post-render QA thất bại: ${review.issuesFound.join("; ")}`);
+  const partialOcrIssue = ocrReplacementMissingMaskCount > 0
+    ? `Có ${ocrReplacementMissingMaskCount}/${ocrReplacementCandidateCount} text on-screen đã dịch nhưng không render được vì thiếu source mask.`
+    : null;
+  const effectiveReview = partialOcrIssue
+    ? {
+        ...review,
+        status: review.status === "pass" ? "revise" as const : review.status,
+        issuesFound: [...review.issuesFound, partialOcrIssue],
+        recommendedAction: review.status === "fail" ? review.recommendedAction : "review_warning" as const,
+      }
+    : review;
+  plan.finalReview = { ...effectiveReview, outputPath: undefined };
+  if (effectiveReview.status === "fail") {
+    throw new Error(`Post-render QA thất bại: ${effectiveReview.issuesFound.join("; ")}`);
   }
-  if (review.status === "revise") {
-    plan.warnings.push(`QA cần kiểm tra: ${review.issuesFound.join("; ")}`);
+  if (effectiveReview.status === "revise") {
+    plan.warnings.push(`QA cần kiểm tra: ${effectiveReview.issuesFound.join("; ")}`);
   }
 
   const buffer = await readResult(finalPath);
@@ -1927,6 +1960,7 @@ function plannedOnScreenTextTracksFromPlan(plan: RemixPlan): OnScreenTextTransla
       detectedText: overlay.sourceText!.trim(),
       translatedText: overlay.sourceText!.trim(),
       region: overlay.region!,
+      textAlign: overlay.textAlign,
       startSec: overlay.startSec,
       endSec: overlay.endSec,
       toneMood: "planned OCR layout",
@@ -1943,6 +1977,7 @@ function upsertTextOverlayDecision(
     sourceText: string;
     translatedText: string;
     region: { x: number; y: number; w: number; h: number };
+    textAlign?: "left" | "center" | "right";
     confidence: number;
   },
 ): void {
@@ -1962,6 +1997,7 @@ function upsertTextOverlayDecision(
     sourceText: input.sourceText,
     translatedText: input.translatedText,
     region: input.region,
+    textAlign: input.textAlign,
     confidence: input.confidence,
   };
   if (existing) {
@@ -2147,7 +2183,9 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
   boxOpacity: number;
   bold: boolean;
   italic: boolean;
+  textAlign: "left" | "center" | "right";
   sizeMode: "auto_fit" | "fixed";
+  wrapMode: "manual" | "auto";
 } {
   type OnScreenTextPreset = NonNullable<
     NonNullable<RemixOptions["onScreenTextStyle"]>["preset"]
@@ -2185,7 +2223,9 @@ function resolveOnScreenTextStyle(style: RemixOptions["onScreenTextStyle"]): {
     outlineWidth: clampNumber(style?.outlineWidth, 0, 10, base.outlineWidth),
     bold: style?.bold ?? base.bold,
     italic: style?.italic ?? base.italic,
+    textAlign: style?.textAlign === "left" || style?.textAlign === "right" ? style.textAlign : "center",
     sizeMode: style?.sizeMode ?? "auto_fit",
+    wrapMode: style?.wrapMode ?? "auto",
     boxOpacity: clampNumber(style?.backgroundOpacity, 0, 1, base.boxOpacity),
   };
 }
@@ -2222,12 +2262,14 @@ function appendCustomTextOverlayOps(input: {
       ocrTrackId: overlay.ocrTrackId,
       textRegions: normalizeTextOverlayRegions(overlay.textRegions),
       sourceMaskFrames: normalizeTextOverlayMaskFrames(overlay.sourceMaskFrames),
+      textAlign: overlay.textAlign ?? "center",
       startSec,
       endSec,
       region,
       eraseRegion,
       fitToRegion: true,
       sizeMode: overlay.sizeMode ?? "fixed",
+      wrapMode: overlay.wrapMode ?? "manual",
       coverRegion: source === "ocr_auto",
       minFontSize: 1,
       maxFontSize: overlay.fontSize,

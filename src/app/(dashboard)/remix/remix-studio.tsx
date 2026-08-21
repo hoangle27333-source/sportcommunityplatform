@@ -109,6 +109,7 @@ interface JobDetail {
         sourceText?: string;
         translatedText?: string;
         region?: { x: number; y: number; w: number; h: number };
+        textAlign?: "left" | "center" | "right";
         confidence?: number;
       }>;
       audio?: {
@@ -3773,6 +3774,7 @@ export function RemixStudio({
                 const bold = textStyle.bold ?? true;
                 const backgroundStyle = textStyle.backgroundStyle ?? 'solid';
                 const backgroundOpacity = textStyle.backgroundOpacity ?? 0.72;
+                const textAlign = textStyle.textAlign ?? 'center';
                 return detail.plan?.editDecisions?.overlays
                   ?.filter((o: any) => o.kind === 'text' && (o.translatedText || o.sourceText))
                   .map((o: any, idx: number) => ({
@@ -3787,6 +3789,7 @@ export function RemixStudio({
                     sourceText: o.sourceText || o.translatedText || '',
                     textRegions: o.textRegions,
                     sourceMaskFrames: o.sourceMaskFrames,
+                    textAlign: o.textAlign ?? textAlign,
                     position: {
                       x: (o.region?.x ?? 0.5) + (o.region?.w ?? 0) / 2,
                       y: (o.region?.y ?? 0.1) + (o.region?.h ?? 0) / 2,
@@ -3807,6 +3810,7 @@ export function RemixStudio({
                     backgroundStyle: backgroundStyle,
                     backgroundOpacity: backgroundOpacity,
                     sizeMode: textStyle.sizeMode ?? 'fixed' as const,
+                    wrapMode: textStyle.wrapMode ?? 'manual' as const,
                     animation: 'fade_in' as const,
                   })) ?? undefined;
               })(),

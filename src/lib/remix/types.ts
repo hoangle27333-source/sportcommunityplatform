@@ -198,6 +198,8 @@ export interface RemixOptions {
     outlineWidth?: number;
     bold?: boolean;
     italic?: boolean;
+    textAlign?: "left" | "center" | "right";
+    wrapMode?: "manual" | "auto";
   };
   /**
    * @deprecated Trước đây là text chèn trực tiếp. Nay chỉ dùng như hint/ngữ cảnh
@@ -264,7 +266,9 @@ export interface RemixOptions {
     outlineWidth?: number;
     bold?: boolean;
     italic?: boolean;
+    textAlign?: "left" | "center" | "right";
     sizeMode?: "auto_fit" | "fixed";
+    wrapMode?: "manual" | "auto";
     animation: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
   }>;
   /** Manual blur zones user defines in VideoEditor to fix missed/incorrect OCR text regions. */
@@ -349,6 +353,7 @@ export type VideoOp =
       sourceMaskFrames?: TextInpaintMaskFrame[];
       fitToRegion?: boolean;
       sizeMode?: "auto_fit" | "fixed";
+      wrapMode?: "manual" | "auto";
       coverRegion?: boolean;
       /** Source glyphs were removed before this render; do not apply blur again. */
       sourceTextRemoved?: boolean;
@@ -366,6 +371,7 @@ export type VideoOp =
       boxOpacity?: number;
       bold?: boolean;
       italic?: boolean;
+      textAlign?: "left" | "center" | "right";
       animation?: 'none' | 'fade_in' | 'fade_out' | 'slide_up' | 'slide_down' | 'scale_in';
     }
   /** Chỉnh màu: brightness/contrast/saturation nhẹ. */
@@ -479,6 +485,7 @@ export interface RemixEditDecisions {
     sourceText?: string;
     translatedText?: string;
     region?: { x: number; y: number; w: number; h: number };
+    textAlign?: "left" | "center" | "right";
     confidence?: number;
   }>;
   audio: {
