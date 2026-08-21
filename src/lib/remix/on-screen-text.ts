@@ -5,7 +5,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { extractJson } from "@/lib/ai/json";
-import type { NormalizedTextRegion, RemixOptions } from "./types";
+import type { NormalizedTextRegion, RemixOptions, TextInpaintMaskFrame } from "./types";
 import { detectOnScreenTextWithPaddleOcr, shouldUsePaddleOcr } from "./ocr-service";
 
 const _require = createRequire(import.meta.url);
@@ -36,6 +36,7 @@ export interface OnScreenTextTranslation {
   translatedText: string;
   region: { x: number; y: number; w: number; h: number };
   textRegions?: NormalizedTextRegion[];
+  sourceMaskFrames?: TextInpaintMaskFrame[];
   startSec: number;
   endSec: number;
   toneMood: string;
@@ -57,6 +58,7 @@ export interface RawOnScreenTextItem {
   textRegions?: unknown;
   lineRegions?: unknown;
   wordRegions?: unknown;
+  maskFrames?: unknown;
   frameIndex?: number;
   timestampSec?: number;
   startSec?: number;
@@ -443,6 +445,7 @@ function normalizeDetection(
   const region = normalizeRegion(raw.region);
   if (!region) return null;
   const textRegions = normalizeTextRegions(raw);
+  const sourceMaskFrames = normalizeMaskFrames(raw.maskFrames);
 
   const maxDuration = Math.max(0.2, durationSec);
   const timestamp = normalizeTimestamp(raw, allTimestamps, batchOffset, maxDuration);
@@ -468,6 +471,7 @@ function normalizeDetection(
     translatedText: normalizedTranslation,
     region,
     textRegions,
+    sourceMaskFrames,
     startSec: start,
     endSec: end,
     timestampSec: timestamp,
@@ -921,7 +925,7 @@ function shouldJoinTrack(track: OnScreenTextDetection[], detection: OnScreenText
 
 function maxTrackGapSec(items: Array<Pick<OnScreenTextDetection, "notes">>): number {
   const explicit = items
-    .map((item) => {
+    .map((item): number | null => {
       const note = item.notes.find((entry) => entry.startsWith("maxGapSec="));
       const value = Number(note?.split("=")[1]);
       return Number.isFinite(value) ? value : null;
@@ -958,12 +962,14 @@ function mergeTrack(track: OnScreenTextDetection[], durationSec: number): OnScre
   // Dùng unionRegion để đảm bảo blur bao trùm toàn bộ vùng text thực tế
   const region = unionRegion(sorted.map((item) => item.region));
   const textRegions = mergeTextRegions(sorted, region);
+  const sourceMaskFrames = mergeMaskFrames(sorted);
 
   return {
     detectedText,
     translatedText,
     region,
     textRegions,
+    sourceMaskFrames,
     startSec,
     endSec: Math.max(startSec + 0.3, endSec),
     toneMood: first.toneMood,
@@ -1020,6 +1026,10 @@ export function clampSameSlotTiming(
       const current = sorted[i];
       const next = sorted[j];
       if (next.startSec >= current.endSec) continue;
+      // OCR lines from the same frame can be close enough to look like one
+      // visual slot while still being distinct, simultaneous captions. Only
+      // clamp genuinely sequential replacements.
+      if (Math.abs(next.startSec - current.startSec) <= 0.12) continue;
       if (!sameVisualSlot(current.region, next.region)) continue;
       if (textSimilarity(current.detectedText, next.detectedText) >= 0.78) continue;
       const boundary = clamp(next.startSec - 0.05, current.startSec + 0.25, maxDuration);
@@ -1236,6 +1246,65 @@ function normalizeTextRegions(raw: RawOnScreenTextItem): NormalizedTextRegion[] 
     if (regions.length) return regions;
   }
   return undefined;
+}
+
+function normalizeMaskFrames(value: unknown): TextInpaintMaskFrame[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const frames = value
+    .map((item): TextInpaintMaskFrame | null => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const timestampSec = Number(record.timestampSec);
+      const regions = normalizeRegionArray(record.regions);
+      if (!Number.isFinite(timestampSec) || !regions.length) return null;
+      const polygons = normalizeMaskPolygons(record.polygons);
+      return {
+        timestampSec: Math.max(0, timestampSec),
+        regions,
+        ...(polygons ? { polygons } : {}),
+      };
+    })
+    .filter((item): item is TextInpaintMaskFrame => Boolean(item))
+    .sort((a, b) => a.timestampSec - b.timestampSec)
+    .slice(0, 512);
+  return frames.length ? frames : undefined;
+}
+
+function normalizeMaskPolygons(value: unknown): Array<Array<{ x: number; y: number }>> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const polygons = value
+    .map((polygon) => Array.isArray(polygon)
+      ? polygon
+          .map((point) => {
+            if (!point || typeof point !== "object") return null;
+            const record = point as Record<string, unknown>;
+            const x = Number(record.x);
+            const y = Number(record.y);
+            return Number.isFinite(x) && Number.isFinite(y)
+              ? { x: clamp(x, 0, 1), y: clamp(y, 0, 1) }
+              : null;
+          })
+          .filter((point): point is { x: number; y: number } => Boolean(point))
+      : [])
+    .filter((polygon) => polygon.length >= 3)
+    .slice(0, 48);
+  return polygons.length ? polygons : undefined;
+}
+
+function mergeMaskFrames(detections: OnScreenTextDetection[]): TextInpaintMaskFrame[] | undefined {
+  const frames = detections.flatMap((item) => item.sourceMaskFrames ?? []);
+  if (!frames.length) return undefined;
+  const merged = new Map<number, TextInpaintMaskFrame>();
+  for (const frame of frames) {
+    const key = Math.round(frame.timestampSec * 100) / 100;
+    const previous = merged.get(key);
+    merged.set(key, {
+      timestampSec: key,
+      regions: previous ? [...previous.regions, ...frame.regions] : [...frame.regions],
+      polygons: [...(previous?.polygons ?? []), ...(frame.polygons ?? [])],
+    });
+  }
+  return [...merged.values()].sort((a, b) => a.timestampSec - b.timestampSec).slice(0, 512);
 }
 
 function normalizeRegionArray(value: unknown): NormalizedTextRegion[] {

@@ -112,8 +112,28 @@ const optionsSchema = z
       text: z.string().max(1000),
       status: z.enum(["pending", "approved", "disabled"]).optional(),
       source: z.enum(["ocr_auto", "manual"]).optional(),
+      isEdited: z.boolean().optional(),
       ocrTrackId: z.string().max(120).optional(),
       sourceText: z.string().max(1000).optional(),
+      textRegions: z.array(z.object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        w: z.number().min(0.001).max(1),
+        h: z.number().min(0.001).max(1),
+      })).max(96).optional(),
+      sourceMaskFrames: z.array(z.object({
+        timestampSec: z.number().min(0),
+        regions: z.array(z.object({
+          x: z.number().min(0).max(1),
+          y: z.number().min(0).max(1),
+          w: z.number().min(0.001).max(1),
+          h: z.number().min(0.001).max(1),
+        })).min(1).max(96),
+        polygons: z.array(z.array(z.object({
+          x: z.number().min(0).max(1),
+          y: z.number().min(0).max(1),
+        })).min(3).max(128)).max(96).optional(),
+      })).max(512).optional(),
       position: z.object({
         x: z.number().min(0).max(1),
         y: z.number().min(0).max(1),
@@ -416,6 +436,72 @@ async function verifyPresetId(
     throw new Error("Preset đã chọn không tồn tại hoặc không thuộc tài khoản hiện tại.");
   }
   return data.id;
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { db } = await requireUser();
+
+    let body: { jobIds?: string[]; allInbox?: boolean; folderId?: string | null } = {};
+    const allInboxParam = req.nextUrl.searchParams.get("allInbox");
+    const folderIdParam = req.nextUrl.searchParams.get("folderId");
+
+    if (allInboxParam === "true") {
+      body = { allInbox: true };
+    } else if (folderIdParam) {
+      body = { folderId: folderIdParam };
+    } else {
+      try {
+        body = await req.json();
+      } catch {
+        // empty body
+      }
+    }
+
+    if (body.allInbox || body.folderId === "unfiled") {
+      const { error } = await db
+        .from("remix_jobs")
+        .delete()
+        .is("folder_id", null);
+
+      if (error) {
+        logger.error({ err: error }, "failed to clear inbox remix jobs");
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, cleared: "inbox" });
+    }
+
+    if (body.jobIds && body.jobIds.length > 0) {
+      const { error } = await db
+        .from("remix_jobs")
+        .delete()
+        .in("id", body.jobIds);
+
+      if (error) {
+        logger.error({ err: error, jobIds: body.jobIds }, "failed to batch delete remix jobs");
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, count: body.jobIds.length });
+    }
+
+    if (body.folderId) {
+      const { error } = await db
+        .from("remix_jobs")
+        .delete()
+        .eq("folder_id", body.folderId);
+
+      if (error) {
+        logger.error({ err: error, folderId: body.folderId }, "failed to delete folder remix jobs");
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, folderId: body.folderId });
+    }
+
+    return NextResponse.json({ error: "Không có tham số hợp lệ để xoá." }, { status: 400 });
+  } catch (e) {
+    logger.error({ err: e }, "unexpected remix batch delete error");
+    return handleError(e);
+  }
 }
 
 function handleError(e: unknown) {

@@ -53,9 +53,16 @@ interface TextOnScreenOverlay {
   end: number;
   text: string;
   source?: "ocr_auto" | "manual";
+  isEdited?: boolean;
   status?: "pending" | "approved" | "disabled";
   ocrTrackId?: string;
   sourceText?: string;
+  textRegions?: Array<{ x: number; y: number; w: number; h: number }>;
+  sourceMaskFrames?: Array<{
+    timestampSec: number;
+    regions: Array<{ x: number; y: number; w: number; h: number }>;
+    polygons?: Array<Array<{ x: number; y: number }>>;
+  }>;
   position: { x: number; y: number };
   box?: { x: number; y: number; w: number; h: number };
   eraseBox?: { x: number; y: number; w: number; h: number };
@@ -622,10 +629,12 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
     const savedScriptInputMode = scriptInputMode === "manual_script" || scriptWasEdited
       ? "manual_script"
       : scriptInputMode;
-    const hasRenderableTextOverlays = textOverlays.some((overlay) =>
-      overlay.text.trim() && overlay.status !== "pending" && overlay.status !== "disabled",
+    const hasManualTextOverlay = textOverlays.some((overlay) =>
+      overlay.text.trim() && overlay.status !== "disabled" && overlay.source === "manual",
     );
-    const shouldAutoTranslateOnScreenText = translateOnScreenText && !hasRenderableTextOverlays;
+    // Edited OCR still needs a fresh source-only OCR pass to rebuild accurate
+    // masks. The backend preserves the edited replacement for its matching track.
+    const shouldAutoTranslateOnScreenText = translateOnScreenText && !hasManualTextOverlay;
     const preflight = buildFacebookCopyrightPreflight({
       options: {
         ...initialOptions,
@@ -795,6 +804,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
         Object.keys(patch).length > 0;
       return normalizeOverlay({
         ...next,
+        isEdited: overlay.isEdited || (overlay.source === "ocr_auto" && patch.status === undefined),
         status: shouldPromoteToApproved ? "approved" : next.status,
       });
     }));
@@ -825,6 +835,7 @@ export function VideoEditor({ source, processedAudioSource, initialOptions = {},
           outlineColor: textOutlineColor,
           bold: textBold,
           italic: overlay.italic,
+          isEdited: overlay.isEdited || overlay.source === "ocr_auto",
           status: overlay.status === "disabled" ? "approved" : overlay.status,
         })
       : overlay));

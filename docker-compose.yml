@@ -123,10 +123,13 @@ services:
       WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
       COMFYUI_URL: http://comfyui:8188
       PLAYWRIGHT_HEADLESS: "true"
-      ON_SCREEN_TEXT_ENGINE: ${ON_SCREEN_TEXT_ENGINE:-gemini}
+      ON_SCREEN_TEXT_ENGINE: ${ON_SCREEN_TEXT_ENGINE:-paddleocr}
       PADDLEOCR_SERVICE_URL: http://ocr:8080
       PADDLEOCR_TIMEOUT_MS: ${PADDLEOCR_TIMEOUT_MS:-120000}
       PADDLEOCR_LANG: ${PADDLEOCR_LANG:-en}
+      TEXT_INPAINT_ENGINE: ${TEXT_INPAINT_ENGINE:-}
+      TEXT_INPAINT_SERVICE_URL: http://text-inpaint:8090
+      TEXT_INPAINT_TIMEOUT_MS: ${TEXT_INPAINT_TIMEOUT_MS:-900000}
       VOICE_PIPELINE_URL: http://voice-pipeline:8766
       VOICE_PIPELINE_TIMEOUT_MS: ${VOICE_PIPELINE_TIMEOUT_MS:-300000}
       VOICE_ALIGNMENT_PROVIDER: ${VOICE_ALIGNMENT_PROVIDER:-whisperx}
@@ -191,6 +194,37 @@ services:
       start_period: 60s
     mem_limit: 1500m
     cpus: 1.5
+
+  # Internal POC only. The image deliberately contains no model weights; mount
+  # a licensed research checkout and configure the engine command in .env.
+  text-inpaint:
+    profiles: ["text-inpaint-gpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile.inpaint
+    restart: unless-stopped
+    ports:
+      - "${TEXT_INPAINT_PORT:-8090}:8090"
+    environment:
+      TEXT_INPAINT_MASK_DILATE_PX: ${TEXT_INPAINT_MASK_DILATE_PX:-7}
+      TEXT_INPAINT_MASK_MAX_GAP_SEC: ${TEXT_INPAINT_MASK_MAX_GAP_SEC:-0.75}
+      TEXT_INPAINT_COMMAND_PROPAINTER: ${TEXT_INPAINT_COMMAND_PROPAINTER:-}
+      TEXT_INPAINT_COMMAND_E2FGVI_HQ: ${TEXT_INPAINT_COMMAND_E2FGVI_HQ:-}
+    volumes:
+      - ${TEXT_INPAINT_MODELS_DIR:-./.models/text-inpaint}:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   voice-pipeline:
     profiles: ["media-heavy"]

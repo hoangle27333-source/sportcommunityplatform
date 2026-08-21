@@ -607,6 +607,17 @@ export interface ApplyOpsInput {
   blurRegion?: { x: number; y: number; w: number; h: number };
   blurRegions?: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }>;
   postReframeBlurRegions?: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }>;
+  diagnostics?: ApplyOpsDiagnostics;
+}
+
+export interface ApplyOpsDiagnostics {
+  textOverlayCount: number;
+  renderedTextOverlayCount: number;
+  textBlurRegionCount: number;
+  postReframeBlurRegionCount: number;
+  legacyBlurRegionCount: number;
+  drawtextTextfileCount: number;
+  textBlurRenderer: "boxblur-overlay" | "none";
 }
 
 export function subtitlePlacementForBlurRegion(
@@ -731,6 +742,102 @@ function buildDelogoFilter(
   return `delogo=x=${bx}:y=${by}:w=${bw}:h=${bh}:show=0${timelineEnable(region.startSec, region.endSec)}`;
 }
 
+type RegionalBoxBlurStep = {
+  kind: "boxblur";
+  region: { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number };
+  frameWidth: number;
+  frameHeight: number;
+};
+
+type VideoFilterStep = string | RegionalBoxBlurStep;
+
+function isRegionalBoxBlurStep(step: VideoFilterStep): step is RegionalBoxBlurStep {
+  return typeof step !== "string" && step.kind === "boxblur";
+}
+
+function toPixelRegion(
+  region: { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number },
+  frameWidth: number,
+  frameHeight: number,
+): { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number } {
+  let x = Math.max(0, Math.floor(region.x * frameWidth));
+  let y = Math.max(0, Math.floor(region.y * frameHeight));
+  x = Math.min(x, Math.max(0, frameWidth - 2));
+  y = Math.min(y, Math.max(0, frameHeight - 2));
+
+  let w = Math.max(2, Math.ceil(region.w * frameWidth));
+  let h = Math.max(2, Math.ceil(region.h * frameHeight));
+  w = Math.min(w, frameWidth - x);
+  h = Math.min(h, frameHeight - y);
+  if (w % 2 !== 0 && w > 2) w -= 1;
+  if (h % 2 !== 0 && h > 2) h -= 1;
+  return { x, y, w, h, startSec: region.startSec, endSec: region.endSec };
+}
+
+export function buildBoxBlurOverlayFilter(input: {
+  region: { x: number; y: number; w: number; h: number; startSec?: number; endSec?: number };
+  frameWidth: number;
+  frameHeight: number;
+  inputLabel: string;
+  outputLabel: string;
+  baseLabel: string;
+  cropInputLabel: string;
+  blurLabel: string;
+}): string {
+  const region = toPixelRegion(input.region, input.frameWidth, input.frameHeight);
+  const radius = clamp(
+    Math.round(Math.min(region.w, region.h) * 0.28),
+    10,
+    42,
+  );
+  const chromaRadius = Math.min(radius, 15);
+  const enable = timelineEnable(region.startSec, region.endSec);
+  return `[${input.inputLabel}]split=2[${input.baseLabel}][${input.cropInputLabel}];` +
+    `[${input.cropInputLabel}]crop=${region.w}:${region.h}:${region.x}:${region.y},boxblur=${radius}:2:${chromaRadius}:2[${input.blurLabel}];` +
+    `[${input.baseLabel}][${input.blurLabel}]overlay=${region.x}:${region.y}:format=auto${enable}[${input.outputLabel}]`;
+}
+
+function buildVideoFilterComplex(steps: VideoFilterStep[]): { graph: string; outputLabel: string } {
+  if (!steps.length) return { graph: "[0:v]null[vbase]", outputLabel: "vbase" };
+
+  const segments: string[] = [];
+  let currentLabel = "0:v";
+  let labelIndex = 0;
+  let linear: string[] = [];
+
+  const flushLinear = () => {
+    if (!linear.length) return;
+    const outputLabel = `vlin${labelIndex++}`;
+    segments.push(`[${currentLabel}]${linear.join(",")}[${outputLabel}]`);
+    currentLabel = outputLabel;
+    linear = [];
+  };
+
+  for (const step of steps) {
+    if (!isRegionalBoxBlurStep(step)) {
+      linear.push(step);
+      continue;
+    }
+    flushLinear();
+    const outputLabel = `vblur${labelIndex}`;
+    segments.push(buildBoxBlurOverlayFilter({
+      region: step.region,
+      frameWidth: step.frameWidth,
+      frameHeight: step.frameHeight,
+      inputLabel: currentLabel,
+      outputLabel,
+      baseLabel: `vblurbase${labelIndex}`,
+      cropInputLabel: `vblurcropin${labelIndex}`,
+      blurLabel: `vblurcrop${labelIndex}`,
+    }));
+    currentLabel = outputLabel;
+    labelIndex += 1;
+  }
+
+  flushLinear();
+  return { graph: segments.join(";"), outputLabel: currentLabel };
+}
+
 export function buildDrawtextTextfileParam(textPath: string): string {
   return `textfile='${escapeFilterPath(textPath)}'`;
 }
@@ -792,7 +899,16 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
   }
 
   // ----- Chuỗi filter video -----
-  const chain: string[] = [];
+  const chain: VideoFilterStep[] = [];
+  if (input.diagnostics) {
+    input.diagnostics.textOverlayCount = textOverlays.length;
+    input.diagnostics.renderedTextOverlayCount = 0;
+    input.diagnostics.textBlurRegionCount = 0;
+    input.diagnostics.postReframeBlurRegionCount = input.postReframeBlurRegions?.length ?? 0;
+    input.diagnostics.legacyBlurRegionCount = 0;
+    input.diagnostics.drawtextTextfileCount = 0;
+    input.diagnostics.textBlurRenderer = "none";
+  }
 
   if (reframe) {
     const { width: w, height: h, mode } = reframe;
@@ -815,12 +931,18 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     ...(input.blurRegions ?? []).map((region) =>
       transformRegionForReframe(region, info.width, info.height, reframe),
     ),
-    ...(input.postReframeBlurRegions ?? []).map((region) => ({ ...clampRegion(region), startSec: region.startSec, endSec: region.endSec })),
   ];
   for (const region of blurRegions) {
     const fw = reframe ? reframe.width : info.width;
     const fh = reframe ? reframe.height : info.height;
+    if (input.diagnostics) input.diagnostics.legacyBlurRegionCount += 1;
     chain.push(buildDelogoFilter(region, fw, fh));
+  }
+  for (const region of input.postReframeBlurRegions ?? []) {
+    const fw = reframe ? reframe.width : info.width;
+    const fh = reframe ? reframe.height : info.height;
+    chain.push({ kind: "boxblur", region: { ...clampRegion(region), startSec: region.startSec, endSec: region.endSec }, frameWidth: fw, frameHeight: fh });
+    if (input.diagnostics) input.diagnostics.textBlurRenderer = "boxblur-overlay";
   }
 
   if (color) {
@@ -933,6 +1055,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       : { text: normalizedOverlayText, fontSize: baseFontSize, lines: normalizedOverlayText.split("\n").filter(Boolean) };
     const textFilePath = path.join(workDir, `overlay-text-${chain.length}.txt`);
     await writeFile(textFilePath, fitted.text, "utf8");
+    if (input.diagnostics) input.diagnostics.drawtextTextfileCount += 1;
     const textSource = buildDrawtextTextfileParam(textFilePath);
     const color = ffmpegColor(textOverlay.color, "white");
     const fontOpacity = hexOpacity(textOverlay.color);
@@ -957,7 +1080,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
           maxFontSize: autoMaxFontSize,
         })
       : { text: blurText, fontSize: baseFontSize, lines: blurText.split("\n").filter(Boolean) };
-    const tightBlurRegions = blurTargetRegion && textOverlay.backgroundStyle === "blur"
+    const tightBlurRegions = !textOverlay.sourceTextRemoved && blurTargetRegion && textOverlay.backgroundStyle === "blur"
       ? buildTightTextBlurRegions({
           region: blurTargetRegion,
           textRegions: textOverlay.textRegions
@@ -1008,7 +1131,11 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       const coverH = Math.min(fh - coverY, Math.max(1, Math.round(eraseRegion.h * fh)));
       if (textOverlay.backgroundStyle === "blur") {
         for (const blurRegion of tightBlurRegions) {
-          chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh));
+          chain.push({ kind: "boxblur", region: { ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, frameWidth: fw, frameHeight: fh });
+          if (input.diagnostics) {
+            input.diagnostics.textBlurRegionCount += 1;
+            input.diagnostics.textBlurRenderer = "boxblur-overlay";
+          }
         }
       } else {
         chain.push(
@@ -1021,29 +1148,43 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
       : `box=1:boxcolor=${bgColor}@${opacity}:boxborderw=${region ? fitBoxBorder(region, fw, fh) : 14}`;
     if (!textOverlay.coverRegion && tightBlurRegions.length) {
       for (const blurRegion of tightBlurRegions) {
-        chain.push(buildDelogoFilter({ ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, fw, fh));
+        chain.push({ kind: "boxblur", region: { ...blurRegion, startSec: textOverlay.startSec, endSec: textOverlay.endSec }, frameWidth: fw, frameHeight: fh });
+        if (input.diagnostics) {
+          input.diagnostics.textBlurRegionCount += 1;
+          input.diagnostics.textBlurRenderer = "boxblur-overlay";
+        }
       }
     }
     chain.push(
       `drawtext=${textSource}${fontOpt}:fontcolor=${color}${effectiveAlpha}:fontsize=${finalFontSize}:x=${xExpr}:y=${yExpr}:${boxParams}:line_spacing=${Math.max(0, Math.round(baseFinalFontSize * 0.14))}:borderw=${outlineWidth}:bordercolor=${outlineColor}${outlineOpacity >= 0.999 ? "" : `@${outlineOpacity.toFixed(3)}`}${enable}`
     );
+    if (input.diagnostics) input.diagnostics.renderedTextOverlayCount += 1;
   }
 
   // Logo cần overlay (2 input) nên xử lý qua filter_complex.
-  const useComplex = logoIdx >= 0;
+  const useComplex = logoIdx >= 0 || chain.some(isRegionalBoxBlurStep);
   let filterComplex = "";
+  let complexMapLabel = "[vout]";
 
   if (useComplex) {
-    const pre = chain.length ? `[0:v]${chain.join(",")}[base]` : `[0:v]null[base]`;
-    const logoScale = clamp(logo!.scale ?? 0.15, 0.03, 0.5);
-    const opacity = clamp(logo!.opacity ?? 1, 0, 1);
-    const xy = logo!.position === "custom"
-      ? `${clamp(logo!.x ?? 0.85, 0, 1)}*(W-w):${clamp(logo!.y ?? 0.85, 0, 1)}*(H-h)`
-      : LOGO_OVERLAY_XY[logo!.position];
-    filterComplex =
-      `${pre};` +
-      `[${logoIdx}:v]scale=iw*${logoScale}:-1,format=rgba,colorchannelmixer=aa=${opacity}[logo];` +
-      `[base][logo]overlay=${xy}[vout]`;
+    const built = buildVideoFilterComplex(chain);
+    const baseLabel = built.outputLabel;
+    const pre = built.graph;
+    if (logoIdx >= 0 && logo) {
+      const logoScale = clamp(logo.scale ?? 0.15, 0.03, 0.5);
+      const opacity = clamp(logo.opacity ?? 1, 0, 1);
+      const xy = logo.position === "custom"
+        ? `${clamp(logo.x ?? 0.85, 0, 1)}*(W-w):${clamp(logo.y ?? 0.85, 0, 1)}*(H-h)`
+        : LOGO_OVERLAY_XY[logo.position];
+      filterComplex =
+        `${pre};` +
+        `[${logoIdx}:v]scale=iw*${logoScale}:-1,format=rgba,colorchannelmixer=aa=${opacity}[logo];` +
+        `[${baseLabel}][logo]overlay=${xy}[vout]`;
+      complexMapLabel = "[vout]";
+    } else {
+      filterComplex = pre;
+      complexMapLabel = `[${baseLabel}]`;
+    }
   }
 
   // ----- Video + Audio mapping (một pass duy nhất) -----
@@ -1051,7 +1192,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
 
   if (useComplex) {
     // Có logo → filter_complex cho video; audio riêng
-    args.push("-filter_complex", filterComplex, "-map", "[vout]");
+    args.push("-filter_complex", filterComplex, "-map", complexMapLabel);
     if (input.isImage || mute) {
       args.push("-an");
     } else if (hasReplaceAudio) {
@@ -1061,7 +1202,7 @@ export async function applyVideoOps(input: ApplyOpsInput): Promise<string> {
     }
   } else if (chain.length) {
     // Có -vf nhưng không có logo
-    args.push("-vf", chain.join(","), "-map", "0:v");
+    args.push("-vf", (chain as string[]).join(","), "-map", "0:v");
     if (input.isImage || mute) {
       args.push("-an");
     } else if (hasReplaceAudio) {

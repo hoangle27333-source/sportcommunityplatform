@@ -13,6 +13,7 @@
     "docker:media": "docker compose --profile core --profile media-heavy up",
     "remix:services": "docker compose up voice-pipeline ocr",
     "remix:services:detached": "docker compose up -d voice-pipeline ocr",
+    "ocr:cpu": ".venv-ocr/bin/python -m uvicorn ocr_service.app:app --host 127.0.0.1 --port 8080",
     "worker": "tsx watch --env-file=.env.local src/worker/index.ts",
     "worker:core": "WORKER_GROUP=core tsx --env-file=.env.local src/worker/index.ts",
     "worker:remix": "WORKER_GROUP=remix tsx --env-file=.env.local src/worker/index.ts",

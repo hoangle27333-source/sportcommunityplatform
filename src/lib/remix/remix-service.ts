@@ -29,6 +29,7 @@ import {
   subtitlePlacementForBlurRegion,
   transformRegionForReframe,
   writeTemp,
+  type ApplyOpsDiagnostics,
   type SubtitleCue,
   type VideoInfo,
 } from "./video-ops";
@@ -44,6 +45,12 @@ import {
   translatePlannedOnScreenTextTracks,
   type OnScreenTextTranslation,
 } from "./on-screen-text";
+import { inpaintVideoTextWithPaddleOcr } from "./ocr-service";
+import {
+  inpaintVideoTextWithGpu,
+  requestedGpuTextInpaintEngine,
+  type TextInpaintTrack,
+} from "./text-inpaint-service";
 import { buildFacebookCopyrightPreflight } from "./copyright-preflight";
 import { getTtsProvider, synthesizeTextToFile, synthesizeToFile } from "./tts";
 import { analyzeVoiceTimeline, translateAlignedCues, detectSpeechSegments, realignCuesToSpeech, groupIntoCompleteSentences } from "./voice-pipeline";
@@ -181,13 +188,13 @@ export async function runRemixJob(
     }
     if (
       effectiveOptions.translateOnScreenText === true &&
-      hasRenderableTextOnScreenOverlays(effectiveOptions.textOnScreenOverlays)
+      hasManualTextOnScreenOverlays(effectiveOptions.textOnScreenOverlays)
     ) {
       effectiveOptions.translateOnScreenText = false;
       effectiveOptions.textOverlay = "";
       effectiveOptions.onScreenTextStyle = undefined;
       warnings.push(
-        "Đã dùng text overlay chỉnh tay từ Video Editor; tắt auto-detect/dịch text on-screen cho lượt generate này để tránh chèn chữ trùng.",
+        "Đã dùng text overlay manual từ Video Editor; tắt auto-detect/dịch text on-screen cho lượt generate này để tránh chèn chữ trùng.",
       );
     }
 
@@ -406,7 +413,11 @@ export async function runRemixJob(
             warnings.push("OCR preflight chưa xác định được text slot đủ tin cậy trước plan.");
           }
         } catch (ocrErr) {
-          warnings.push(`OCR preflight thất bại: ${(ocrErr as Error).message} — render sẽ fallback detect sau.`);
+          throw new RemixError(
+            503,
+            `OCR text on-screen thất bại: ${(ocrErr as Error).message}. ` +
+              "Job đã dừng để tránh xuất video còn nguyên chữ nguồn nhưng thiếu bản dịch.",
+          );
         }
       }
 
@@ -589,6 +600,7 @@ export async function runRemixJob(
           createdBy: job.created_by ?? undefined,
           asrTranslatedSrt,
           asrVoiceCues: voiceCues,
+          preflightOnScreenTextTracks: onScreenTextTracks,
           // Chỉ true khi đã có transcript thật từ ASR (voiceCues hoặc Gemini SRT fallback thành công).
           // Khi false, TTS sẽ bị block để tránh đọc nội dung AI tự bịa.
           hasRealAsrScript: usesManualScript || voiceCues.length > 0 || Boolean(asrTranslatedSrt),
@@ -1174,6 +1186,9 @@ interface ProduceVideoInput {
   createdBy?: string;
   asrTranslatedSrt?: string;
   asrVoiceCues?: AlignedVoiceCue[];
+  /** OCR tracks must bypass the planner because edit decisions intentionally
+   * keep only lightweight layout data and would drop polygon mask frames. */
+  preflightOnScreenTextTracks?: OnScreenTextTranslation[];
   /** true khi ASR thực tế đã chạy thành công và scriptVi có nguồn gốc từ transcript thật.
    * false = AI tự bọa nội dung — không được dùng cho TTS. */
   hasRealAsrScript: boolean;
@@ -1181,7 +1196,19 @@ interface ProduceVideoInput {
 
 /** Chạy pipeline video: TTS (nếu có) → logo → ffmpeg → upload. */
 async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
-  const { db, workDir, sourcePath, plan, options, videoInfo, createdBy, asrTranslatedSrt, asrVoiceCues, hasRealAsrScript } = input;
+  const {
+    db,
+    workDir,
+    sourcePath,
+    plan,
+    options,
+    videoInfo,
+    createdBy,
+    asrTranslatedSrt,
+    asrVoiceCues,
+    preflightOnScreenTextTracks,
+    hasRealAsrScript,
+  } = input;
   const ops: VideoOp[] = [...plan.videoOps];
 
   // --- Lồng tiếng: xử lý theo dubMode (backward-compat với dubVi cũ) ---
@@ -1447,17 +1474,13 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
   }
 
   const onScreenTextOccupiedRegions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
-  const hasUserTextOverlayEdits = hasRenderableTextOnScreenOverlays(options.textOnScreenOverlays);
-  if (options.translateOnScreenText === true && hasUserTextOverlayEdits) {
-    plan.warnings.push(
-      "Đã dùng text overlay chỉnh tay từ Video Editor; bỏ qua auto-detect/dịch text on-screen để tránh chèn chữ trùng.",
-    );
-  }
-  if (options.translateOnScreenText === true && !hasUserTextOverlayEdits) {
-    const plannedTextTracks = plannedOnScreenTextTracksFromPlan(plan);
-    const translations = plannedTextTracks.length
+  if (options.translateOnScreenText === true) {
+    const sourceTextTracks = preflightOnScreenTextTracks?.length
+      ? preflightOnScreenTextTracks
+      : plannedOnScreenTextTracksFromPlan(plan);
+    const translations = sourceTextTracks.length
       ? await translatePlannedOnScreenTextTracks({
-          tracks: plannedTextTracks,
+          tracks: sourceTextTracks,
           durationSec: videoInfo?.durationSec ?? 30,
           options,
           prompt: plan.summary,
@@ -1494,7 +1517,9 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
           op: "overlayText",
           text: translation.translatedText,
           sourceText: translation.detectedText,
+          ocrTrackId: buildOcrTrackId(translation),
           textRegions: translation.textRegions?.length ? translation.textRegions : undefined,
+          sourceMaskFrames: translation.sourceMaskFrames,
           startSec,
           endSec,
           region: replacementRegions.overlay,
@@ -1537,9 +1562,11 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
             end: translation.endSec,
             text: translation.translatedText,
             source: "ocr_auto" as const,
+            isEdited: false,
             ocrTrackId: buildOcrTrackId(translation),
             sourceText: translation.detectedText,
             textRegions: translation.textRegions?.length ? translation.textRegions : undefined,
+            sourceMaskFrames: translation.sourceMaskFrames,
             position: {
               x: translation.region?.x ?? 0.5,
               y: translation.region?.y ?? 0.1,
@@ -1628,13 +1655,123 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
       endSec: Math.max((region.startSec ?? 0) + 0.1, region.endSec ?? (videoInfo?.durationSec ?? 30)),
     }));
 
-  let outPath = await applyVideoOps({ 
-    inputPath: sourcePath, 
+  // Never derive source removal geometry from a replacement box. Legacy OCR
+  // entries are repaired by a fresh PaddleOCR pass above; if that pass did not
+  // produce source polygons, fail closed instead of rendering a broad cover.
+  const missingMaskTrackKeys = new Set<string>();
+  for (const op of ops) {
+    if (op.op === "overlayText" && op.coverRegion === true && !op.sourceMaskFrames?.length) {
+      missingMaskTrackKeys.add(sourceTrackKey(op));
+    }
+  }
+  if (missingMaskTrackKeys.size) {
+    for (let index = ops.length - 1; index >= 0; index -= 1) {
+      const op = ops[index];
+      if (op.op === "overlayText" && op.coverRegion === true && missingMaskTrackKeys.has(sourceTrackKey(op))) {
+        ops.splice(index, 1);
+      }
+    }
+    plan.warnings.push(`needs_review: bỏ ${missingMaskTrackKeys.size} OCR overlay không có source polygon/mask frame.`);
+  }
+
+  let renderInputPath = sourcePath;
+  const sourceTrimStartSec = (ops.find((op) => op.op === "trim") as Extract<VideoOp, { op: "trim" }> | undefined)?.start ?? 0;
+  const inpaintRegions = buildTextInpaintRegions(ops, videoInfo?.durationSec ?? 30)
+    .map((region) => ({
+      ...region,
+      startSec: region.startSec + sourceTrimStartSec,
+      endSec: region.endSec + sourceTrimStartSec,
+    }));
+  const gpuInpaintTracks = buildTextInpaintTracks(ops, videoInfo?.durationSec ?? 30)
+    .map((track) => ({
+      ...track,
+      startSec: track.startSec + sourceTrimStartSec,
+      endSec: track.endSec + sourceTrimStartSec,
+      frames: track.frames.map((frame) => ({
+        ...frame,
+        timestampSec: frame.timestampSec + sourceTrimStartSec,
+      })),
+    }));
+  if (gpuInpaintTracks.length || inpaintRegions.length) {
+    const inpaintedPath = path.join(workDir, "source-text-removed.mp4");
+    let sourceTextRemoved = false;
+    const gpuEngine = requestedGpuTextInpaintEngine();
+    if (gpuEngine && gpuInpaintTracks.length) {
+      try {
+        const diagnostics = await inpaintVideoTextWithGpu({
+          videoPath: sourcePath,
+          outputPath: inpaintedPath,
+          tracks: gpuInpaintTracks,
+          engine: gpuEngine,
+        });
+        renderInputPath = inpaintedPath;
+        sourceTextRemoved = true;
+        plan.warnings.push(
+          `GPU text inpaint (${diagnostics.engine}): trackSamples=${diagnostics.sourceMaskFrameCount}; ` +
+          `maskFrames=${diagnostics.renderedMaskFrameCount}; coverage=${(diagnostics.coverageRatio * 100).toFixed(2)}%; durationMs=${diagnostics.durationMs}.`,
+        );
+      } catch (err) {
+        plan.warnings.push(`GPU text inpaint (${gpuEngine}) không khả dụng, chuyển sang OpenCV fallback: ${(err as Error).message}`);
+      }
+    }
+    try {
+      if (!sourceTextRemoved) {
+        const diagnostics = await inpaintVideoTextWithPaddleOcr({
+          videoPath: sourcePath,
+          outputPath: inpaintedPath,
+          tracks: gpuInpaintTracks,
+          regions: inpaintRegions,
+        });
+        renderInputPath = inpaintedPath;
+        sourceTextRemoved = true;
+        plan.warnings.push(
+          `CPU text removal applied: tracks=${diagnostics.trackCount}; polygons=${diagnostics.polygonCount}; ` +
+          `maskFrames=${diagnostics.renderedMaskFrameCount}; coverage=${(diagnostics.maskCoverageRatio * 100).toFixed(2)}%; ` +
+          `Telea=${diagnostics.teleaFrameCount}; NS=${diagnostics.navierStokesFrameCount}; debugFrames=${diagnostics.debugFrameCount}.`,
+        );
+      }
+      const removalTargets = buildTextBlurQaTargets({ ops, videoInfo });
+      const leakingTrackKeys = await detectSourceTextLeakTrackKeys({
+        renderedPath: inpaintedPath,
+        durationSec: videoInfo?.durationSec ?? 30,
+        fps: videoInfo?.fps,
+        options,
+        targets: removalTargets,
+        plan,
+      });
+      if (leakingTrackKeys === null) {
+        plan.warnings.push("needs_review: không xác minh được source-text removal; không render text thay thế OCR.");
+      } else if (leakingTrackKeys.size) {
+        plan.warnings.push(`needs_review: OCR hậu kiểm vẫn thấy ${leakingTrackKeys.size} source text track; không render replacement của các track này.`);
+      }
+      for (let index = ops.length - 1; index >= 0; index -= 1) {
+        const op = ops[index];
+        if (op.op !== "overlayText" || op.coverRegion !== true) continue;
+        const trackKey = sourceTrackKey(op);
+        if (leakingTrackKeys === null || leakingTrackKeys.has(trackKey)) {
+          ops.splice(index, 1);
+          continue;
+        }
+        op.sourceTextRemoved = true;
+      }
+      if (!sourceTextRemoved && !gpuInpaintTracks.length) {
+        plan.warnings.push(`CPU text removal dùng fallback rectangle cho ${inpaintRegions.length} vùng OCR cũ không có polygon.`);
+      }
+    } catch (err) {
+      plan.warnings.push(`CPU text removal thất bại; source text may remain / needs_review: ${(err as Error).message}`);
+    }
+  }
+
+  const renderDiagnostics: ApplyOpsDiagnostics = createApplyOpsDiagnostics();
+  let outPath = await applyVideoOps({
+    inputPath: renderInputPath,
     ops, 
     workDir,
     blurRegion: applyBlurRegion,
     blurRegions: [...watermarkCoverRegions, ...manualBlurRegions],
+    diagnostics: renderDiagnostics,
   });
+  appendRenderDiagnosticsWarnings(plan, options, renderDiagnostics);
 
   const renderDurationSec = (ops.find((op) => op.op === "trim") as Extract<VideoOp, { op: "trim" }> | undefined)?.duration
     ?? videoInfo?.durationSec
@@ -1644,27 +1781,43 @@ async function produceVideo(input: ProduceVideoInput): Promise<StoredAsset> {
     videoInfo,
   });
   if (textBlurQaTargets.length) {
-    const retryRegions = await detectResidualTextBlurRegions({
-      renderedPath: outPath,
-      durationSec: renderDurationSec,
-      fps: videoInfo?.fps,
-      options,
-      targets: textBlurQaTargets,
-      plan,
-    });
-    if (retryRegions.length) {
+    const ocrEngine = (process.env.ON_SCREEN_TEXT_ENGINE ?? "gemini").toLowerCase();
+    if (ocrEngine !== "paddleocr") {
       plan.warnings.push(
-        `Post-render OCR phát hiện ${retryRegions.length} vùng text gốc còn lộ; đã render lại với vùng blur bổ sung.`,
+        `Post-render OCR blur QA bị bỏ qua vì ON_SCREEN_TEXT_ENGINE=${ocrEngine}; cần paddleocr để phát hiện text gốc còn lộ sau render.`,
       );
-      outPath = await applyVideoOps({
-        inputPath: sourcePath,
-        ops,
-        workDir,
-        blurRegion: applyBlurRegion,
-        blurRegions: [...watermarkCoverRegions, ...manualBlurRegions],
-        postReframeBlurRegions: retryRegions,
+    } else {
+      plan.warnings.push(`Post-render OCR QA: kiểm tra ${textBlurQaTargets.length} vùng text gốc sau render.`);
+      const retryRegions = await detectResidualTextBlurRegions({
+        renderedPath: outPath,
+        durationSec: renderDurationSec,
+        fps: videoInfo?.fps,
+        options,
+        targets: textBlurQaTargets,
+        plan,
       });
+      if (retryRegions.length) {
+        plan.warnings.push(
+          `Post-render OCR phát hiện ${retryRegions.length} vùng text gốc còn lộ trên fallback legacy; đã render lại với vùng che bổ sung.`,
+        );
+        const retryDiagnostics: ApplyOpsDiagnostics = createApplyOpsDiagnostics();
+        outPath = await applyVideoOps({
+          inputPath: renderInputPath,
+          ops,
+          workDir,
+          blurRegion: applyBlurRegion,
+          blurRegions: [...watermarkCoverRegions, ...manualBlurRegions],
+          postReframeBlurRegions: retryRegions,
+          diagnostics: retryDiagnostics,
+        });
+        appendRenderDiagnosticsWarnings(plan, options, retryDiagnostics, "retry");
+      } else {
+        plan.warnings.push("Post-render OCR QA: không phát hiện text gốc còn lộ trong các target có thể retry blur.");
+      }
     }
+  } else if ((ops.filter((op) => op.op === "overlayText") as Array<Extract<VideoOp, { op: "overlayText" }>>)
+    .some((op) => op.coverRegion === true)) {
+    plan.warnings.push("Post-render OCR QA không chạy vì không có target OCR hợp lệ (thiếu sourceText/region).");
   }
   
   // --- Intro/Outro: concat nếu preset đã cấu hình ---
@@ -2046,26 +2199,39 @@ function appendCustomTextOverlayOps(input: {
   const regions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
   for (const overlay of overlays) {
     if (!overlay.text?.trim()) continue;
-    if (overlay.status === "disabled" || overlay.status === "pending") continue;
+    if (overlay.status === "disabled") continue;
+    const source = inferOverlaySource(overlay);
+    // A legacy OCR overlay without source masks must be refreshed from the
+    // original video. Rendering it from its replacement box reintroduces the
+    // broad, inaccurate covers we are trying to remove.
+    if (source === "ocr_auto" && !overlay.isEdited && !overlay.sourceMaskFrames?.length) continue;
     const region = normalizeTextOverlayRegion(overlay);
     const eraseRegion = normalizeTextOverlayEraseRegion(overlay, region);
     const startSec = Math.max(0, overlay.start ?? 0);
     const endSec = Math.max(startSec + 0.1, overlay.end ?? input.durationSec);
+    if (
+      source === "ocr_auto" &&
+      input.ops.some((op) => isSameAppliedOcrOverlay(op, overlay, region, startSec, endSec))
+    ) {
+      continue;
+    }
     input.ops.push({
       op: "overlayText",
       text: overlay.text.trim(),
       sourceText: overlay.sourceText?.trim() || undefined,
+      ocrTrackId: overlay.ocrTrackId,
       textRegions: normalizeTextOverlayRegions(overlay.textRegions),
+      sourceMaskFrames: normalizeTextOverlayMaskFrames(overlay.sourceMaskFrames),
       startSec,
       endSec,
       region,
       eraseRegion,
       fitToRegion: true,
       sizeMode: overlay.sizeMode ?? "fixed",
-      coverRegion: inferOverlaySource(overlay) === "ocr_auto",
+      coverRegion: source === "ocr_auto",
       minFontSize: 1,
       maxFontSize: overlay.fontSize,
-      fontSizeBoostPx: inferOverlaySource(overlay) === "ocr_auto" && (overlay.sizeMode ?? "fixed") === "auto_fit" ? 3 : 0,
+      fontSizeBoostPx: source === "ocr_auto" && (overlay.sizeMode ?? "fixed") === "auto_fit" ? 3 : 0,
       font: overlay.fontFamily,
       fontSize: overlay.fontSize,
       color: overlay.fontColor,
@@ -2079,9 +2245,127 @@ function appendCustomTextOverlayOps(input: {
       italic: overlay.italic ?? false,
       animation: overlay.animation,
     });
-    regions.push({ ...(inferOverlaySource(overlay) === "ocr_auto" ? eraseRegion : region), startSec, endSec });
+    regions.push({ ...(source === "ocr_auto" ? eraseRegion : region), startSec, endSec });
   }
   return regions;
+}
+
+function isSameAppliedOcrOverlay(
+  op: VideoOp,
+  overlay: NonNullable<RemixOptions["textOnScreenOverlays"]>[number],
+  region: { x: number; y: number; w: number; h: number },
+  startSec: number,
+  endSec: number,
+): boolean {
+  if (op.op !== "overlayText" || op.coverRegion !== true) return false;
+  if (overlay.ocrTrackId && op.ocrTrackId) return overlay.ocrTrackId === op.ocrTrackId;
+  const opStart = Math.max(0, op.startSec ?? 0);
+  const opEnd = Math.max(opStart + 0.1, op.endSec ?? endSec);
+  const sameTime = Math.abs(opStart - startSec) < 0.12 && Math.abs(opEnd - endSec) < 0.12;
+  if (!sameTime) return false;
+  const sameText = textLikelySame(op.sourceText ?? op.text, overlay.sourceText ?? overlay.text);
+  const opRegion = op.region ?? op.eraseRegion;
+  return sameText && Boolean(opRegion && regionIouForRemix(opRegion, region) >= 0.45);
+}
+
+export function buildTextInpaintRegions(
+  ops: VideoOp[],
+  fallbackEndSec: number,
+): Array<{ x: number; y: number; w: number; h: number; startSec: number; endSec: number }> {
+  const regions: Array<{ x: number; y: number; w: number; h: number; startSec: number; endSec: number }> = [];
+  for (const op of ops) {
+    if (op.op !== "overlayText" || op.coverRegion !== true) continue;
+    // Exact per-sample masks are rendered by the CPU/GPU track path. Keep this
+    // rectangle path only for overlays produced before maskFrames existed.
+    if (op.sourceMaskFrames?.length) continue;
+    const startSec = Math.max(0, op.startSec ?? 0);
+    const endSec = Math.max(startSec + 0.1, op.endSec ?? fallbackEndSec);
+    const sourceRegions = op.textRegions?.length
+      ? op.textRegions
+      : op.eraseRegion
+        ? [op.eraseRegion]
+        : op.region
+          ? [op.region]
+          : [];
+    for (const region of sourceRegions) {
+      // OCR boxes exclude outline/shadow. Expand vertically more than horizontally
+      // so the original glyph is removed without reverting to a full caption block.
+      const padX = Math.max(0.004, Math.min(0.022, region.h * 0.24));
+      const padY = Math.max(0.006, Math.min(0.035, region.h * 0.44));
+      const x = clampNumber(region.x - padX, 0, 0.99, 0);
+      const y = clampNumber(region.y - padY, 0, 0.99, 0);
+      regions.push({
+        x,
+        y,
+        w: clampNumber(region.w + padX * 2, 0.002, 1 - x, 0.01),
+        h: clampNumber(region.h + padY * 2, 0.002, 1 - y, 0.01),
+        startSec,
+        endSec,
+      });
+    }
+  }
+  return dedupeInpaintRegions(regions).slice(0, 96);
+}
+
+export function buildTextInpaintTracks(ops: VideoOp[], fallbackEndSec: number): TextInpaintTrack[] {
+  const tracks: TextInpaintTrack[] = [];
+  for (const [index, op] of ops.entries()) {
+    if (op.op !== "overlayText" || op.coverRegion !== true) continue;
+    const startSec = Math.max(0, op.startSec ?? 0);
+    const endSec = Math.max(startSec + 0.1, op.endSec ?? fallbackEndSec);
+    const frames = op.sourceMaskFrames?.length
+      ? op.sourceMaskFrames
+      : (() => {
+          const regions = op.textRegions?.length ? op.textRegions : op.eraseRegion ? [op.eraseRegion] : op.region ? [op.region] : [];
+          return regions.length ? [{ timestampSec: (startSec + endSec) / 2, regions }] : [];
+        })();
+    if (!frames.length) continue;
+    const id = op.ocrTrackId || `${normalizeOverlayTextForFilter(op.sourceText ?? op.text).slice(0, 48) || "ocr"}:${startSec.toFixed(2)}:${endSec.toFixed(2)}:${index}`;
+    tracks.push({ id, startSec, endSec, frames });
+  }
+  return tracks.filter((track, index) => !tracks.slice(0, index).some((other) =>
+    Math.abs(other.startSec - track.startSec) < 0.05 &&
+    Math.abs(other.endSec - track.endSec) < 0.05 &&
+    other.id.split(":")[0] === track.id.split(":")[0],
+  ));
+}
+
+function dedupeInpaintRegions(
+  regions: Array<{ x: number; y: number; w: number; h: number; startSec: number; endSec: number }>,
+): Array<{ x: number; y: number; w: number; h: number; startSec: number; endSec: number }> {
+  return regions.filter((region, index) => !regions.slice(0, index).some((other) =>
+    Math.abs(other.startSec - region.startSec) < 0.05 &&
+    Math.abs(other.endSec - region.endSec) < 0.05 &&
+    regionIouForRemix(other, region) >= 0.96,
+  ));
+}
+
+function createApplyOpsDiagnostics(): ApplyOpsDiagnostics {
+  return {
+    textOverlayCount: 0,
+    renderedTextOverlayCount: 0,
+    textBlurRegionCount: 0,
+    postReframeBlurRegionCount: 0,
+    legacyBlurRegionCount: 0,
+    drawtextTextfileCount: 0,
+    textBlurRenderer: "none",
+  };
+}
+
+function appendRenderDiagnosticsWarnings(
+  plan: RemixPlan,
+  options: RemixOptions,
+  diagnostics: ApplyOpsDiagnostics,
+  phase: "initial" | "retry" = "initial",
+): void {
+  const overlays = options.textOnScreenOverlays ?? [];
+  const disabled = overlays.filter((overlay) => overlay.status === "disabled").length;
+  const pending = overlays.filter((overlay) => overlay.status === "pending").length;
+  const textRegionCount = overlays.reduce((sum, overlay) => sum + (overlay.textRegions?.length ?? 0), 0);
+  const ocrEngine = (process.env.ON_SCREEN_TEXT_ENGINE ?? "gemini").toLowerCase();
+  plan.warnings.push(
+    `Text on-screen render diagnostics (${phase}): OCR=${ocrEngine}; overlay render=${diagnostics.renderedTextOverlayCount}/${diagnostics.textOverlayCount}; pending=${pending}; disabled=${disabled}; textRegions=${textRegionCount}; textBlurRegions=${diagnostics.textBlurRegionCount}; postQaBlurRegions=${diagnostics.postReframeBlurRegionCount}; renderer=${diagnostics.textBlurRenderer}.`,
+  );
 }
 
 function normalizeTextOverlayRegions(
@@ -2103,6 +2387,42 @@ function normalizeTextOverlayRegions(
     .filter((box): box is { x: number; y: number; w: number; h: number } => Boolean(box))
     .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
     .slice(0, 48);
+  return normalized.length ? normalized : undefined;
+}
+
+function normalizeTextOverlayMaskFrames(
+  frames: NonNullable<RemixOptions["textOnScreenOverlays"]>[number]["sourceMaskFrames"] | undefined,
+): Extract<VideoOp, { op: "overlayText" }>["sourceMaskFrames"] | undefined {
+  if (!Array.isArray(frames)) return undefined;
+  const normalized = frames
+    .map((frame): NonNullable<Extract<VideoOp, { op: "overlayText" }>["sourceMaskFrames"]>[number] | null => {
+      const timestampSec = Number(frame?.timestampSec);
+      const regions = normalizeTextOverlayRegions(frame?.regions);
+      if (!Number.isFinite(timestampSec) || !regions?.length) return null;
+      const polygons = Array.isArray(frame?.polygons)
+        ? frame.polygons
+            .map((polygon) => Array.isArray(polygon)
+              ? polygon
+                  .map((point) => {
+                    const x = Number(point?.x);
+                    const y = Number(point?.y);
+                    return Number.isFinite(x) && Number.isFinite(y)
+                      ? { x: clampNumber(x, 0, 1, 0), y: clampNumber(y, 0, 1, 0) }
+                      : null;
+                  })
+                  .filter((point): point is { x: number; y: number } => Boolean(point))
+              : [])
+            .filter((polygon) => polygon.length >= 3)
+        : undefined;
+      return {
+        timestampSec: Math.max(0, timestampSec),
+        regions,
+        ...(polygons?.length ? { polygons } : {}),
+      };
+    })
+    .filter((frame): frame is NonNullable<Extract<VideoOp, { op: "overlayText" }>["sourceMaskFrames"]>[number] => Boolean(frame))
+    .sort((a, b) => a.timestampSec - b.timestampSec)
+    .slice(0, 512);
   return normalized.length ? normalized : undefined;
 }
 
@@ -2180,17 +2500,29 @@ function hasPersistedOcrOverlayForTranslation(
   overlays: RemixOptions["textOnScreenOverlays"] | undefined,
   translation: OnScreenTextTranslation,
 ): boolean {
-  return (overlays ?? []).some((overlay) => overlayLooksLikeSameTrack(overlay, translation));
+  return (overlays ?? []).some((overlay) =>
+    overlayLooksLikeSameTrack(overlay, translation) && Boolean(overlay.sourceMaskFrames?.length),
+  );
 }
 
 function mergePersistedTextOnScreenOverlays(
   persisted: RemixOptions["textOnScreenOverlays"] | undefined,
   detected: NonNullable<RemixOptions["textOnScreenOverlays"]>,
 ): NonNullable<RemixOptions["textOnScreenOverlays"]> {
-  const base = (persisted ?? []).filter((overlay) => overlay.text?.trim());
+  const base = (persisted ?? []).filter((overlay) => {
+    if (!overlay.text?.trim()) return false;
+    const isUneditedAutomaticOcr =
+      inferOverlaySource(overlay) === "ocr_auto" &&
+      overlay.isEdited !== true;
+    // Automatic OCR is derived state. Rebuild it from the current source
+    // detection on every regenerate so stale/fragmented tracks cannot stack
+    // with the latest OCR result. Manual and explicitly edited overlays remain
+    // user-owned and are preserved.
+    return !isUneditedAutomaticOcr;
+  });
   const merged = [...base];
   for (const candidate of detected) {
-    const exists = merged.some((overlay) => overlayLooksLikeSameTrack(overlay, {
+    const candidateTrack = {
       detectedText: candidate.sourceText || candidate.text,
       translatedText: candidate.text,
       region: candidate.box ?? normalizeTextOverlayRegion(candidate),
@@ -2199,29 +2531,53 @@ function mergePersistedTextOnScreenOverlays(
       toneMood: "",
       confidence: 1,
       notes: [],
-    }));
-    if (!exists) merged.push(candidate);
+    };
+    const existingIndex = merged.findIndex((overlay) => overlayLooksLikeSameTrack(overlay, candidateTrack));
+    if (existingIndex < 0) {
+      merged.push(candidate);
+      continue;
+    }
+    const existing = merged[existingIndex];
+    // Keep the user-visible replacement style/content, but always refresh the
+    // immutable source OCR geometry from the original video.
+    merged[existingIndex] = existing.isEdited
+      ? { ...existing, ocrTrackId: candidate.ocrTrackId, sourceText: candidate.sourceText, textRegions: candidate.textRegions, sourceMaskFrames: candidate.sourceMaskFrames }
+      : { ...candidate, id: existing.id, status: existing.status, isEdited: false };
   }
   return merged;
 }
 
-function hasRenderableTextOnScreenOverlays(
+export function hasRenderableTextOnScreenOverlays(
   overlays: RemixOptions["textOnScreenOverlays"] | undefined,
 ): boolean {
   return (overlays ?? []).some((overlay) =>
     Boolean(
       overlay.text?.trim() &&
-        overlay.status !== "pending" &&
-        overlay.status !== "disabled",
+        overlay.status !== "disabled" &&
+        (inferOverlaySource(overlay) === "manual" || overlay.isEdited === true),
+    ),
+  );
+}
+
+export function hasManualTextOnScreenOverlays(
+  overlays: RemixOptions["textOnScreenOverlays"] | undefined,
+): boolean {
+  return (overlays ?? []).some((overlay) =>
+    Boolean(
+      overlay.text?.trim() &&
+        overlay.status !== "disabled" &&
+        inferOverlaySource(overlay) === "manual",
     ),
   );
 }
 
 type TextBlurQaTarget = {
+  trackKey: string;
   sourceText: string;
   region: { x: number; y: number; w: number; h: number };
   startSec: number;
   endSec: number;
+  sourceRemoved: boolean;
 };
 
 function buildTextBlurQaTargets(input: {
@@ -2233,14 +2589,16 @@ function buildTextBlurQaTargets(input: {
   const sourceHeight = input.videoInfo?.height ?? reframe?.height ?? 1920;
   return input.ops
     .filter((op): op is Extract<VideoOp, { op: "overlayText" }> => op.op === "overlayText")
-    .filter((op) => op.coverRegion === true && op.backgroundStyle === "blur" && Boolean(op.sourceText?.trim()))
+    .filter((op) => op.coverRegion === true && Boolean(op.sourceText?.trim()))
     .map((op) => {
       const baseRegion = op.eraseRegion ?? op.region ?? { x: 0, y: 0, w: 1, h: 1 };
       return {
+        trackKey: sourceTrackKey(op),
         sourceText: op.sourceText!.trim(),
         region: transformRegionForReframe(baseRegion, sourceWidth, sourceHeight, reframe),
         startSec: Math.max(0, op.startSec ?? 0),
         endSec: Math.max(Math.max(0, op.startSec ?? 0) + 0.1, op.endSec ?? input.videoInfo?.durationSec ?? 30),
+        sourceRemoved: op.sourceTextRemoved === true,
       };
     });
 }
@@ -2263,9 +2621,14 @@ async function detectResidualTextBlurRegions(input: {
     if (!detections.length) return [];
 
     const retryRegions: Array<{ x: number; y: number; w: number; h: number; startSec?: number; endSec?: number }> = [];
+    let removedTextLeakCount = 0;
     for (const detection of detections) {
       const matchingTarget = input.targets.find((target) => residualDetectionMatchesTarget(detection, target));
       if (!matchingTarget) continue;
+      if (matchingTarget.sourceRemoved) {
+        removedTextLeakCount += 1;
+        continue;
+      }
       const detailRegions = detection.textRegions?.length ? detection.textRegions : [detection.region];
       for (const region of detailRegions) {
         const paddedResidual = padRegion(region, Math.max(0.012, Math.min(0.035, region.h * 0.55)));
@@ -2281,6 +2644,11 @@ async function detectResidualTextBlurRegions(input: {
           endSec: matchingTarget.endSec,
         });
       }
+    }
+    if (removedTextLeakCount) {
+      input.plan.warnings.push(
+        `Post-render OCR QA cảnh báo: phát hiện ${removedTextLeakCount} text có thể còn sót sau source-text removal; không phủ lại bằng blur để giữ output sạch.`,
+      );
     }
     return mergeNearbyQaRegions(retryRegions).slice(0, 48);
   } catch (err) {
@@ -2506,6 +2874,45 @@ function padRegion(
     w: Math.min(1 - x, region.w + pad * 2),
     h: Math.min(1 - y, region.h + pad * 2),
   };
+}
+
+function sourceTrackKey(op: Extract<VideoOp, { op: "overlayText" }>): string {
+  if (op.ocrTrackId) return op.ocrTrackId;
+  const start = Math.max(0, op.startSec ?? 0).toFixed(2);
+  const end = Math.max(op.startSec ?? 0, op.endSec ?? 0).toFixed(2);
+  return `${normalizeOverlayTextForFilter(op.sourceText ?? op.text).slice(0, 48)}:${start}:${end}`;
+}
+
+async function detectSourceTextLeakTrackKeys(input: {
+  renderedPath: string;
+  durationSec: number;
+  fps?: number;
+  options: RemixOptions;
+  targets: TextBlurQaTarget[];
+  plan: RemixPlan;
+}): Promise<Set<string> | null> {
+  if (!input.targets.length) return new Set();
+  if ((process.env.ON_SCREEN_TEXT_ENGINE ?? "gemini").toLowerCase() !== "paddleocr") {
+    input.plan.warnings.push("needs_review: source-text removal QA yêu cầu ON_SCREEN_TEXT_ENGINE=paddleocr.");
+    return null;
+  }
+  try {
+    const detections = await detectOnScreenTextLayoutFromVideo({
+      videoPath: input.renderedPath,
+      durationSec: input.durationSec,
+      fps: input.fps,
+      options: input.options,
+    });
+    const leaking = new Set<string>();
+    for (const detection of detections) {
+      const target = input.targets.find((candidate) => residualDetectionMatchesTarget(detection, candidate));
+      if (target) leaking.add(target.trackKey);
+    }
+    return leaking;
+  } catch (err) {
+    input.plan.warnings.push(`needs_review: source-text removal QA thất bại: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 function textReplacementRegions(

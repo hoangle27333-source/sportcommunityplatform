@@ -14,6 +14,7 @@ const logger = pino({ name: 'api:remix-regenerate' });
 
 const regenSchema = z.object({
   editedScript: z.string().optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -33,8 +34,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
     
-    const newOptions: Record<string, unknown> = { 
-      ...(job.options as Record<string, unknown>), 
+    const newOptions: Record<string, unknown> = {
+      ...(job.options as Record<string, unknown>),
+      ...(body.options ?? {}),
       regenerateOnly: true,
       ...(body.editedScript !== undefined
         ? {

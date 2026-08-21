@@ -9,10 +9,11 @@ import tempfile
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 
 app = FastAPI(title="Remix OCR Service", version="1.0.0")
@@ -28,26 +29,50 @@ class TextBox:
     frame_height: int
 
 
+@dataclass
+class InpaintRegion:
+    x: float
+    y: float
+    w: float
+    h: float
+    start_sec: float
+    end_sec: float
+
+
+@dataclass
+class InpaintMaskFrame:
+    timestamp_sec: float
+    regions: list[InpaintRegion]
+    polygons: list[list[list[float]]]
+
+
+@dataclass
+class InpaintTrack:
+    track_id: str
+    start_sec: float
+    end_sec: float
+    frames: list[InpaintMaskFrame]
+
+
 @lru_cache(maxsize=8)
 def get_ocr(lang: str):
     from paddleocr import PaddleOCR
 
     language = lang or "en"
+    detection_model = os.getenv("PADDLEOCR_DETECTION_MODEL") or "PP-OCRv5_mobile_det"
+    default_recognition_model = "en_PP-OCRv5_mobile_rec" if language == "en" else "PP-OCRv5_mobile_rec"
+    recognition_model = os.getenv("PADDLEOCR_RECOGNITION_MODEL") or default_recognition_model
     try:
         return PaddleOCR(
             lang=language,
-            use_textline_orientation=True,
-            show_log=False,
+            text_detection_model_name=detection_model,
+            text_recognition_model_name=recognition_model,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
         )
-    except TypeError:
-        return PaddleOCR(
-            lang=language,
-            use_angle_cls=True,
-            show_log=False,
-            det_db_thresh=0.2,
-            det_db_box_thresh=0.3,
-            drop_score=0.25,
-        )
+    except Exception:
+        return PaddleOCR(lang=language)
 
 
 @app.get("/health")
@@ -58,11 +83,11 @@ def health():
 @app.post("/detect-video-text")
 async def detect_video_text(
     request: Request,
-    file: UploadFile | None = File(default=None),
-    durationSec: float | None = Form(default=None),
-    sampleTimestamps: str | None = Form(default=None),
-    lang: str | None = Form(default=None),
-    frameWidthLimit: int | None = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
+    durationSec: Optional[float] = Form(default=None),
+    sampleTimestamps: Optional[str] = Form(default=None),
+    lang: Optional[str] = Form(default=None),
+    frameWidthLimit: Optional[int] = Form(default=None),
 ):
     work_dir = Path(tempfile.mkdtemp(prefix="remix-ocr-"))
     warnings: list[str] = []
@@ -112,7 +137,48 @@ async def detect_video_text(
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
-async def resolve_video_path(file: UploadFile | None, payload: dict[str, Any], work_dir: Path) -> Path:
+@app.post("/inpaint-video-text")
+async def inpaint_video_text(
+    file: UploadFile = File(...),
+    regionsJson: Optional[str] = Form(default=None),
+    tracksJson: Optional[str] = Form(default=None),
+    method: str = Form(default="adaptive"),
+):
+    """Remove burned-in text using one polygon-aware mask and inpaint pass per frame."""
+    work_dir = Path(tempfile.mkdtemp(prefix="remix-inpaint-"))
+    try:
+        suffix = Path(file.filename or "input.mp4").suffix or ".mp4"
+        input_path = work_dir / f"input{suffix}"
+        with input_path.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+        tracks = parse_inpaint_tracks(tracksJson)
+        regions = parse_inpaint_regions(regionsJson) if regionsJson else []
+        if not tracks and not regions:
+            raise HTTPException(status_code=400, detail="No valid inpaint mask tracks or regions")
+        silent_path = work_dir / "inpainted-silent.mp4"
+        output_path = work_dir / "inpainted.mp4"
+        diagnostics = inpaint_video(input_path, silent_path, tracks, regions, method, work_dir)
+        mux_original_audio(silent_path, input_path, output_path)
+        return FileResponse(
+            output_path,
+            media_type="video/mp4",
+            filename="inpainted.mp4",
+            headers={"X-Text-Inpaint-Diagnostics": json.dumps(diagnostics, separators=(",", ":"))},
+            background=BackgroundTask(shutil.rmtree, work_dir, True),
+        )
+    except HTTPException:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+async def resolve_video_path(file: Optional[UploadFile], payload: dict[str, Any], work_dir: Path) -> Path:
     if file is not None:
         suffix = Path(file.filename or "input.mp4").suffix or ".mp4"
         path = work_dir / f"input{suffix}"
@@ -131,6 +197,380 @@ async def resolve_video_path(file: UploadFile | None, payload: dict[str, Any], w
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=400, detail="videoPath does not exist")
     return path
+
+
+def parse_inpaint_regions(raw: str) -> list[InpaintRegion]:
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="regionsJson must be valid JSON") from exc
+    if not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="regionsJson must be an array")
+    regions: list[InpaintRegion] = []
+    for item in items[:128]:
+        if not isinstance(item, dict):
+            continue
+        x = safe_float(item.get("x"), -1)
+        y = safe_float(item.get("y"), -1)
+        w = safe_float(item.get("w"), 0)
+        h = safe_float(item.get("h"), 0)
+        if x < 0 or y < 0 or w <= 0 or h <= 0:
+            continue
+        start = max(0.0, safe_float(item.get("startSec"), 0))
+        end = max(start + 0.05, safe_float(item.get("endSec"), start + 0.05))
+        regions.append(InpaintRegion(
+            x=clamp(x, 0.0, 0.99),
+            y=clamp(y, 0.0, 0.99),
+            w=clamp(w, 0.002, 1.0 - clamp(x, 0.0, 0.99)),
+            h=clamp(h, 0.002, 1.0 - clamp(y, 0.0, 0.99)),
+            start_sec=start,
+            end_sec=end,
+        ))
+    return regions
+
+
+def parse_inpaint_tracks(raw: Optional[str]) -> list[InpaintTrack]:
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="tracksJson must be valid JSON") from exc
+    if not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="tracksJson must be an array")
+
+    tracks: list[InpaintTrack] = []
+    for index, item in enumerate(items[:96]):
+        if not isinstance(item, dict):
+            continue
+        start = max(0.0, safe_float(item.get("startSec"), 0))
+        end = max(start + 0.05, safe_float(item.get("endSec"), start + 0.05))
+        raw_frames = item.get("frames")
+        if not isinstance(raw_frames, list):
+            continue
+        frames: list[InpaintMaskFrame] = []
+        for raw_frame in raw_frames[:512]:
+            if not isinstance(raw_frame, dict):
+                continue
+            timestamp = safe_float(raw_frame.get("timestampSec"), -1)
+            if timestamp < 0:
+                continue
+            regions = parse_inpaint_region_items(raw_frame.get("regions"), start, end)
+            polygons = parse_mask_polygons(raw_frame.get("polygons"))
+            if not regions and not polygons:
+                continue
+            frames.append(InpaintMaskFrame(timestamp_sec=timestamp, regions=regions, polygons=polygons))
+        if frames:
+            tracks.append(InpaintTrack(
+                track_id=str(item.get("id") or f"track-{index}"),
+                start_sec=start,
+                end_sec=end,
+                frames=sorted(frames, key=lambda frame: frame.timestamp_sec),
+            ))
+    return dedupe_inpaint_tracks(tracks)
+
+
+def parse_inpaint_region_items(raw: Any, start_sec: float, end_sec: float) -> list[InpaintRegion]:
+    if not isinstance(raw, list):
+        return []
+    regions: list[InpaintRegion] = []
+    for item in raw[:96]:
+        if not isinstance(item, dict):
+            continue
+        x = safe_float(item.get("x"), -1)
+        y = safe_float(item.get("y"), -1)
+        w = safe_float(item.get("w"), 0)
+        h = safe_float(item.get("h"), 0)
+        if x < 0 or y < 0 or w <= 0 or h <= 0:
+            continue
+        regions.append(InpaintRegion(
+            x=clamp(x, 0.0, 0.99),
+            y=clamp(y, 0.0, 0.99),
+            w=clamp(w, 0.002, 1.0 - clamp(x, 0.0, 0.99)),
+            h=clamp(h, 0.002, 1.0 - clamp(y, 0.0, 0.99)),
+            start_sec=start_sec,
+            end_sec=end_sec,
+        ))
+    return regions
+
+
+def parse_mask_polygons(raw: Any) -> list[list[list[float]]]:
+    if not isinstance(raw, list):
+        return []
+    polygons: list[list[list[float]]] = []
+    for polygon in raw[:96]:
+        if not isinstance(polygon, list):
+            continue
+        points: list[list[float]] = []
+        for point in polygon[:32]:
+            if not isinstance(point, dict):
+                continue
+            x = safe_float(point.get("x"), -1)
+            y = safe_float(point.get("y"), -1)
+            if x < 0 or y < 0:
+                continue
+            points.append([clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)])
+        if len(points) >= 3:
+            polygons.append(points)
+    return polygons
+
+
+def dedupe_inpaint_tracks(tracks: list[InpaintTrack]) -> list[InpaintTrack]:
+    deduped: list[InpaintTrack] = []
+    for track in tracks:
+        duplicate = next((other for other in deduped if
+            abs(other.start_sec - track.start_sec) < 0.05 and
+            abs(other.end_sec - track.end_sec) < 0.05 and
+            other.track_id == track.track_id
+        ), None)
+        if duplicate is None:
+            deduped.append(track)
+    return deduped
+
+
+def inpaint_video(
+    input_path: Path,
+    output_path: Path,
+    tracks: list[InpaintTrack],
+    regions: list[InpaintRegion],
+    method: str,
+    work_dir: Path,
+) -> dict[str, Any]:
+    import cv2
+    import numpy as np
+
+    capture = cv2.VideoCapture(str(input_path))
+    if not capture.isOpened():
+        raise RuntimeError("Could not open input video for inpainting")
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if width <= 0 or height <= 0:
+        capture.release()
+        raise RuntimeError("Input video has invalid dimensions")
+    writer = cv2.VideoWriter(
+        str(output_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width, height),
+    )
+    if not writer.isOpened():
+        capture.release()
+        raise RuntimeError("Could not create inpainted video")
+    frame_index = 0
+    inpainted_frames = 0
+    telea_frames = 0
+    ns_frames = 0
+    covered_pixels = 0
+    debug_frames = 0
+    polygon_count = sum(len(frame.polygons) for track in tracks for frame in track.frames)
+    debug_dir = work_dir / "debug"
+    debug_dir.mkdir(exist_ok=True)
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            timestamp = frame_index / fps
+            mask = np.zeros((height, width), dtype=np.uint8)
+            for track in tracks:
+                frame_mask = resolve_track_mask(track, timestamp, width, height, cv2, np)
+                if frame_mask is not None:
+                    mask = cv2.bitwise_or(mask, frame_mask)
+            for region in regions:
+                if timestamp < region.start_sec or timestamp > region.end_sec:
+                    continue
+                draw_legacy_inpaint_mask(mask, region, width, height, cv2)
+            if mask.any():
+                selected_method = select_inpaint_method(frame, mask, method, cv2)
+                original_frame = frame.copy()
+                frame = cv2.inpaint(frame, mask, 3, selected_method)
+                inpainted_frames += 1
+                covered_pixels += int(np.count_nonzero(mask))
+                if selected_method == cv2.INPAINT_NS:
+                    ns_frames += 1
+                else:
+                    telea_frames += 1
+                if debug_frames < 3:
+                    write_debug_frame(debug_dir, debug_frames, original_frame, frame, mask, cv2)
+                    debug_frames += 1
+            writer.write(frame)
+            frame_index += 1
+    finally:
+        capture.release()
+        writer.release()
+    total_pixels = max(1, frame_index * width * height)
+    return {
+        "trackCount": len(tracks),
+        "polygonCount": polygon_count,
+        "renderedMaskFrameCount": inpainted_frames,
+        "maskCoverageRatio": round(covered_pixels / total_pixels, 6),
+        "teleaFrameCount": telea_frames,
+        "navierStokesFrameCount": ns_frames,
+        "debugFrameCount": debug_frames,
+    }
+
+
+def draw_legacy_inpaint_mask(mask: Any, region: InpaintRegion, frame_width: int, frame_height: int, cv2: Any) -> None:
+    """Dilate the OCR box enough for outlines/shadows, but retain line shape."""
+    x = max(0, int(math.floor(region.x * frame_width)))
+    y = max(0, int(math.floor(region.y * frame_height)))
+    right = min(frame_width, int(math.ceil((region.x + region.w) * frame_width)))
+    bottom = min(frame_height, int(math.ceil((region.y + region.h) * frame_height)))
+    box_height = max(1, bottom - y)
+    pad_x = max(3, int(round(box_height * 0.22)))
+    pad_y = max(4, int(round(box_height * 0.42)))
+    x = max(0, x - pad_x)
+    y = max(0, y - pad_y)
+    right = min(frame_width, right + pad_x)
+    bottom = min(frame_height, bottom + pad_y)
+    cv2.rectangle(mask, (x, y), (right, bottom), 255, thickness=-1)
+
+
+def resolve_track_mask(
+    track: InpaintTrack,
+    timestamp: float,
+    frame_width: int,
+    frame_height: int,
+    cv2: Any,
+    np: Any,
+) -> Optional[Any]:
+    """Rasterize a track at a video frame using an interpolated OCR sample.
+
+    OCR polygons describe source glyph geometry. We never derive this mask from
+    translated text, and every track contributes once to the composed mask.
+    """
+    if timestamp < track.start_sec or timestamp > track.end_sec:
+        return None
+    frame = interpolate_track_frame(track, timestamp)
+    if frame is None:
+        return None
+    layer = np.zeros((frame_height, frame_width), dtype=np.uint8)
+    for polygon in frame.polygons:
+        points = np.array([
+            [int(round(point[0] * frame_width)), int(round(point[1] * frame_height))]
+            for point in polygon
+        ], dtype=np.int32)
+        if len(points) >= 3:
+            cv2.fillPoly(layer, [points], 255)
+    # Regions are a compatibility fallback for OCR results without polygons.
+    # Filling both turns a precise glyph mask back into a broad rectangle.
+    if not layer.any():
+        for region in frame.regions:
+            x = max(0, int(math.floor(region.x * frame_width)))
+            y = max(0, int(math.floor(region.y * frame_height)))
+            right = min(frame_width, int(math.ceil((region.x + region.w) * frame_width)))
+            bottom = min(frame_height, int(math.ceil((region.y + region.h) * frame_height)))
+            cv2.rectangle(layer, (x, y), (right, bottom), 255, thickness=-1)
+    if not layer.any():
+        return None
+    return dilate_text_mask(layer, frame, frame_width, frame_height, cv2)
+
+
+def interpolate_track_frame(track: InpaintTrack, timestamp: float) -> Optional[InpaintMaskFrame]:
+    frames = track.frames
+    if not frames:
+        return None
+    before = next((frame for frame in reversed(frames) if frame.timestamp_sec <= timestamp), None)
+    after = next((frame for frame in frames if frame.timestamp_sec >= timestamp), None)
+    if before is None:
+        return after
+    if after is None or after.timestamp_sec == before.timestamp_sec:
+        return before
+    ratio = clamp((timestamp - before.timestamp_sec) / (after.timestamp_sec - before.timestamp_sec), 0.0, 1.0)
+    return InpaintMaskFrame(
+        timestamp_sec=timestamp,
+        regions=interpolate_regions(before.regions, after.regions, ratio),
+        polygons=interpolate_polygons(before.polygons, after.polygons, ratio),
+    )
+
+
+def interpolate_regions(a: list[InpaintRegion], b: list[InpaintRegion], ratio: float) -> list[InpaintRegion]:
+    if len(a) != len(b):
+        return a if ratio < 0.5 else b
+    regions: list[InpaintRegion] = []
+    for left, right in zip(a, b):
+        regions.append(InpaintRegion(
+            x=left.x + (right.x - left.x) * ratio,
+            y=left.y + (right.y - left.y) * ratio,
+            w=left.w + (right.w - left.w) * ratio,
+            h=left.h + (right.h - left.h) * ratio,
+            start_sec=left.start_sec,
+            end_sec=left.end_sec,
+        ))
+    return regions
+
+
+def interpolate_polygons(
+    a: list[list[list[float]]],
+    b: list[list[list[float]]],
+    ratio: float,
+) -> list[list[list[float]]]:
+    if len(a) != len(b) or any(len(left) != len(right) for left, right in zip(a, b)):
+        return a if ratio < 0.5 else b
+    return [
+        [[left[0] + (right[0] - left[0]) * ratio, left[1] + (right[1] - left[1]) * ratio]
+         for left, right in zip(left_polygon, right_polygon)]
+        for left_polygon, right_polygon in zip(a, b)
+    ]
+
+
+def dilate_text_mask(
+    mask: Any,
+    frame: InpaintMaskFrame,
+    frame_width: int,
+    frame_height: int,
+    cv2: Any,
+) -> Any:
+    line_heights = [region.h * frame_height for region in frame.regions]
+    if not line_heights:
+        for polygon in frame.polygons:
+            ys = [point[1] * frame_height for point in polygon]
+            if ys:
+                line_heights.append(max(1.0, max(ys) - min(ys)))
+    line_height = max(1.0, sum(line_heights) / max(1, len(line_heights)))
+    # Captures outlined / shadowed glyph pixels without turning a text line into
+    # the old broad rectangular cover. Vertical padding is intentionally larger.
+    pad_x = max(2, min(18, int(round(line_height * 0.16))))
+    pad_y = max(3, min(24, int(round(line_height * 0.32))))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (pad_x * 2 + 1, pad_y * 2 + 1))
+    return cv2.dilate(mask, kernel, iterations=1)
+
+
+def select_inpaint_method(frame: Any, mask: Any, requested: str, cv2: Any) -> int:
+    if requested.lower() == "ns":
+        return cv2.INPAINT_NS
+    if requested.lower() == "telea":
+        return cv2.INPAINT_TELEA
+    # Smooth backgrounds tend to preserve gentle gradients better with NS. Text
+    # over textured video defaults to Telea, which is more stable for small masks.
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    expanded = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17)))
+    ring = cv2.subtract(expanded, mask)
+    samples = gray[ring > 0]
+    if len(samples) < 64:
+        return cv2.INPAINT_TELEA
+    edges = cv2.Canny(gray, 64, 128)
+    edge_density = float((edges[ring > 0] > 0).mean())
+    variance = float(samples.var())
+    return cv2.INPAINT_NS if variance < 340.0 and edge_density < 0.06 else cv2.INPAINT_TELEA
+
+
+def write_debug_frame(debug_dir: Path, index: int, original: Any, cleaned: Any, mask: Any, cv2: Any) -> None:
+    mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+    preview = cv2.hconcat([original, mask_bgr, cleaned])
+    cv2.imwrite(str(debug_dir / f"mask-preview-{index:02d}.jpg"), preview)
+
+
+def mux_original_audio(silent_path: Path, original_path: Path, output_path: Path) -> None:
+    cmd = [
+        ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(silent_path), "-i", str(original_path),
+        "-map", "0:v:0", "-map", "1:a?",
+        "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+        "-c:a", "copy", "-shortest", str(output_path),
+    ]
+    subprocess.run(cmd, check=True)
 
 
 def parse_timestamps(raw: Any) -> list[float]:
@@ -160,7 +600,7 @@ def build_sample_timestamps(duration_sec: float) -> list[float]:
 def extract_frame(video_path: Path, frame_path: Path, timestamp: float, width_limit: int) -> None:
     vf = f"scale={max(320, width_limit)}:-1"
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin(),
         "-hide_banner",
         "-loglevel",
         "error",
@@ -178,6 +618,19 @@ def extract_frame(video_path: Path, frame_path: Path, timestamp: float, width_li
         str(frame_path),
     ]
     subprocess.run(cmd, check=True)
+
+
+def ffmpeg_bin() -> str:
+    configured = os.getenv("FFMPEG_PATH")
+    if configured:
+        return configured
+    bundled = Path(__file__).resolve().parents[1] / "node_modules" / "ffmpeg-static" / "ffmpeg"
+    if bundled.is_file():
+        return str(bundled)
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return system_ffmpeg
+    raise RuntimeError("FFmpeg binary not found. Set FFMPEG_PATH or install ffmpeg-static.")
 
 
 def run_paddleocr(frame_path: Path, timestamp_sec: float, lang: str, warnings: list[str]) -> list[TextBox]:
@@ -288,12 +741,28 @@ def build_frame_blocks(boxes: list[TextBox]) -> list[dict[str, Any]]:
                 "text": " ".join(part.text for part in line),
                 "confidence": sum(part.confidence for part in line) / len(line),
                 "box": union_boxes([part.box for part in line]),
+                # Preserve PaddleOCR's individual source polygons for masks.
+                # The union box remains useful for editor layout only.
+                "maskPolygons": [part.box for part in line],
                 "timestampSec": ts,
                 "frameWidth": line[0].frame_width,
                 "frameHeight": line[0].frame_height,
             })
 
+        nearby_groups = group_nearby_lines(merged_lines)
+        grouped_line_ids = {
+            id(line)
+            for group in nearby_groups
+            if len(group) > 1
+            for line in group
+        }
+
+        # Emit either the complete multiline caption or a standalone line,
+        # never both. Emitting both creates duplicate OCR tracks and causes the
+        # same source text area to be removed/rendered more than once.
         for line in merged_lines:
+            if id(line) in grouped_line_ids:
+                continue
             add_block(
                 blocks,
                 seen_blocks,
@@ -303,9 +772,11 @@ def build_frame_blocks(boxes: list[TextBox]) -> list[dict[str, Any]]:
                 line["frameWidth"],
                 line["frameHeight"],
                 line["confidence"],
+                [line["box"]],
+                line["maskPolygons"],
             )
 
-        for group in group_nearby_lines(merged_lines):
+        for group in nearby_groups:
             if len(group) <= 1:
                 continue
             add_block(
@@ -317,6 +788,8 @@ def build_frame_blocks(boxes: list[TextBox]) -> list[dict[str, Any]]:
                 group[0]["frameWidth"],
                 group[0]["frameHeight"],
                 sum(item["confidence"] for item in group) / len(group),
+                [item["box"] for item in group],
+                [polygon for item in group for polygon in item["maskPolygons"]],
             )
     return blocks
 
@@ -330,6 +803,8 @@ def add_block(
     frame_width: int,
     frame_height: int,
     confidence: float,
+    line_boxes: Optional[list[list[list[float]]]] = None,
+    mask_polygons: Optional[list[list[list[float]]]] = None,
 ) -> None:
     normalized = normalize_text(text)
     if not normalized:
@@ -345,6 +820,8 @@ def add_block(
     blocks.append({
         "detectedText": normalized,
         "region": region,
+        "textRegions": [normalized_region(item, frame_width, frame_height) for item in (line_boxes or [box])],
+        "maskPolygons": [normalized_polygon(item, frame_width, frame_height) for item in (mask_polygons or line_boxes or [box])],
         "timestampSec": timestamp_sec,
         "confidence": round(confidence, 3),
     })
@@ -354,12 +831,24 @@ def group_nearby_lines(lines: list[dict[str, Any]]) -> list[list[dict[str, Any]]
     groups: list[list[dict[str, Any]]] = []
     for line in sorted(lines, key=lambda item: (bbox(item["box"])["y"], bbox(item["box"])["x"])):
         metrics = bbox(line["box"])
+        alnum_length = len("".join(ch for ch in line["text"] if ch.isalnum()))
+        if alnum_length < 2:
+            groups.append([line])
+            continue
         target = None
         for group in groups:
             last = bbox(group[-1]["box"])
             vertical_gap = metrics["y"] - last["bottom"]
             x_overlap = overlap_ratio(metrics["x"], metrics["right"], last["x"], last["right"])
-            if vertical_gap >= 0 and vertical_gap <= max(last["h"], metrics["h"]) * 0.95 and x_overlap >= 0.35:
+            max_height = max(last["h"], metrics["h"])
+            # Outlined/shadowed subtitle boxes often overlap vertically by a
+            # few pixels. Treat that as the same multiline caption instead of
+            # rejecting the neighboring line and producing fragmented tracks.
+            if (
+                vertical_gap >= -max_height * 0.35
+                and vertical_gap <= max_height * 0.75
+                and x_overlap >= 0.30
+            ):
                 target = group
                 break
         if target is None:
@@ -397,11 +886,25 @@ def group_tracks(
         start = max(0.0, first_seen - half_interval)
         end = min(max_duration, last_seen + half_interval)
         text = best_text([item["detectedText"] for item in track])
+        representative = max(
+            track,
+            key=lambda item: text_quality_score(item["detectedText"]) + item["confidence"] * 10,
+        )
         region = padded_track_region([item["region"] for item in track])
         confidence = sum(item["confidence"] for item in track) / len(track)
         items.append({
             "detectedText": text,
             "region": region,
+            "textRegions": representative.get("textRegions") or [representative["region"]],
+            "lineRegions": representative.get("textRegions") or [representative["region"]],
+            "maskFrames": [
+                {
+                    "timestampSec": round(item["timestampSec"], 3),
+                    "regions": item.get("textRegions") or [item["region"]],
+                    "polygons": item.get("maskPolygons") or [],
+                }
+                for item in track
+            ],
             "timestampSec": round(first_seen, 2),
             "startSec": round(start, 2),
             "endSec": round(max(start + 0.3, end), 2),
@@ -452,7 +955,7 @@ def is_output_item(item: dict[str, Any]) -> bool:
     return True
 
 
-def normalize_box(raw: Any) -> list[list[float]] | None:
+def normalize_box(raw: Any) -> Optional[list[list[float]]]:
     try:
         points = [[float(p[0]), float(p[1])] for p in raw]
     except Exception:
@@ -478,6 +981,15 @@ def normalized_region(box: list[list[float]], frame_width: int, frame_height: in
         "w": round(clamp(metrics["w"] / fw, 0.01, 1.0 - x), 4),
         "h": round(clamp(metrics["h"] / fh, 0.01, 1.0 - y), 4),
     }
+
+
+def normalized_polygon(box: list[list[float]], frame_width: int, frame_height: int) -> list[dict[str, float]]:
+    fw = max(1, frame_width)
+    fh = max(1, frame_height)
+    return [
+        {"x": round(clamp(point[0] / fw, 0.0, 1.0), 5), "y": round(clamp(point[1] / fh, 0.0, 1.0), 5)}
+        for point in box
+    ]
 
 
 def bbox(box: list[list[float]]) -> dict[str, float]:
@@ -508,6 +1020,9 @@ def normalize_text(text: str) -> str:
 
 def is_noise_text(text: str) -> bool:
     cleaned = text.strip().lower()
+    alnum = "".join(ch for ch in cleaned if ch.isalnum())
+    if len(alnum) <= 1:
+        return True
     if cleaned in {"like", "share", "follow", "subscribe"}:
         return True
     if cleaned.startswith("@") or cleaned.startswith("#"):

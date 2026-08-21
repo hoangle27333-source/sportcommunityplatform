@@ -1,6 +1,23 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import type { RawOnScreenTextItem } from "./on-screen-text";
-import type { NormalizedTextRegion } from "./types";
+import type { NormalizedTextRegion, TextInpaintMaskFrame } from "./types";
+
+export interface CpuTextInpaintTrack {
+  id: string;
+  startSec: number;
+  endSec: number;
+  frames: TextInpaintMaskFrame[];
+}
+
+export interface CpuTextInpaintDiagnostics {
+  trackCount: number;
+  polygonCount: number;
+  renderedMaskFrameCount: number;
+  maskCoverageRatio: number;
+  teleaFrameCount: number;
+  navierStokesFrameCount: number;
+  debugFrameCount: number;
+}
 
 export interface PaddleOcrDetectionResult {
   items: RawOnScreenTextItem[];
@@ -29,6 +46,7 @@ interface PaddleOcrServiceItem {
   textRegions?: unknown;
   lineRegions?: unknown;
   wordRegions?: unknown;
+  maskFrames?: unknown;
 }
 
 interface PaddleOcrServiceResponse {
@@ -77,6 +95,65 @@ export async function detectOnScreenTextWithPaddleOcr(input: {
   }
 }
 
+export async function inpaintVideoTextWithPaddleOcr(input: {
+  videoPath: string;
+  outputPath: string;
+  tracks: CpuTextInpaintTrack[];
+  /** Compatibility fallback for OCR generated before per-frame masks existed. */
+  regions?: Array<{ x: number; y: number; w: number; h: number; startSec: number; endSec: number }>;
+}): Promise<CpuTextInpaintDiagnostics> {
+  if (!input.tracks.length && !input.regions?.length) {
+    throw new Error("No OCR mask tracks supplied for CPU text removal");
+  }
+  const serviceUrl = (process.env.PADDLEOCR_SERVICE_URL ?? "http://ocr:8080").replace(/\/+$/, "");
+  const timeoutMs = clampNumber(Number(process.env.PADDLEOCR_INPAINT_TIMEOUT_MS), 5_000, 900_000, 300_000);
+  const form = new FormData();
+  const video = await readFile(input.videoPath);
+  form.set("file", new Blob([new Uint8Array(video)], { type: "video/mp4" }), "input.mp4");
+  form.set("tracksJson", JSON.stringify(input.tracks));
+  if (input.regions?.length) form.set("regionsJson", JSON.stringify(input.regions));
+  form.set("method", "adaptive");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${serviceUrl}/inpaint-video-text`, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`PaddleOCR inpaint service ${res.status}: ${(await res.text()).slice(0, 500)}`);
+    }
+    const rawDiagnostics = res.headers.get("x-text-inpaint-diagnostics");
+    await writeFile(input.outputPath, Buffer.from(await res.arrayBuffer()));
+    return normalizeCpuInpaintDiagnostics(rawDiagnostics, input.tracks);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function normalizeCpuInpaintDiagnostics(raw: string | null, tracks: CpuTextInpaintTrack[]): CpuTextInpaintDiagnostics {
+  let value: Record<string, unknown> = {};
+  try {
+    value = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+  } catch {
+    // A successful video response remains usable when a proxy strips the header.
+  }
+  const fallbackPolygonCount = tracks.reduce((sum, track) => sum + track.frames.reduce(
+    (frameSum, frame) => frameSum + (frame.polygons?.length ?? 0),
+    0,
+  ), 0);
+  return {
+    trackCount: clampNumber(Number(value.trackCount), 0, 10_000, tracks.length),
+    polygonCount: clampNumber(Number(value.polygonCount), 0, 1_000_000, fallbackPolygonCount),
+    renderedMaskFrameCount: clampNumber(Number(value.renderedMaskFrameCount), 0, 10_000_000, 0),
+    maskCoverageRatio: clampNumber(Number(value.maskCoverageRatio), 0, 1, 0),
+    teleaFrameCount: clampNumber(Number(value.teleaFrameCount), 0, 10_000_000, 0),
+    navierStokesFrameCount: clampNumber(Number(value.navierStokesFrameCount), 0, 10_000_000, 0),
+    debugFrameCount: clampNumber(Number(value.debugFrameCount), 0, 1000, 0),
+  };
+}
+
 export function normalizePaddleOcrResponse(
   raw: PaddleOcrServiceResponse,
   durationSec: number,
@@ -101,6 +178,7 @@ function normalizePaddleOcrItem(
   const region = normalizeRegion(item.region);
   if (!region) return null;
   const textRegions = normalizeTextRegions(item);
+  const maskFrames = normalizeMaskFrames(item.maskFrames);
   const timestampSec = clampNumber(Number(item.timestampSec), 0, durationSec, 0);
   const firstSeenSec = clampNumber(Number(item.firstSeenSec), 0, durationSec, timestampSec);
   const lastSeenSec = clampNumber(Number(item.lastSeenSec), firstSeenSec, durationSec, timestampSec);
@@ -125,6 +203,7 @@ function normalizePaddleOcrItem(
     translatedText: detectedText,
     region,
     textRegions,
+    maskFrames,
     timestampSec,
     startSec,
     endSec,
@@ -147,6 +226,49 @@ function normalizeTextRegions(item: PaddleOcrServiceItem): NormalizedTextRegion[
     if (regions.length) return regions;
   }
   return undefined;
+}
+
+function normalizeMaskFrames(value: unknown): TextInpaintMaskFrame[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const frames = value
+    .map((entry): TextInpaintMaskFrame | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const item = entry as Record<string, unknown>;
+      const timestampSec = Number(item.timestampSec);
+      const regions = normalizeRegionArray(item.regions);
+      if (!Number.isFinite(timestampSec) || !regions.length) return null;
+      const polygons = normalizeMaskPolygons(item.polygons);
+      return {
+        timestampSec: Math.max(0, timestampSec),
+        regions,
+        ...(polygons ? { polygons } : {}),
+      };
+    })
+    .filter((item): item is TextInpaintMaskFrame => Boolean(item))
+    .sort((a, b) => a.timestampSec - b.timestampSec)
+    .slice(0, 512);
+  return frames.length ? frames : undefined;
+}
+
+function normalizeMaskPolygons(value: unknown): Array<Array<{ x: number; y: number }>> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const polygons = value
+    .map((polygon) => Array.isArray(polygon)
+      ? polygon
+          .map((point) => {
+            if (!point || typeof point !== "object") return null;
+            const record = point as Record<string, unknown>;
+            const x = Number(record.x);
+            const y = Number(record.y);
+            return Number.isFinite(x) && Number.isFinite(y)
+              ? { x: clampNumber(x, 0, 1, 0), y: clampNumber(y, 0, 1, 0) }
+              : null;
+          })
+          .filter((point): point is { x: number; y: number } => Boolean(point))
+      : [])
+    .filter((polygon) => polygon.length >= 3)
+    .slice(0, 48);
+  return polygons.length ? polygons : undefined;
 }
 
 function normalizeRegionArray(value: unknown): NormalizedTextRegion[] {

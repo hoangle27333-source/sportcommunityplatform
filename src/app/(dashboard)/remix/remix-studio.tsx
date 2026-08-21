@@ -339,7 +339,12 @@ export function RemixStudio({
   const [expandedFolders, setExpandedFolders] = React.useState<Record<string, boolean>>({});
   const [movingFolderId, setMovingFolderId] = React.useState<string | null>(null);
   const [moveFolderTargetId, setMoveFolderTargetId] = React.useState<string>("unfiled");
+  const [selectedJobIds, setSelectedJobIds] = React.useState<string[]>([]);
   const router = useRouter();
+
+  React.useEffect(() => {
+    setSelectedJobIds([]);
+  }, [selectedFolderId]);
 
   React.useEffect(() => {
     setJobs(initialJobs);
@@ -788,30 +793,30 @@ export function RemixStudio({
     setIsSavingVideo(true);
     setError(null);
     try {
-      // 1. Cập nhật options vào DB
-      const patchRes = await fetch(`/api/remix/${jobId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ options: newOptions })
-      });
-      if (!patchRes.ok) throw new Error("Cập nhật tuỳ chọn thất bại.");
-      
-      // 2. Kích hoạt revise với feedback rỗng để worker chạy lại video-ops (hoặc planner xử lý cứng)
-      const reviseRes = await fetch(`/api/remix/${jobId}/feedback`, {
+      const editedScriptCandidate =
+        typeof newOptions?.editedScript === "string"
+          ? newOptions.editedScript
+          : typeof newOptions?.manualScript === "string"
+            ? newOptions.manualScript
+            : undefined;
+
+      const regenerateRes = await fetch(`/api/remix/${jobId}/regenerate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ feedback: "[MANUAL_EDIT] Áp dụng các thay đổi từ Video Editor" })
+        body: JSON.stringify({
+          options: newOptions,
+          ...(editedScriptCandidate ? { editedScript: editedScriptCandidate } : {}),
+        }),
       });
-      
-      if (!reviseRes.ok) {
-        const d = await reviseRes.json();
-        throw new Error(d.error ?? "Gửi yêu cầu sửa thất bại.");
+
+      if (!regenerateRes.ok) {
+        const d = await regenerateRes.json().catch(() => ({}));
+        throw new Error(d.error ?? "Tạo lại video từ thiết lập mới thất bại.");
       }
-      
-      // Cập nhật lại UI state để nó polling
-      setDetail((prev) => (prev ? { ...prev, status: "revising", options: newOptions } : prev));
+
+      setDetail((prev) => (prev ? { ...prev, status: "queued", options: newOptions } : prev));
       setIsEditingVideo(false);
-      setNotice("Đang xử lý lại video theo thiết lập mới...");
+      setNotice("Đã đưa job vào hàng đợi render lại với thiết lập mới...");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1175,11 +1180,101 @@ export function RemixStudio({
       if (!res.ok) throw new Error("Xoá job thất bại");
       
       setJobs((prev) => prev.filter((j) => j.id !== targetId));
+      setSelectedJobIds((prev) => prev.filter((id) => id !== targetId));
       if (jobId === targetId) {
         setJobId(null);
         setDetail(null);
         setNotice(null);
       }
+      void fetchFolders();
+    } catch (err) {
+      console.error(err);
+      alert((err as Error).message);
+    }
+  }
+
+  function toggleSelectJob(targetId: string, e?: React.MouseEvent | React.ChangeEvent) {
+    e?.stopPropagation();
+    setSelectedJobIds((prev) =>
+      prev.includes(targetId) ? prev.filter((id) => id !== targetId) : [...prev, targetId]
+    );
+  }
+
+  function toggleSelectAll() {
+    if (selectedJobIds.length === jobs.length && jobs.length > 0) {
+      setSelectedJobIds([]);
+    } else {
+      setSelectedJobIds(jobs.map((j) => j.id));
+    }
+  }
+
+  async function handleDeleteSelectedJobs() {
+    if (selectedJobIds.length === 0) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn xoá vĩnh viễn ${selectedJobIds.length} job đã chọn không?`)) return;
+    try {
+      const res = await fetch("/api/remix", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobIds: selectedJobIds }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Xoá danh sách job thất bại");
+      }
+      const deletedSet = new Set(selectedJobIds);
+      setJobs((prev) => prev.filter((j) => !deletedSet.has(j.id)));
+      if (jobId && deletedSet.has(jobId)) {
+        setJobId(null);
+        setDetail(null);
+        setNotice(null);
+      }
+      setSelectedJobIds([]);
+      await fetchFolders();
+    } catch (err) {
+      console.error(err);
+      alert((err as Error).message);
+    }
+  }
+
+  async function handleClearInbox(e?: React.MouseEvent) {
+    e?.stopPropagation();
+    const count = unfiledCount || (selectedFolderId === "unfiled" ? jobs.length : 0);
+    if (!window.confirm(`Bạn có chắc chắn muốn xoá TOÀN BỘ ${count > 0 ? `${count} ` : ""}job trong Inbox / Unfiled không? Thao tác này không thể hoàn tác.`)) return;
+    try {
+      const res = await fetch("/api/remix?allInbox=true", { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Xoá toàn bộ Inbox thất bại");
+      }
+      if (selectedFolderId === "unfiled") {
+        setJobs([]);
+        setJobId(null);
+        setDetail(null);
+        setNotice(null);
+      }
+      setSelectedJobIds([]);
+      setUnfiledCount(0);
+      await fetchFolders();
+    } catch (err) {
+      console.error(err);
+      alert((err as Error).message);
+    }
+  }
+
+  async function handleMoveSelectedJobsToFolder(targetFolderId: string | null) {
+    if (selectedJobIds.length === 0) return;
+    try {
+      await Promise.all(
+        selectedJobIds.map((id) =>
+          fetch(`/api/remix/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder_id: targetFolderId }),
+          })
+        )
+      );
+      setSelectedJobIds([]);
+      await Promise.all([fetchFolders(), fetchJobs(selectedFolderId)]);
     } catch (err) {
       console.error(err);
       alert((err as Error).message);
@@ -1310,7 +1405,7 @@ export function RemixStudio({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Tạo lại với script thất bại.");
-      setDetail((d) => (d ? { ...d, status: "revising" } : d));
+      setDetail((d) => (d ? { ...d, status: "queued" } : d));
     } catch (e) {
       console.error(e);
       setError((e as Error).message);
@@ -1507,10 +1602,8 @@ export function RemixStudio({
             </div>
           </CardHeader>
           <CardContent className="flex-1 space-y-2 overflow-y-auto p-3 scrollbar-thin">
-            <button
-              type="button"
-              className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm ${selectedFolderId === "unfiled" ? "border-primary bg-primary/10 font-medium" : "border-transparent hover:bg-muted/60"}`}
-              onClick={() => setSelectedFolderId("unfiled")}
+            <div
+              className={`group flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${selectedFolderId === "unfiled" ? "border-primary bg-primary/10 font-medium" : "border-transparent hover:bg-muted/60"}`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
@@ -1518,34 +1611,131 @@ export function RemixStudio({
                 if (jobTransfer) void handleMoveJobToFolder(jobTransfer, null);
               }}
             >
-              <Folder className="h-4 w-4 text-primary" />
-              <span>Inbox / Unfiled</span>
-              <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{unfiledCount}</span>
-            </button>
+              <button
+                type="button"
+                className="flex flex-1 items-center gap-2 text-left min-w-0"
+                onClick={() => setSelectedFolderId("unfiled")}
+              >
+                <Folder className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="truncate">Inbox / Unfiled</span>
+                <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{unfiledCount}</span>
+              </button>
+              {unfiledCount > 0 && (
+                <button
+                  type="button"
+                  title="Xoá toàn bộ Inbox"
+                  className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-destructive/10 transition-colors"
+                  onClick={(e) => void handleClearInbox(e)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             {renderFolderTree(folders)}
           </CardContent>
         </Card>
 
         <Card className="h-[calc(100vh-16rem)] min-h-[520px] flex flex-col overflow-hidden">
-          <CardHeader className="border-b border-border/50 bg-muted/20 py-4 flex-shrink-0">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-sm font-semibold text-foreground">{selectedFolderId === "unfiled" ? "Inbox / Unfiled" : selectedFolder?.name ?? "Folder"}</CardTitle>
-                <CardDescription>{jobsCountLabel} job</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                {selectedFolderId !== "unfiled" && (
-                  <Button size="sm" variant="outline" onClick={() => void handleCreateFolder(selectedFolderId)}>
-                    <Plus className="mr-1 h-4 w-4" />
-                    Child
+          <CardHeader className="border-b border-border/50 bg-muted/20 py-3 px-4 flex-shrink-0">
+            {selectedJobIds.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedJobIds.length === jobs.length && jobs.length > 0}
+                    ref={(el) => {
+                      if (el) {
+                        el.indeterminate = selectedJobIds.length > 0 && selectedJobIds.length < jobs.length;
+                      }
+                    }}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 rounded border-input text-primary focus:ring-primary cursor-pointer accent-primary"
+                    title="Chọn tất cả"
+                  />
+                  <span className="text-xs font-semibold text-foreground">
+                    Đã chọn {selectedJobIds.length}/{jobs.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    className="h-7 rounded border border-input bg-background px-1.5 text-2xs"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      void handleMoveSelectedJobsToFolder(e.target.value === "unfiled" ? null : e.target.value);
+                      e.target.value = "";
+                    }}
+                  >
+                    <option value="" disabled>Chuyển vào...</option>
+                    <option value="unfiled">Inbox / Unfiled</option>
+                    {allFolders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>{folder.name}</option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-7 text-xs px-2.5 gap-1"
+                    onClick={() => void handleDeleteSelectedJobs()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Xoá ({selectedJobIds.length})
                   </Button>
-                )}
-                <Button size="sm" onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); setCreateModalFolderId(selectedFolderId); void fetchMediaLibrary(); }}>
-                  <Plus className="mr-1 h-4 w-4" />
-                  Job
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs px-2"
+                    onClick={() => setSelectedJobIds([])}
+                  >
+                    Bỏ chọn
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    {jobs.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4 rounded border-input text-primary focus:ring-primary cursor-pointer accent-primary"
+                        title="Chọn tất cả để thao tác"
+                      />
+                    )}
+                    <CardTitle className="text-sm font-semibold text-foreground truncate">
+                      {selectedFolderId === "unfiled" ? "Inbox / Unfiled" : selectedFolder?.name ?? "Folder"}
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-xs mt-0.5">{jobsCountLabel} job</CardDescription>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {selectedFolderId === "unfiled" && unfiledCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
+                      onClick={() => void handleClearInbox()}
+                      title="Xoá toàn bộ job trong Inbox"
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      Xoá Inbox
+                    </Button>
+                  )}
+                  {selectedFolderId !== "unfiled" && (
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => void handleCreateFolder(selectedFolderId)}>
+                      <Plus className="mr-1 h-4 w-4" />
+                      Child
+                    </Button>
+                  )}
+                  <Button size="sm" className="h-8 text-xs" onClick={() => { setIsCreateModalOpen(true); setPresetsLoaded(false); setCreateModalFolderId(selectedFolderId); void fetchMediaLibrary(); }}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Job
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardHeader>
           <CardContent
             className="flex-1 divide-y divide-border overflow-y-auto p-0 scrollbar-thin"
@@ -1561,86 +1751,104 @@ export function RemixStudio({
             {jobs.length === 0 ? (
               <div className="p-8 text-center text-sm text-muted-foreground">Chưa có job nào trong folder này.</div>
             ) : (
-              jobs.map((j) => (
-                <div
-                  key={j.id}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData("application/x-remix-job", j.id)}
-                  onClick={() => {
-                    setJobId(j.id);
-                    setDetail(null);
-                    setNotice(null);
-                    setError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
+              jobs.map((j) => {
+                const isSelected = selectedJobIds.includes(j.id);
+                return (
+                  <div
+                    key={j.id}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData("application/x-remix-job", j.id)}
+                    onClick={() => {
                       setJobId(j.id);
                       setDetail(null);
                       setNotice(null);
                       setError(null);
-                    }
-                  }}
-                  className={`flex w-full cursor-pointer items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${j.id === jobId ? "border-l-2 border-l-primary bg-muted/60" : "border-l-2 border-l-transparent"}`}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium" title={j.options?.title || j.prompt || ""}>
-                      {editingJobId === j.id ? (
-                        <input
-                          type="text"
-                          className="w-full rounded border border-primary bg-background px-2 py-1 text-sm text-foreground focus:outline-none"
-                          value={editingTitle}
-                          autoFocus
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onBlur={() => handleSaveTitle(j.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveTitle(j.id);
-                            if (e.key === "Escape") setEditingJobId(null);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate">{j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`}</span>
-                          <button
-                            type="button"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingTitle(j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`);
-                              setEditingJobId(j.id);
-                            }}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </span>
-                    <span className="mt-1 block text-2xs text-muted-foreground">
-                      {new Date(j.created_at).toLocaleString("vi-VN")}
-                      {j.iteration > 0 && ` · sửa ${j.iteration} lần`}
-                    </span>
-                    <div className="mt-2 flex items-center gap-2">
-                      <select
-                        className="h-8 rounded border border-input bg-background px-2 text-xs"
-                        value={j.folder_id ?? "unfiled"}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => void handleMoveJobToFolder(j.id, e.target.value === "unfiled" ? null : e.target.value)}
-                      >
-                        <option value="unfiled">Inbox</option>
-                        {allFolders.map((folder) => (
-                          <option key={folder.id} value={folder.id}>{folder.name}</option>
-                        ))}
-                      </select>
-                      <button type="button" className="text-muted-foreground hover:text-destructive" onClick={(e) => handleDeleteJob(e, j.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        setJobId(j.id);
+                        setDetail(null);
+                        setNotice(null);
+                        setError(null);
+                      }
+                    }}
+                    className={`flex w-full cursor-pointer items-start gap-2.5 px-3 py-3 text-left transition-colors hover:bg-muted/50 ${
+                      isSelected
+                        ? "bg-primary/5 border-l-2 border-l-primary"
+                        : j.id === jobId
+                          ? "border-l-2 border-l-primary bg-muted/60"
+                          : "border-l-2 border-l-transparent"
+                    }`}
+                  >
+                    <div className="pt-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => toggleSelectJob(j.id, e as any)}
+                        className="h-4 w-4 rounded border-input text-primary focus:ring-primary cursor-pointer accent-primary"
+                        title="Chọn job"
+                      />
                     </div>
-                  </span>
-                  <Status value={j.status} />
-                </div>
-              ))
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium" title={j.options?.title || j.prompt || ""}>
+                        {editingJobId === j.id ? (
+                          <input
+                            type="text"
+                            className="w-full rounded border border-primary bg-background px-2 py-1 text-sm text-foreground focus:outline-none"
+                            value={editingTitle}
+                            autoFocus
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={() => handleSaveTitle(j.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveTitle(j.id);
+                              if (e.key === "Escape") setEditingJobId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate">{j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`}</span>
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingTitle(j.options?.title || j.prompt || `${j.output_kind} · ${j.source_type}`);
+                                setEditingJobId(j.id);
+                              }}
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </span>
+                      <span className="mt-1 block text-2xs text-muted-foreground">
+                        {new Date(j.created_at).toLocaleString("vi-VN")}
+                        {j.iteration > 0 && ` · sửa ${j.iteration} lần`}
+                      </span>
+                      <div className="mt-2 flex items-center gap-2">
+                        <select
+                          className="h-8 rounded border border-input bg-background px-2 text-xs"
+                          value={j.folder_id ?? "unfiled"}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => void handleMoveJobToFolder(j.id, e.target.value === "unfiled" ? null : e.target.value)}
+                        >
+                          <option value="unfiled">Inbox</option>
+                          {allFolders.map((folder) => (
+                            <option key={folder.id} value={folder.id}>{folder.name}</option>
+                          ))}
+                        </select>
+                        <button type="button" className="text-muted-foreground hover:text-destructive" onClick={(e) => handleDeleteJob(e, j.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </span>
+                    <Status value={j.status} />
+                  </div>
+                );
+              })
             )}
           </CardContent>
         </Card>
@@ -3573,9 +3781,12 @@ export function RemixStudio({
                     end: o.endSec ?? 5,
                     text: o.translatedText || o.sourceText || '',
                     source: 'ocr_auto' as const,
+                    isEdited: false,
                     status: 'pending' as const,
                     ocrTrackId: o.id || `plan_${idx}`,
                     sourceText: o.sourceText || o.translatedText || '',
+                    textRegions: o.textRegions,
+                    sourceMaskFrames: o.sourceMaskFrames,
                     position: {
                       x: (o.region?.x ?? 0.5) + (o.region?.w ?? 0) / 2,
                       y: (o.region?.y ?? 0.1) + (o.region?.h ?? 0) / 2,

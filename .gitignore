@@ -1,5 +1,6 @@
 # ─── Node / Next ───────────────────────────────
 node_modules/
+.venv-ocr/
 .next/
 out/
 build/

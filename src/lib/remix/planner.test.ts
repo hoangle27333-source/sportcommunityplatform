@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeVideoOps } from "./planner";
 import {
+  buildBoxBlurOverlayFilter,
   buildDrawtextTextfileParam,
   buildTightTextBlurRegions,
   buildAssSubtitles,
@@ -22,6 +23,7 @@ import {
 import { buildFacebookCopyrightPreflight } from "./copyright-preflight";
 import { normalizePaddleOcrResponse } from "./ocr-service";
 import { buildRemixOptionsFromPreset } from "./preset-options";
+import { buildTextInpaintRegions, buildTextInpaintTracks, hasManualTextOnScreenOverlays, hasRenderableTextOnScreenOverlays } from "./remix-service";
 import type { VideoInfo } from "./video-ops";
 
 /**
@@ -446,6 +448,35 @@ describe("on-screen text tracking", () => {
 
     expect(tracks[0].endSec).toBeLessThanOrEqual(11.95);
     expect(tracks[0].endSec).toBeLessThanOrEqual(tracks[1].startSec);
+  });
+
+  it("giữ nguyên thời gian cho các dòng OCR đồng thời ở gần nhau", () => {
+    const tracks = clampSameSlotTiming([
+      {
+        detectedText: "My body:",
+        translatedText: "Cơ thể tôi:",
+        region: { x: 0.35, y: 0.46, w: 0.3, h: 0.07 },
+        startSec: 0,
+        endSec: 7.4,
+        toneMood: "meme",
+        confidence: 0.9,
+        notes: [],
+      },
+      {
+        detectedText: "We're dying",
+        translatedText: "Chúng ta đang chết dần",
+        region: { x: 0.31, y: 0.5, w: 0.38, h: 0.08 },
+        startSec: 0,
+        endSec: 7.4,
+        toneMood: "meme",
+        confidence: 0.9,
+        notes: [],
+      },
+    ], 7.4);
+
+    expect(tracks).toHaveLength(2);
+    expect(tracks[0].endSec).toBe(7.4);
+    expect(tracks[1].endSec).toBe(7.4);
   });
 
   it("loại các track trùng vùng và trùng thời gian để tránh overlay chồng", () => {
@@ -891,6 +922,39 @@ describe("OCR text regions", () => {
     ]);
   });
 
+  it("giữ OCR mask samples và polygon để GPU inpaint không đoán theo text dịch", () => {
+    const result = normalizePaddleOcrResponse(
+      {
+        items: [
+          {
+            detectedText: "Listen",
+            region: { x: 0.2, y: 0.4, w: 0.3, h: 0.08 },
+            confidence: 0.9,
+            maskFrames: [
+              {
+                timestampSec: 1.25,
+                regions: [{ x: 0.21, y: 0.41, w: 0.27, h: 0.05 }],
+                polygons: [[
+                  { x: 0.21, y: 0.41 }, { x: 0.48, y: 0.41 },
+                  { x: 0.48, y: 0.46 }, { x: 0.21, y: 0.46 },
+                ]],
+              },
+            ],
+          },
+        ],
+      },
+      7,
+    );
+
+    expect(result.items[0]!.maskFrames).toEqual([
+      expect.objectContaining({
+        timestampSec: 1.25,
+        regions: [{ x: 0.21, y: 0.41, w: 0.27, h: 0.05 }],
+        polygons: expect.any(Array),
+      }),
+    ]);
+  });
+
   it("group track union từng text region theo dòng", () => {
     const tracks = groupOnScreenTextTracks(
       [
@@ -942,6 +1006,220 @@ describe("buildDrawtextTextfileParam", () => {
     expect(param).toContain("textfile=");
     expect(param).not.toContain("text='");
     expect(param).not.toContain("\\n");
+  });
+});
+
+describe("buildBoxBlurOverlayFilter", () => {
+  it("dùng crop/boxblur/overlay cho text blur thay vì delogo", () => {
+    const filter = buildBoxBlurOverlayFilter({
+      region: { x: 0.2, y: 0.4, w: 0.42, h: 0.08, startSec: 0, endSec: 7 },
+      frameWidth: 1080,
+      frameHeight: 1920,
+      inputLabel: "0:v",
+      outputLabel: "vout",
+      baseLabel: "base",
+      cropInputLabel: "cropin",
+      blurLabel: "blurred",
+    });
+
+    expect(filter).toContain("crop=");
+    expect(filter).toContain("boxblur=");
+    expect(filter).toContain("overlay=");
+    expect(filter).toContain("enable=");
+    expect(filter).not.toContain("delogo");
+  });
+});
+
+describe("buildTextInpaintRegions", () => {
+  it("uses padded per-line OCR boxes and excludes non-OCR overlays", () => {
+    const regions = buildTextInpaintRegions([
+      {
+        op: "overlayText",
+        text: "replacement",
+        sourceText: "original",
+        coverRegion: true,
+        backgroundStyle: "blur",
+        startSec: 1,
+        endSec: 4,
+        textRegions: [
+          { x: 0.2, y: 0.3, w: 0.4, h: 0.04 },
+          { x: 0.3, y: 0.36, w: 0.22, h: 0.04 },
+        ],
+      },
+      { op: "overlayText", text: "manual", backgroundStyle: "blur", region: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 } },
+    ], 7);
+
+    expect(regions).toHaveLength(2);
+    expect(regions[0]).toMatchObject({ startSec: 1, endSec: 4 });
+    expect(regions[0]!.x).toBeLessThan(0.2);
+    expect(regions[0]!.h).toBeGreaterThan(0.04);
+    expect(regions[1]!.y).toBeLessThan(0.36);
+  });
+
+  it("removes source text for OCR overlays even when their replacement uses a solid background", () => {
+    const regions = buildTextInpaintRegions([{
+      op: "overlayText",
+      text: "replacement",
+      sourceText: "original",
+      coverRegion: true,
+      backgroundStyle: "solid",
+      startSec: 1,
+      endSec: 2,
+      textRegions: [{ x: 0.4, y: 0.4, w: 0.2, h: 0.04 }],
+    }], 3);
+
+    expect(regions).toHaveLength(1);
+    expect(regions[0]!.w).toBeGreaterThan(0.2);
+  });
+
+  it("uses rectangle regions only as a compatibility fallback when mask samples are absent", () => {
+    const regions = buildTextInpaintRegions([{
+      op: "overlayText",
+      text: "replacement",
+      sourceText: "original",
+      coverRegion: true,
+      startSec: 1,
+      endSec: 2,
+      textRegions: [{ x: 0.4, y: 0.4, w: 0.2, h: 0.04 }],
+      sourceMaskFrames: [{
+        timestampSec: 1.5,
+        regions: [{ x: 0.4, y: 0.4, w: 0.2, h: 0.04 }],
+        polygons: [[{ x: 0.4, y: 0.4 }, { x: 0.6, y: 0.4 }, { x: 0.6, y: 0.44 }, { x: 0.4, y: 0.44 }]],
+      }],
+    }], 3);
+
+    expect(regions).toEqual([]);
+  });
+});
+
+describe("buildTextInpaintTracks", () => {
+  it("uses OCR samples, preserves polygons, and deduplicates an applied track", () => {
+    const op = {
+      op: "overlayText" as const,
+      text: "Bản dịch",
+      sourceText: "Original text",
+      coverRegion: true,
+      backgroundStyle: "blur" as const,
+      startSec: 1,
+      endSec: 4,
+      sourceMaskFrames: [
+        {
+          timestampSec: 1.1,
+          regions: [{ x: 0.2, y: 0.3, w: 0.4, h: 0.05 }],
+          polygons: [[{ x: 0.2, y: 0.3 }, { x: 0.6, y: 0.3 }, { x: 0.6, y: 0.35 }, { x: 0.2, y: 0.35 }]],
+        },
+      ],
+    };
+    const tracks = buildTextInpaintTracks([op, { ...op }], 7);
+
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]!.frames[0]!.polygons).toHaveLength(1);
+    expect(tracks[0]!.frames[0]!.regions[0]).toMatchObject({ x: 0.2, y: 0.3 });
+  });
+
+  it("creates a compatible single sample for older OCR overlays", () => {
+    const tracks = buildTextInpaintTracks([{
+      op: "overlayText",
+      text: "replacement",
+      sourceText: "original",
+      coverRegion: true,
+      backgroundStyle: "blur",
+      startSec: 2,
+      endSec: 6,
+      textRegions: [{ x: 0.2, y: 0.5, w: 0.3, h: 0.06 }],
+    }], 7);
+
+    expect(tracks[0]!.frames).toEqual([{ timestampSec: 4, regions: [{ x: 0.2, y: 0.5, w: 0.3, h: 0.06 }] }]);
+  });
+
+  it("keeps source polygon samples across a text track instead of using replacement text geometry", () => {
+    const tracks = buildTextInpaintTracks([{
+      op: "overlayText",
+      text: "Bản dịch dài hơn rất nhiều",
+      sourceText: "Short source",
+      coverRegion: true,
+      backgroundStyle: "blur",
+      startSec: 0,
+      endSec: 3,
+      sourceMaskFrames: [
+        {
+          timestampSec: 0.5,
+          regions: [{ x: 0.2, y: 0.4, w: 0.15, h: 0.04 }],
+          polygons: [[{ x: 0.2, y: 0.4 }, { x: 0.35, y: 0.4 }, { x: 0.35, y: 0.44 }, { x: 0.2, y: 0.44 }]],
+        },
+        {
+          timestampSec: 2.5,
+          regions: [{ x: 0.22, y: 0.4, w: 0.15, h: 0.04 }],
+          polygons: [[{ x: 0.22, y: 0.4 }, { x: 0.37, y: 0.4 }, { x: 0.37, y: 0.44 }, { x: 0.22, y: 0.44 }]],
+        },
+      ],
+    }], 3);
+
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]!.frames.map((frame) => frame.timestampSec)).toEqual([0.5, 2.5]);
+    expect(tracks[0]!.frames[0]!.regions[0]!.w).toBe(0.15);
+  });
+
+  it("does not merge different source tracks that merely overlap on screen", () => {
+    const tracks = buildTextInpaintTracks([
+      {
+        op: "overlayText",
+        text: "A",
+        sourceText: "Source A",
+        coverRegion: true,
+        backgroundStyle: "blur",
+        startSec: 0,
+        endSec: 2,
+        sourceMaskFrames: [{ timestampSec: 1, regions: [{ x: 0.2, y: 0.3, w: 0.3, h: 0.06 }] }],
+      },
+      {
+        op: "overlayText",
+        text: "B",
+        sourceText: "Source B",
+        coverRegion: true,
+        backgroundStyle: "blur",
+        startSec: 0,
+        endSec: 2,
+        sourceMaskFrames: [{ timestampSec: 1, regions: [{ x: 0.35, y: 0.3, w: 0.3, h: 0.06 }] }],
+      },
+    ], 2);
+
+    expect(tracks).toHaveLength(2);
+  });
+
+  it("deduplicates by stable OCR track ID even when source text changes", () => {
+    const sourceMaskFrames = [{ timestampSec: 1, regions: [{ x: 0.2, y: 0.3, w: 0.3, h: 0.06 }] }];
+    const tracks = buildTextInpaintTracks([
+      { op: "overlayText", text: "A", sourceText: "old OCR", ocrTrackId: "track-1", coverRegion: true, startSec: 0, endSec: 2, sourceMaskFrames },
+      { op: "overlayText", text: "A edited", sourceText: "corrected OCR", ocrTrackId: "track-1", coverRegion: true, startSec: 0, endSec: 2, sourceMaskFrames },
+    ], 2);
+
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]!.id).toBe("track-1");
+  });
+});
+
+describe("text overlay ownership", () => {
+  it("does not treat untouched pending OCR overlays as user edits", () => {
+    expect(hasRenderableTextOnScreenOverlays([{
+      id: "ocr-1", start: 0, end: 1, text: "Dịch", source: "ocr_auto", status: "pending",
+      position: { x: 0.5, y: 0.5 }, fontFamily: "Arial", fontSize: 24, fontColor: "#fff", bgColor: "#000", animation: "none",
+    }])).toBe(false);
+  });
+
+  it("treats manual and explicitly edited OCR overlays as user-owned", () => {
+    const base = { id: "overlay", start: 0, end: 1, text: "Dịch", status: "pending" as const, position: { x: 0.5, y: 0.5 }, fontFamily: "Arial", fontSize: 24, fontColor: "#fff", bgColor: "#000", animation: "none" as const };
+    expect(hasRenderableTextOnScreenOverlays([{ ...base, source: "manual" }])).toBe(true);
+    expect(hasRenderableTextOnScreenOverlays([{ ...base, source: "ocr_auto", isEdited: true }])).toBe(true);
+  });
+
+  it("keeps OCR translation enabled for an edited OCR overlay", () => {
+    const overlay = {
+      id: "ocr-1", start: 0, end: 1, text: "Dịch", source: "ocr_auto" as const, isEdited: true,
+      status: "approved" as const, position: { x: 0.5, y: 0.5 }, fontFamily: "Arial", fontSize: 24,
+      fontColor: "#fff", bgColor: "#000", animation: "none" as const,
+    };
+    expect(hasManualTextOnScreenOverlays([overlay])).toBe(false);
   });
 });
 

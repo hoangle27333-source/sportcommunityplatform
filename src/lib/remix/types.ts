@@ -41,6 +41,14 @@ export type SubtitleAnimation = "static" | "word_highlight" | "reveal_words";
 export type SubtitlePosition = "top" | "bottom" | "auto" | "custom";
 export type TextOnScreenOverlaySource = "ocr_auto" | "manual";
 export type NormalizedTextRegion = { x: number; y: number; w: number; h: number };
+
+/** OCR geometry captured at a sampled source frame for video text inpainting. */
+export type TextInpaintMaskFrame = {
+  timestampSec: number;
+  regions: NormalizedTextRegion[];
+  /** Normalized PaddleOCR quadrilaterals, retained when available. */
+  polygons?: Array<Array<{ x: number; y: number }>>;
+};
 export type SubtitlePreset =
   | "tiktok_bold"
   | "meme"
@@ -235,10 +243,14 @@ export interface RemixOptions {
     end: number;
     text: string;
     source?: TextOnScreenOverlaySource;
+    /** Set only after a user changes an OCR overlay in Video Editor. */
+    isEdited?: boolean;
     status?: "pending" | "approved" | "disabled";
     ocrTrackId?: string;
     sourceText?: string;
     textRegions?: NormalizedTextRegion[];
+    /** Per-sample source OCR boxes. Used only by the text-removal pipeline. */
+    sourceMaskFrames?: TextInpaintMaskFrame[];
     position: { x: number; y: number };
     box?: { x: number; y: number; w: number; h: number };
     eraseBox?: { x: number; y: number; w: number; h: number };
@@ -327,15 +339,19 @@ export type VideoOp =
       op: "overlayText";
       text: string;
       sourceText?: string;
+      ocrTrackId?: string;
       startSec?: number;
       endSec?: number;
       position?: "top" | "center" | "bottom";
       region?: { x: number; y: number; w: number; h: number };
       eraseRegion?: { x: number; y: number; w: number; h: number };
       textRegions?: NormalizedTextRegion[];
+      sourceMaskFrames?: TextInpaintMaskFrame[];
       fitToRegion?: boolean;
       sizeMode?: "auto_fit" | "fixed";
       coverRegion?: boolean;
+      /** Source glyphs were removed before this render; do not apply blur again. */
+      sourceTextRemoved?: boolean;
       minFontSize?: number;
       maxFontSize?: number;
       fontSizeBoostPx?: number;
