@@ -1,0 +1,16 @@
+.venv-ocr/
+.venv/
+venv/
+__pycache__/
+*.pyc
+voice_pipeline/
+ocr_service/
+inpainting_service/
+test_remix_temp/
+*.mp4
+*.m4a
+*.aac
+*.log
+.git/
+.claude/
+supabase/
