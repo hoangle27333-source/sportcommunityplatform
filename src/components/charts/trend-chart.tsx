@@ -62,7 +62,7 @@ export function TrendChart({
   className,
 }: TrendChartProps) {
   if (!data.length || !series.length) {
-    return <ChartEmpty height={height} hint="Dữ liệu xuất hiện sau lần đồng bộ chỉ số đầu tiên." />;
+    return <ChartEmpty height={height} hint="Data will appear after the first metrics synchronization." />;
   }
 
   const single = series.length === 1;
@@ -131,7 +131,7 @@ export function TrendChart({
 
       <ChartDataTable
         caption={caption}
-        columns={["Mốc", ...series.map((s) => s.label)]}
+        columns={["Period", ...series.map((s) => s.label)]}
         rows={data.map((row) => [
           String(row[xKey]),
           ...series.map((s) => format(Number(row[s.key] ?? 0))),

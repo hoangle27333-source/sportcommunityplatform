@@ -29,27 +29,27 @@ export function AnalyticsCharts({ timeSeries, topPosts, breakdown }: AnalyticsCh
         ]}
         xKey="x"
         height={280}
-        caption="Xu hướng reach và engagement theo ngày"
+        caption="Daily reach and engagement trend"
       />
 
       {/* Side-by-side breakdown */}
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Top bài đăng</h3>
+          <h3 className="mb-3 text-sm font-semibold text-foreground">Top Performing Posts</h3>
           <RankBarChart
             data={topPosts as BarDatum[]}
-            caption="Top bài đăng theo engagement"
+            caption="Top posts ranked by engagement"
             valueLabel="Engagement"
             colorByIndex={false}
           />
         </div>
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Phân bổ tương tác</h3>
+          <h3 className="mb-3 text-sm font-semibold text-foreground">Engagement Distribution</h3>
           <DonutChart
             data={donutData}
             height={220}
-            caption="Phân bổ tương tác (Likes / Comments / Shares)"
-            centerLabel="Tương tác"
+            caption="Engagement breakdown (Likes / Comments / Shares)"
+            centerLabel="Engagements"
           />
         </div>
       </div>

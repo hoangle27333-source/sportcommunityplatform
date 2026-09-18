@@ -19,7 +19,7 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * Executive Dashboard — Tổng quan.
+ * Executive Dashboard — Overview.
  *
  * Server component that fetches all dashboard data directly from Supabase
  * (no client fetch waterfall). Charts are rendered by the DashboardCharts
@@ -153,17 +153,17 @@ export default async function DashboardPage() {
     <div className="space-y-8 p-4 sm:p-6">
       {/* ── Page header ──────────────────────────────────────────────────────── */}
       <PageHeader
-        title="Tổng quan"
-        description="Bảng điều khiển theo dõi hoạt động tự động hoá nội dung và chỉ số tương tác."
+        title="Overview"
+        description="Executive dashboard tracking content automation performance and engagement metrics."
       />
 
       {/* ── Quick actions ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {[
-          { href: "/compose", icon: PenSquare, label: "Tạo bài mới" },
+          { href: "/compose", icon: PenSquare, label: "Create Post" },
           { href: "/remix", icon: Wand2, label: "Remix Video" },
-          { href: "/engagement", icon: MessageSquare, label: "Duyệt tương tác" },
-          { href: "/analytics", icon: BarChart3, label: "Xem phân tích" },
+          { href: "/engagement", icon: MessageSquare, label: "Review Engagement" },
+          { href: "/analytics", icon: BarChart3, label: "View Analytics" },
         ].map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
@@ -185,9 +185,9 @@ export default async function DashboardPage() {
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
           <span className="text-warning">
             {(needsReauthCount ?? 0) > 0 &&
-              `${needsReauthCount} kênh cần kết nối lại. `}
+              `${needsReauthCount} channel(s) require reconnection. `}
             {(failedPostsCount ?? 0) > 0 &&
-              `${failedPostsCount} bài đăng thất bại trong 7 ngày qua.`}
+              `${failedPostsCount} post(s) failed in the last 7 days.`}
           </span>
         </div>
       )}
@@ -195,37 +195,37 @@ export default async function DashboardPage() {
       {/* ── KPI cards ─────────────────────────────────────────────────────────── */}
       <StatGrid>
         <StatCard
-          label="Bài đã xuất bản"
-          value={(publishedPostsCount ?? 0).toLocaleString("vi-VN")}
+          label="Published Posts"
+          value={(publishedPostsCount ?? 0).toLocaleString("en-US")}
           icon={FileText}
           tone="primary"
         />
         <StatCard
-          label="Reach 30 ngày"
-          value={reach30d.toLocaleString("vi-VN")}
+          label="30-Day Reach"
+          value={reach30d.toLocaleString("en-US")}
           icon={Eye}
           tone="info"
-          hint="30 ngày qua"
+          hint="last 30 days"
         />
         <StatCard
-          label="Engagement 30 ngày"
-          value={engagement30d.toLocaleString("vi-VN")}
+          label="30-Day Engagement"
+          value={engagement30d.toLocaleString("en-US")}
           icon={Heart}
           tone="success"
-          hint="30 ngày qua"
+          hint="last 30 days"
         />
         <StatCard
-          label="Chi phí AI tháng này"
-          value={`${aiCostMonthVnd.toLocaleString("vi-VN")}₫`}
+          label="AI Cost This Month"
+          value={`${aiCostMonthVnd.toLocaleString("en-US")} VND`}
           icon={Zap}
           tone="warning"
           positiveIsGood={false}
-          hint="tháng này"
+          hint="this month"
         />
       </StatGrid>
 
       {/* ── Charts ────────────────────────────────────────────────────────────── */}
-      <Section title="Xu hướng 30 ngày">
+      <Section title="30-Day Trends">
         <DashboardCharts
           trend={trend}
           topPosts={topPostsForChart}
@@ -234,24 +234,24 @@ export default async function DashboardPage() {
       </Section>
 
       {/* ── Recent posts table ────────────────────────────────────────────────── */}
-      <Section title="Bài đăng gần đây">
+      <Section title="Recent Posts">
         <div className="overflow-hidden rounded-lg border border-border">
           {recentPosts.length === 0 ? (
             <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
-              Chưa có bài đăng nào.
+              No posts found.
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/50">
                 <tr>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    Tiêu đề
+                    Title
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    Nền tảng
+                    Platform
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                    Trạng thái
+                    Status
                   </th>
                 </tr>
               </thead>

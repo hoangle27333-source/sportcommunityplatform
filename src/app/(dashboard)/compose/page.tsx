@@ -14,10 +14,9 @@ export default function ComposePage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Tạo nội dung</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Compose Content</h1>
         <p className="mt-1 text-sm text-gray-500">
-          AI sinh caption, banner, chọn kênh và lên lịch — tất cả trong một
-          bước duyệt.
+          AI-generated caption, banner, channel selection, and scheduling — all in one workflow.
         </p>
       </div>
       <ComposeForm />

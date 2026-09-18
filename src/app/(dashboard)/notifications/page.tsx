@@ -20,11 +20,11 @@ interface Notification {
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Vừa xong";
-  if (mins < 60) return `${mins} phút trước`;
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  return `${Math.floor(hours / 24)} ngày trước`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function getIcon(type: Notification["type"]) {
@@ -104,9 +104,9 @@ export default function NotificationsPage() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex sm:items-center justify-between flex-col sm:flex-row gap-4">
-        <PageHeader title="Trung tâm Thông báo" />
+        <PageHeader title="Notification Center" />
         <Button variant="outline" onClick={markAllRead}>
-          Đánh dấu tất cả đã đọc
+          Mark all as read
         </Button>
       </div>
 
@@ -117,7 +117,7 @@ export default function NotificationsPage() {
           aria-selected={tab === "all"}
           className="tab-item"
         >
-          Tất cả
+          All
         </button>
         <button
           type="button"
@@ -125,7 +125,7 @@ export default function NotificationsPage() {
           aria-selected={tab === "unread"}
           className="tab-item"
         >
-          Chưa đọc
+          Unread
         </button>
       </div>
 
@@ -138,7 +138,7 @@ export default function NotificationsPage() {
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground space-y-4 border border-border rounded-lg bg-card/50">
           <Bell className="size-12 opacity-20" />
-          <p>Chưa có thông báo nào</p>
+          <p>No notifications yet</p>
         </div>
       ) : (
         <div className="space-y-3">

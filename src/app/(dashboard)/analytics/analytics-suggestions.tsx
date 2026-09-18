@@ -27,25 +27,25 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
   best_time: {
     icon: Clock,
     tone: "info",
-    label: "Thời điểm tốt nhất",
+    label: "Best Posting Time",
     puck: "bg-info-muted text-info",
   },
   caption_style: {
     icon: Type,
     tone: "primary",
-    label: "Phong cách caption",
+    label: "Caption Style",
     puck: "bg-primary-muted text-primary",
   },
   hashtag_set: {
     icon: Hash,
     tone: "success",
-    label: "Bộ hashtag",
+    label: "Hashtag Strategy",
     puck: "bg-success-muted text-success",
   },
   media_type: {
     icon: Image,
     tone: "warning",
-    label: "Loại nội dung",
+    label: "Content Format",
     puck: "bg-warning-muted text-warning",
   },
 };
@@ -53,7 +53,7 @@ const TYPE_CONFIG: Record<string, TypeConfig> = {
 const DEFAULT_CONFIG: TypeConfig = {
   icon: Lightbulb,
   tone: "neutral",
-  label: "Gợi ý",
+  label: "Suggestion",
   puck: "bg-muted text-muted-foreground",
 };
 
@@ -61,7 +61,7 @@ export function AnalyticsSuggestions({ suggestions }: AnalyticsSuggestionsProps)
   if (!suggestions.length) {
     return (
       <p className="text-sm text-muted-foreground">
-        Chưa có đề xuất. Chạy phân tích chiến dịch để sinh AI learnings.
+        No suggestions yet. Run campaign analytics to generate AI learnings.
       </p>
     );
   }

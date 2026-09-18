@@ -8,9 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { parseProfileUrl } from "@/lib/scraper/url-parser";
 
 const LABEL_OPTIONS = [
-  { value: "competitor", label: "Đối thủ" },
-  { value: "own", label: "Của mình" },
-  { value: "reference", label: "Tham khảo" },
+  { value: "competitor", label: "Competitor" },
+  { value: "own", label: "Own" },
+  { value: "reference", label: "Reference" },
 ];
 
 export function AddAccountForm() {
@@ -29,7 +29,7 @@ export function AddAccountForm() {
     setError(null);
 
     if (!detected) {
-      setError("URL không hợp lệ. Dán đường dẫn Facebook Page hoặc Instagram profile.");
+      setError("Invalid URL. Please paste a valid Facebook Page or Instagram profile URL.");
       return;
     }
 
@@ -43,14 +43,14 @@ export function AddAccountForm() {
 
       const json = (await res.json()) as { error?: string };
       if (!res.ok) {
-        setError(json.error ?? "Có lỗi xảy ra.");
+        setError(json.error ?? "An error occurred.");
         return;
       }
 
       setUrl("");
       router.refresh();
     } catch {
-      setError("Không thể kết nối máy chủ.");
+      setError("Could not connect to server.");
     } finally {
       setLoading(false);
     }
@@ -61,7 +61,7 @@ export function AddAccountForm() {
       onSubmit={handleSubmit}
       className="rounded-lg border border-border bg-card p-4 shadow-sm"
     >
-      <p className="mb-3 text-sm font-medium text-foreground">Thêm tài khoản theo dõi</p>
+      <p className="mb-3 text-sm font-medium text-foreground">Add Tracked Account</p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         {/* URL input */}
         <div className="relative flex-1">
@@ -74,7 +74,7 @@ export function AddAccountForm() {
               setUrl(e.target.value);
               setError(null);
             }}
-            placeholder="https://facebook.com/page-name hoặc https://instagram.com/username"
+            placeholder="https://facebook.com/page-name or https://instagram.com/username"
             className={cn(
               "w-full rounded-md border bg-background px-3 py-2 pr-28 text-sm text-foreground placeholder:text-muted-foreground",
               "focus:outline-none focus:ring-2 focus:ring-primary/50",
@@ -116,7 +116,7 @@ export function AddAccountForm() {
           ) : (
             <PlusCircle className="size-4" aria-hidden="true" />
           )}
-          Thêm theo dõi
+          Add Account
         </button>
       </div>
 

@@ -26,19 +26,19 @@ interface TrackedAccount {
 }
 
 const LABEL_CONFIG: Record<string, { label: string; tone: "warning" | "primary" | "neutral" }> = {
-  competitor: { label: "Đối thủ", tone: "warning" },
-  own: { label: "Của mình", tone: "primary" },
-  reference: { label: "Tham khảo", tone: "neutral" },
+  competitor: { label: "Competitor", tone: "warning" },
+  own: { label: "Own", tone: "primary" },
+  reference: { label: "Reference", tone: "neutral" },
 };
 
 function formatRelativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "vừa xong";
-  if (mins < 60) return `${mins} phút trước`;
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} giờ trước`;
-  return `${Math.floor(hrs / 24)} ngày trước`;
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 export function AccountCard({ account }: { account: TrackedAccount }) {
@@ -77,7 +77,7 @@ export function AccountCard({ account }: { account: TrackedAccount }) {
             <p className="truncate font-semibold text-foreground">
               {account.display_name || account.username || "—"}
               {account.is_verified && (
-                <span className="ml-1 text-info" aria-label="Đã xác minh">✓</span>
+                <span className="ml-1 text-info" aria-label="Verified">✓</span>
               )}
             </p>
             <p className="truncate text-xs text-muted-foreground">
@@ -95,22 +95,22 @@ export function AccountCard({ account }: { account: TrackedAccount }) {
       {/* ── Metrics ─────────────────────────────────────────────────────────── */}
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
-          <p className="text-xs text-muted-foreground">Người theo dõi</p>
+          <p className="text-xs text-muted-foreground">Followers</p>
           <p className="mt-0.5 font-semibold tabular text-foreground">
             {account.followers_count != null
-              ? account.followers_count.toLocaleString("vi-VN")
+              ? account.followers_count.toLocaleString("en-US")
               : "—"}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Bài viết</p>
+          <p className="text-xs text-muted-foreground">Posts</p>
           <p className="mt-0.5 font-semibold tabular text-foreground">
-            {account.posts_count != null ? account.posts_count.toLocaleString("vi-VN") : "—"}
+            {account.posts_count != null ? account.posts_count.toLocaleString("en-US") : "—"}
           </p>
         </div>
         {account.engagement_rate != null && (
           <div>
-            <p className="text-xs text-muted-foreground">Tỷ lệ tương tác</p>
+            <p className="text-xs text-muted-foreground">Engagement Rate</p>
             <p className="mt-0.5 font-semibold text-foreground">
               {Number(account.engagement_rate).toFixed(1)}%
             </p>
@@ -118,9 +118,9 @@ export function AccountCard({ account }: { account: TrackedAccount }) {
         )}
         {account.following_count != null && (
           <div>
-            <p className="text-xs text-muted-foreground">Đang theo dõi</p>
+            <p className="text-xs text-muted-foreground">Following</p>
             <p className="mt-0.5 font-semibold tabular text-foreground">
-              {account.following_count.toLocaleString("vi-VN")}
+              {account.following_count.toLocaleString("en-US")}
             </p>
           </div>
         )}
@@ -153,7 +153,7 @@ export function AccountCard({ account }: { account: TrackedAccount }) {
           type="button"
           onClick={handleRefresh}
           disabled={isRefreshing}
-          title="Cào lại dữ liệu"
+          title="Re-scrape account data"
           className={cn(
             "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
             isRefreshing && "cursor-not-allowed opacity-60",
@@ -164,7 +164,7 @@ export function AccountCard({ account }: { account: TrackedAccount }) {
           ) : (
             <RefreshCw className="size-4" aria-hidden="true" />
           )}
-          <span className="sr-only">Cào lại</span>
+          <span className="sr-only">Re-scrape</span>
         </button>
       </div>
     </div>

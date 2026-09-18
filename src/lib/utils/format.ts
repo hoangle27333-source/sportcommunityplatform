@@ -10,10 +10,10 @@
 
 const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE ?? "Asia/Ho_Chi_Minh";
 
-const NUM = new Intl.NumberFormat("vi-VN");
-const NUM1 = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 });
+const NUM = new Intl.NumberFormat("en-US");
+const NUM1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
-const DATE_TIME = new Intl.DateTimeFormat("vi-VN", {
+const DATE_TIME = new Intl.DateTimeFormat("en-US", {
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
@@ -22,26 +22,26 @@ const DATE_TIME = new Intl.DateTimeFormat("vi-VN", {
   timeZone: TZ,
 });
 
-const DATE = new Intl.DateTimeFormat("vi-VN", {
+const DATE = new Intl.DateTimeFormat("en-US", {
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
   timeZone: TZ,
 });
 
-const DAY_MONTH = new Intl.DateTimeFormat("vi-VN", {
+const DAY_MONTH = new Intl.DateTimeFormat("en-US", {
   day: "2-digit",
   month: "2-digit",
   timeZone: TZ,
 });
 
-const TIME = new Intl.DateTimeFormat("vi-VN", {
+const TIME = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
   minute: "2-digit",
   timeZone: TZ,
 });
 
-const WEEKDAY = new Intl.DateTimeFormat("vi-VN", {
+const WEEKDAY = new Intl.DateTimeFormat("en-US", {
   weekday: "short",
   timeZone: TZ,
 });
@@ -53,7 +53,7 @@ export function num(v: number | null | undefined): string {
   return v == null || !Number.isFinite(v) ? DASH : NUM.format(v);
 }
 
-/** Compact form for tight cells/axes: 12400 → 12,4K. */
+/** Compact form for tight cells/axes: 12400 → 12.4K. */
 export function compact(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
   const n = Math.abs(v);
@@ -65,7 +65,7 @@ export function compact(v: number | null | undefined): string {
 
 export function vnd(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
-  return `${NUM.format(Math.round(v))}₫`;
+  return `${NUM.format(Math.round(v))} VND`;
 }
 
 export function pct(v: number | null | undefined, digits = 1): string {
@@ -105,7 +105,7 @@ export function weekday(ts: string | Date | null | undefined): string {
 }
 
 /**
- * Relative time in Vietnamese ("3 phút trước", "trong 2 giờ"). Used for feeds
+ * Relative time in English ("3m ago", "in 2h", "yesterday"). Used for feeds
  * where the exact timestamp matters less than recency; pair it with a `title`
  * carrying the absolute time so the precise value stays available.
  */
@@ -117,26 +117,21 @@ export function relative(ts: string | Date | null | undefined): string {
   const future = deltaSec > 0;
   const abs = Math.abs(deltaSec);
 
-  let value = abs;
-  let unit = "giây";
   if (abs < 60) {
-    value = abs;
-    unit = "giây";
+    return "just now";
   } else if (abs < 3600) {
-    value = Math.round(abs / 60);
-    unit = "phút";
+    const mins = Math.round(abs / 60);
+    return future ? `in ${mins}m` : `${mins}m ago`;
   } else if (abs < 86_400) {
-    value = Math.round(abs / 3600);
-    unit = "giờ";
+    const hrs = Math.round(abs / 3600);
+    return future ? `in ${hrs}h` : `${hrs}h ago`;
   } else if (abs < 604_800) {
-    value = Math.round(abs / 86_400);
-    unit = "ngày";
+    const days = Math.round(abs / 86_400);
+    return future ? `in ${days}d` : `${days}d ago`;
   } else {
-    // Beyond a week the absolute date is more useful than "5 tuần trước".
+    // Beyond a week the absolute date is more useful.
     return date(d);
   }
-
-  return future ? `trong ${value} ${unit}` : `${value} ${unit} trước`;
 }
 
 /** Percentage change between two periods; null when the base is 0/absent. */

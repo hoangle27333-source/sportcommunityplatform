@@ -57,9 +57,9 @@ export function TrimSlider({ duration, start, end, onChange }: TrimSliderProps) 
   return (
     <div className="space-y-4">
       <div className="flex justify-between text-xs font-medium">
-        <span>Bắt đầu: {formatTime(start)}</span>
-        <span className="text-primary font-semibold">Đã chọn: {formatTime(end - start)}</span>
-        <span>Kết thúc: {formatTime(end)} / {formatTime(duration)}</span>
+        <span>Start: {formatTime(start)}</span>
+        <span className="text-primary font-semibold">Selected: {formatTime(end - start)}</span>
+        <span>End: {formatTime(end)} / {formatTime(duration)}</span>
       </div>
       
       <div className="relative py-2" ref={trackRef}>

@@ -65,33 +65,33 @@ export default async function ChannelsPage({
       <section>
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Kênh</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Channels</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Facebook Page &amp; Instagram Business đã kết nối qua Meta OAuth.
+              Facebook Pages &amp; Instagram Business accounts connected via Meta OAuth.
             </p>
           </div>
           <a
             href="/api/meta/connect"
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            + Kết nối kênh chính thức
+            + Connect Official Channel
           </a>
         </div>
 
         {sp.connected && (
           <div className="mb-4 rounded-md bg-green-50 px-4 py-3 text-sm text-green-700">
-            Đã kết nối {sp.connected} kênh.
+            Connected {sp.connected} channels.
           </div>
         )}
         {sp.error && (
           <div className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
-            Kết nối thất bại: {sp.error}
+            Connection failed: {sp.error}
           </div>
         )}
         {needsReauth.length > 0 && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {needsReauth.length} kênh cần kết nối lại (token hết hạn/thu hồi). Bài đã
-            lên lịch sẽ được giữ lại thay vì báo lỗi.
+            {needsReauth.length} channels require reconnection (token expired or revoked). Scheduled
+            posts will be preserved rather than failing.
           </div>
         )}
 
@@ -99,18 +99,18 @@ export default async function ChannelsPage({
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left text-gray-500">
               <tr>
-                <th className="px-4 py-2 font-medium">Tên</th>
-                <th className="px-4 py-2 font-medium">Nền tảng</th>
+                <th className="px-4 py-2 font-medium">Name</th>
+                <th className="px-4 py-2 font-medium">Platform</th>
                 <th className="px-4 py-2 font-medium">External ID</th>
-                <th className="px-4 py-2 font-medium">Trạng thái</th>
-                <th className="px-4 py-2 font-medium">Token hết hạn</th>
+                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Token Expires</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {officialRows.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                    Chưa có kênh nào. Bấm &quot;Kết nối kênh chính thức&quot; để bắt đầu.
+                    No channels connected yet. Click &quot;Connect Official Channel&quot; to get started.
                   </td>
                 </tr>
               )}
@@ -132,7 +132,7 @@ export default async function ChannelsPage({
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {r.token_expires_at
-                      ? new Date(r.token_expires_at).toLocaleDateString("vi-VN")
+                      ? new Date(r.token_expires_at).toLocaleDateString("en-US")
                       : "—"}
                   </td>
                 </tr>
@@ -147,29 +147,29 @@ export default async function ChannelsPage({
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              Kênh Unofficial{" "}
+              Unofficial Channels{" "}
               <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 font-normal">
                 Browser Automation
               </span>
             </h2>
             <p className="mt-0.5 text-sm text-gray-500">
-              Kết nối qua Playwright — đăng nhập thủ công 1 lần, hệ thống lưu session.
-              Dùng cho seeding nội bộ.
+              Connected via Playwright — log in once, session saved automatically.
+              Used for internal seeding.
             </p>
           </div>
           <a
             href="/seeding"
             className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
           >
-            Quản lý Seeding →
+            Manage Seeding →
           </a>
         </div>
 
         <div className="mb-3 rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-          ⚠️ <strong>Chỉ dùng nội bộ thử nghiệm.</strong> Browser automation vi phạm Facebook
-          ToS. Rủi ro tài khoản bị checkpoint hoặc khóa. Để thêm/quản lý account, vào{" "}
+          ⚠️ <strong>Internal testing only.</strong> Browser automation may violate platform
+          Terms of Service. Risk of account checkpoints or bans. To manage accounts, visit the{" "}
           <a href="/seeding" className="underline font-medium">
-            trang Seeding
+            Seeding page
           </a>
           .
         </div>
@@ -178,8 +178,8 @@ export default async function ChannelsPage({
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left text-gray-500">
               <tr>
-                <th className="px-4 py-2 font-medium">Tên</th>
-                <th className="px-4 py-2 font-medium">Loại</th>
+                <th className="px-4 py-2 font-medium">Name</th>
+                <th className="px-4 py-2 font-medium">Platform</th>
                 <th className="px-4 py-2 font-medium">Session</th>
               </tr>
             </thead>
@@ -187,11 +187,11 @@ export default async function ChannelsPage({
               {unofficialRows.length === 0 && (
                 <tr>
                   <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
-                    Chưa có account unofficial. Vào{" "}
+                    No unofficial accounts connected. Visit the{" "}
                     <a href="/seeding" className="text-indigo-600 underline">
-                      trang Seeding
+                      Seeding page
                     </a>{" "}
-                    để kết nối.
+                    to connect.
                   </td>
                 </tr>
               )}

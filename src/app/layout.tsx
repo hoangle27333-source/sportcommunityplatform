@@ -25,11 +25,11 @@ const firaCode = Fira_Code({
 
 export const metadata: Metadata = {
   title: {
-    default: "Content Automation Hub",
-    template: "%s · Content Hub",
+    default: "Sport Influencer Hub",
+    template: "%s · Sport Influencer Hub",
   },
   description:
-    "Nền tảng tự động hoá sản xuất & phân phối nội dung mạng xã hội (Facebook + Instagram).",
+    "Sports KOL & Community Platform - Integrated 360° Panoramic Dossier & Management.",
 };
 
 export const viewport: Viewport = {
@@ -44,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body
         suppressHydrationWarning
         className={`${beVietnamPro.variable} ${firaCode.variable} min-h-screen bg-background font-sans text-foreground antialiased`}

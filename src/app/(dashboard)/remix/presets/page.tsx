@@ -45,11 +45,11 @@ const ON_SCREEN_TEXT_PRESETS: Record<
 };
 
 const QUALITY_PRESETS = [
-  { label: "Siêu nét", desc: "Phim, TV — file lớn", crf: 14 },
-  { label: "Chất lượng cao", desc: "Upload web, archive", crf: 18 },
-  { label: "Chuẩn", desc: "TikTok / Reels / Shorts", crf: 22 },
-  { label: "Nén nhẹ", desc: "File nhỏ hơn, stream tốt", crf: 26 },
-  { label: "Nhỏ nhất", desc: "Tối ưu dung lượng", crf: 30 },
+  { label: "Ultra Crisp", desc: "Film, TV — large file", crf: 14 },
+  { label: "High Quality", desc: "Web upload, archive", crf: 18 },
+  { label: "Standard", desc: "TikTok / Reels / Shorts", crf: 22 },
+  { label: "Light Compression", desc: "Smaller file, smooth stream", crf: 26 },
+  { label: "Smallest", desc: "Storage optimized", crf: 30 },
 ];
 
 const PLATFORM_OPTIONS = [
@@ -430,7 +430,7 @@ export default function PresetPage() {
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Lưu preset thất bại");
+      if (!res.ok) throw new Error(data.error ?? "Failed to save preset");
       await fetchAll();
       setIsCreating(false);
     } catch (error) {
@@ -439,7 +439,7 @@ export default function PresetPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm("Bạn có chắc chắn muốn xoá preset này?")) return;
+    if (!window.confirm("Are you sure you want to delete this preset?")) return;
     try {
       const baseUrl =
         presetKind === "video"
@@ -449,7 +449,7 @@ export default function PresetPage() {
             : "/api/remix/caption-presets";
       const res = await fetch(`${baseUrl}/${id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Xoá preset thất bại");
+      if (!res.ok) throw new Error(data.error ?? "Failed to delete preset");
       await fetchAll();
     } catch (error) {
       alert((error as Error).message);
@@ -467,7 +467,7 @@ export default function PresetPage() {
             : "/api/remix/caption-presets";
       const res = await fetch(`${baseUrl}/${id}/default`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Thiết lập mặc định thất bại");
+      if (!res.ok) throw new Error(data.error ?? "Failed to set default preset");
       await fetchAll();
     } catch (error) {
       alert((error as Error).message);
@@ -483,7 +483,7 @@ export default function PresetPage() {
       form.append("file", file);
       const res = await fetch("/api/media/upload", { method: "POST", body: form });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Tải ảnh template thất bại");
+      if (!res.ok) throw new Error(data.error ?? "Failed to load template image");
       setTemplateImage({ id: data.asset.id, url: data.asset.url });
       setShowTemplateEditor(true);
     } catch (error) {
@@ -498,7 +498,7 @@ export default function PresetPage() {
       <div className="space-y-6">
         {/* Fixed Header section for Video Preset */}
         <div className="grid gap-6 lg:grid-cols-2">
-          <Field label="Tên preset">
+          <Field label="Preset Name">
             {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} placeholder="TikTok bold dub" />}
           </Field>
         </div>
@@ -512,7 +512,7 @@ export default function PresetPage() {
               aria-selected={videoTab === "general"}
               className="tab-item"
             >
-              Cài đặt chung
+              General Settings
             </button>
             <button
               type="button"
@@ -520,7 +520,7 @@ export default function PresetPage() {
               aria-selected={videoTab === "voice"}
               className="tab-item"
             >
-              <Mic className="w-3.5 h-3.5" /> Giọng đọc
+              <Mic className="w-3.5 h-3.5" /> Voice
             </button>
             <button
               type="button"
@@ -528,7 +528,7 @@ export default function PresetPage() {
               aria-selected={videoTab === "subtitle"}
               className="tab-item"
             >
-              <TypeIcon className="w-3.5 h-3.5" /> Phụ đề
+              <TypeIcon className="w-3.5 h-3.5" /> Subtitles
             </button>
             <button
               type="button"
@@ -555,13 +555,13 @@ export default function PresetPage() {
                <div className="grid gap-6 lg:grid-cols-2">
                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-foreground">Tỉ lệ đầu ra</label>
+                      <label className="text-xs font-medium text-foreground">Output Aspect Ratio</label>
                       <RatioPicker value={ratio} onChange={setRatio} />
                     </div>
                  </div>
                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-foreground">Chất lượng video đầu ra</label>
+                      <label className="text-xs font-medium text-foreground">Output Video Quality</label>
                       <div className="space-y-1.5">
                         {QUALITY_PRESETS.map(preset => {
                           const isActive = Number(crf) === preset.crf;
@@ -580,7 +580,7 @@ export default function PresetPage() {
                           );
                         })}
                       </div>
-                      <p className="text-xs text-muted-foreground">Mức đã chọn tương đương CRF {crf} (thấp = chất lượng cao hơn)</p>
+                      <p className="text-xs text-muted-foreground">Selected level corresponds to CRF {crf} (lower = higher quality)</p>
                     </div>
                  </div>
                </div>
@@ -590,21 +590,21 @@ export default function PresetPage() {
               <div className="grid gap-6 lg:grid-cols-2">
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-medium text-foreground">Ngôn ngữ & giọng đọc</label>
+                    <label className="text-xs font-medium text-foreground">Language & Voice</label>
                     <div className="flex gap-2">
-                      <Button variant={targetLanguage === "vi" ? "primary" : "outline"} size="sm" onClick={() => setTargetLanguage("vi")}>Tiếng Việt</Button>
+                      <Button variant={targetLanguage === "vi" ? "primary" : "outline"} size="sm" onClick={() => setTargetLanguage("vi")}>Vietnamese</Button>
                       <Button variant={targetLanguage === "en" ? "primary" : "outline"} size="sm" onClick={() => setTargetLanguage("en")}>English</Button>
                     </div>
                     <VoiceSelector value={voice} onChange={setVoice} />
                   </div>
                 </div>
                 <div className="space-y-4">
-                  <Field label="Chế độ lồng tiếng">
+                  <Field label="Dubbing Mode">
                     {(p) => (
                       <Select {...p} value={dubMode} onChange={(e) => setDubMode(e.target.value as typeof dubMode)}>
-                        <option value="none">Không lồng tiếng</option>
-                        <option value="full">Thay toàn bộ audio</option>
-                        <option value="preserve_bgm">Giữ nhạc nền</option>
+                        <option value="none">No dubbing (subtitles only)</option>
+                        <option value="full">Replace full audio</option>
+                        <option value="preserve_bgm">Preserve background music</option>
                         <option value="heygen">HeyGen lip-sync</option>
                       </Select>
                     )}
@@ -631,10 +631,10 @@ export default function PresetPage() {
                     </div>
                     <div>
                       <span className="text-sm font-semibold text-foreground">
-                        {disableSubtitle ? "🔕 Tắt phụ đề" : "✅ Bật phụ đề"}
+                        {disableSubtitle ? "🔕 Subtitles Disabled" : "✅ Subtitles Enabled"}
                       </span>
                       <p className="text-xs text-muted-foreground">
-                        {disableSubtitle ? "Không burn-in phụ đề vào video" : "Tạo và burn-in phụ đề dịch"}
+                        {disableSubtitle ? "Do not burn in subtitles into video" : "Generate and burn in translated subtitles"}
                       </p>
                     </div>
                   </label>
@@ -642,7 +642,7 @@ export default function PresetPage() {
                   {/* Language picker — only shown when subtitle is enabled */}
                   {!disableSubtitle && (
                     <div className="flex items-center gap-2 ml-auto">
-                      <span className="text-xs font-semibold text-foreground">Ngôn ngữ phụ đề:</span>
+                      <span className="text-xs font-semibold text-foreground">Subtitle Language:</span>
                       {(["vi", "en"] as const).map((lang) => (
                         <button
                           key={lang}
@@ -654,7 +654,7 @@ export default function PresetPage() {
                               : "border-border bg-background hover:bg-muted text-muted-foreground"
                           }`}
                         >
-                          {lang === "vi" ? "🇻🇳 Tiếng Việt" : "🇺🇸 English"}
+                          {lang === "vi" ? "🇻🇳 Vietnamese" : "🇺🇸 English"}
                         </button>
                       ))}
                     </div>
@@ -668,9 +668,9 @@ export default function PresetPage() {
                       <SubtitleConfig
                         value={subtitleConfig}
                         onChange={setSubtitleConfig}
-                        title="Cấu hình phụ đề"
-                        sampleText="Đây là subtitle demo theo preset"
-                        autoDescription="Preset này sẽ áp dụng cho subtitle burn-in khi job video dùng preset."
+                        title="Subtitle Configuration"
+                        sampleText="Sample subtitle text preview"
+                        autoDescription="This preset applies to burned-in subtitles when video jobs use this preset."
                       />
                     </div>
                     <div className="space-y-4">
@@ -681,9 +681,9 @@ export default function PresetPage() {
                         onToggle={(value) => setBlurOriginalSub(value)}
                         autoDetect={autoDetectSub}
                         onAutoDetectChange={setAutoDetectSub}
-                        label="Blur subtitle gốc"
-                        autoDetectLabel="AI tự phát hiện vùng subtitle gốc"
-                        autoDetectDescription="Dùng khi source đã có phụ đề và cần che trước khi burn-in phụ đề mới."
+                        label="Blur original subtitles"
+                        autoDetectLabel="AI auto-detect original subtitle region"
+                        autoDetectDescription="Use when the source video has existing subtitles that need blurring before burning in new subtitles."
                       />
                     </div>
                   </div>
@@ -695,8 +695,8 @@ export default function PresetPage() {
               <div className="grid gap-6 lg:grid-cols-2">
                 <div className="space-y-4">
                   <Checkbox
-                    label="Dịch text on-screen"
-                    description="Lưu mặc định style chữ cho phần text overlay tự động."
+                    label="Translate on-screen text"
+                    description="Default text styling for automated on-screen text overlays."
                     checked={translateOnScreenText}
                     onChange={(e) => setTranslateOnScreenText(e.target.checked)}
                   />
@@ -716,7 +716,7 @@ export default function PresetPage() {
                         ))}
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Font chữ">
+                        <Field label="Font">
                           {(p) => (
                             <Select {...p} value={onScreenTextFont} onChange={(e) => setOnScreenTextFont(e.target.value)}>
                               {VIETNAMESE_FONTS.map((f) => (
@@ -725,7 +725,7 @@ export default function PresetPage() {
                             </Select>
                           )}
                         </Field>
-                        <Field label="Cỡ chữ / Size mode">
+                        <Field label="Font Size / Size Mode">
                           {(p) => (
                             <div className="flex gap-2">
                               <Select {...p} value={onScreenTextSizeMode} onChange={(e) => setOnScreenTextSizeMode(e.target.value as OnScreenTextSizeMode)} className="flex-1">
@@ -740,9 +740,9 @@ export default function PresetPage() {
                         </Field>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <ColorFieldWithOpacity label="Màu chữ" value={onScreenTextColor} onChange={setOnScreenTextColor} fallback="#FFFFFF" />
-                        <ColorFieldWithOpacity label="Màu viền" value={onScreenTextOutlineColor} onChange={setOnScreenTextOutlineColor} fallback="#000000" />
-                        <Field label={`Độ dày viền (${onScreenTextOutlineWidth}px)`}>
+                        <ColorFieldWithOpacity label="Text Color" value={onScreenTextColor} onChange={setOnScreenTextColor} fallback="#FFFFFF" />
+                        <ColorFieldWithOpacity label="Outline Color" value={onScreenTextOutlineColor} onChange={setOnScreenTextOutlineColor} fallback="#000000" />
+                        <Field label={`Outline Width (${onScreenTextOutlineWidth}px)`}>
                           {(p) => (
                             <input
                               {...p}
@@ -757,7 +757,7 @@ export default function PresetPage() {
                         </Field>
                       </div>
                       <div className="space-y-3">
-                        <Field label="Kiểu nền">
+                        <Field label="Background Style">
                           {(p) => (
                             <div className="flex gap-2">
                               {(["solid", "blur"] as const).map((style) => (
@@ -780,8 +780,8 @@ export default function PresetPage() {
 
                         {onScreenTextBackgroundStyle === "solid" && (
                           <div className="grid gap-3 sm:grid-cols-2">
-                            <ColorFieldWithOpacity label="Màu nền" value={onScreenTextBgColor} onChange={setOnScreenTextBgColor} fallback="#000000" />
-                            <Field label={`Opacity nền (${onScreenTextBackgroundOpacity.toFixed(2)})`}>
+                            <ColorFieldWithOpacity label="Background Color" value={onScreenTextBgColor} onChange={setOnScreenTextBgColor} fallback="#000000" />
+                            <Field label={`Background Opacity (${onScreenTextBackgroundOpacity.toFixed(2)})`}>
                               {(p) => (
                                 <input
                                   {...p}
@@ -799,13 +799,13 @@ export default function PresetPage() {
 
                         {onScreenTextBackgroundStyle === "blur" && (
                           <p className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2 border border-border/50">
-                            🌫️ Blur background tự động làm mờ vùng phía sau chữ — không cần chọn màu hay opacity.
+                            🌫️ Blur background automatically blurs the area behind text — no color or opacity needed.
                           </p>
                         )}
                       </div>
                       <div className="flex flex-wrap gap-4">
-                        <Checkbox label="In đậm" checked={onScreenTextBold} onChange={(e) => setOnScreenTextBold(e.target.checked)} />
-                        <Checkbox label="In nghiêng" checked={onScreenTextItalic} onChange={(e) => setOnScreenTextItalic(e.target.checked)} />
+                        <Checkbox label="Bold" checked={onScreenTextBold} onChange={(e) => setOnScreenTextBold(e.target.checked)} />
+                        <Checkbox label="Italic" checked={onScreenTextItalic} onChange={(e) => setOnScreenTextItalic(e.target.checked)} />
                       </div>
                     </div>
                   )}
@@ -833,10 +833,10 @@ export default function PresetPage() {
                               borderRadius: "6px",
                             }}
                           >
-                            Chữ hiện trên video sẽ trông như thế này
+                            Text on video will look like this
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground text-center">Preview này minh họa style của text. Layout thực tế có thể thay đổi tùy thuộc vào video.</p>
+                        <p className="text-xs text-muted-foreground text-center">This preview illustrates the text style. Actual layout may vary based on video dimensions.</p>
                      </div>
                   </div>
                 )}
@@ -905,7 +905,7 @@ export default function PresetPage() {
                         </div>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground text-center">Preview minh họa vị trí và độ mờ của watermark trên khung {watermarkRatioTab}.</p>
+                    <p className="text-xs text-muted-foreground text-center">Preview illustrates watermark position and opacity on the {watermarkRatioTab} frame.</p>
                   </div>
                 )}
               </div>
@@ -920,17 +920,17 @@ export default function PresetPage() {
     return (
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
-          <Field label="Tên preset">
+          <Field label="Preset Name">
             {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} placeholder="Image clean layout" />}
           </Field>
           <div className="space-y-2">
-            <label className="text-xs font-medium text-foreground">Tỉ lệ đầu ra</label>
+            <label className="text-xs font-medium text-foreground">Output Aspect Ratio</label>
             <RatioPicker value={ratio} onChange={setRatio} />
           </div>
-          <Field label="Dịch chữ trên ảnh">
+          <Field label="Translate Image Text">
             {(p) => (
               <Select {...p} value={imageTranslate} onChange={(e) => setImageTranslate(e.target.value as ImageTranslateMode)}>
-                <option value="none">Không dịch</option>
+                <option value="none">None</option>
                 <option value="overlay">Overlay</option>
                 <option value="regenerate">Regenerate</option>
               </Select>
@@ -944,10 +944,10 @@ export default function PresetPage() {
             <div>
               <h4 className="text-sm font-medium">Image editor template</h4>
               <p className="text-xs text-muted-foreground">
-                Template chỉ lưu layout, crop, annotation, watermark tương đối. Không giữ ảnh nguồn cũ.
+                Template only saves layout, crop, annotation, and relative watermark. Does not retain original source image.
               </p>
             </div>
-            <Field label="Chọn ảnh để dựng template">
+            <Field label="Select Image to Build Template">
               {(p) => (
                 <Input
                   {...p}
@@ -963,16 +963,16 @@ export default function PresetPage() {
             </Field>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" disabled={!templateImage} onClick={() => setShowTemplateEditor(true)}>
-                {editorTemplate ? "Mở lại template" : "Mở Image Editor"}
+                {editorTemplate ? "Reopen Template" : "Open Image Editor"}
               </Button>
               {editorTemplate && (
                 <Button variant="ghost" onClick={() => setEditorTemplate(emptyImageTemplateState())}>
-                  Xoá template
+                  Delete Template
                 </Button>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {editorTemplate ? "Đã lưu template editor." : "Chưa có template editor."}
+              {editorTemplate ? "Editor template saved." : "No editor template saved."}
             </p>
           </div>
         </div>
@@ -984,11 +984,11 @@ export default function PresetPage() {
     return (
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
-          <Field label="Tên preset">
-            {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} placeholder="Caption sân bóng cuối tuần" />}
+          <Field label="Preset Name">
+            {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} placeholder="Weekend court booking caption" />}
           </Field>
 
-          <Field label="Platform áp dụng">
+          <Field label="Target Platforms">
             {(p) => (
               <Select
                 {...p}
@@ -1002,7 +1002,7 @@ export default function PresetPage() {
                   }));
                 }}
               >
-                <option value="">Chọn platform để thêm</option>
+                <option value="">Select platform to add</option>
                 {PLATFORM_OPTIONS.map((platform) => (
                   <option key={platform} value={platform}>{platform}</option>
                 ))}
@@ -1029,28 +1029,28 @@ export default function PresetPage() {
           </div>
 
           <Field label="Tone & voice">
-            {(p) => <Input {...p} value={captionPreset.toneAndVoice ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, toneAndVoice: e.target.value }))} placeholder="Năng động, gần gũi, có tính rủ rê đặt sân" />}
+            {(p) => <Input {...p} value={captionPreset.toneAndVoice ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, toneAndVoice: e.target.value }))} placeholder="Energetic, approachable, encouraging court bookings" />}
           </Field>
 
-          <Field label="Đối tượng mục tiêu">
-            {(p) => <Input {...p} value={captionPreset.audience ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, audience: e.target.value }))} placeholder="Nhóm bạn đá tối, dân văn phòng, chủ đội phong trào..." />}
+          <Field label="Target Audience">
+            {(p) => <Input {...p} value={captionPreset.audience ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, audience: e.target.value }))} placeholder="Evening match players, corporate groups, community team captains..." />}
           </Field>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Độ dài caption">
+            <Field label="Caption Length">
               {(p) => (
                 <Select {...p} value={captionPreset.captionLength ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, captionLength: e.target.value }))}>
-                  <option value="">Chọn độ dài</option>
-                  <option value="Ngắn">Ngắn</option>
-                  <option value="Vừa">Vừa</option>
-                  <option value="Dài">Dài</option>
+                  <option value="">Select length</option>
+                  <option value="Short">Short</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Long">Long</option>
                 </Select>
               )}
             </Field>
-            <Field label="Kiểu mở đầu">
+            <Field label="Hook Style">
               {(p) => (
                 <Select {...p} value={captionPreset.hookStyle ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, hookStyle: e.target.value }))}>
-                  <option value="">Chọn hook style</option>
+                  <option value="">Select hook style</option>
                   <option value="Question">Question</option>
                   <option value="Benefit">Benefit</option>
                   <option value="Story">Story</option>
@@ -1061,55 +1061,55 @@ export default function PresetPage() {
             </Field>
           </div>
 
-          <Field label="CTA mặc định">
-            {(p) => <Input {...p} value={captionPreset.cta ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, cta: e.target.value }))} placeholder="Inbox để giữ sân tối nay / Đặt lịch ngay trong bio..." />}
+          <Field label="Default CTA">
+            {(p) => <Input {...p} value={captionPreset.cta ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, cta: e.target.value }))} placeholder="DM to reserve tonight / Book now via link in bio..." />}
           </Field>
 
-          <Field label="Quy tắc brand voice">
-            {(p) => <Textarea {...p} value={captionPreset.brandRules ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, brandRules: e.target.value }))} placeholder="Không nói quá đà, tránh giọng sale lộ liễu, giữ tinh thần chuyên nghiệp..." />}
+          <Field label="Brand Voice Rules">
+            {(p) => <Textarea {...p} value={captionPreset.brandRules ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, brandRules: e.target.value }))} placeholder="Avoid hyperbole, maintain a professional and welcoming tone..." />}
           </Field>
         </div>
 
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Hashtag bắt buộc">
-              {(p) => <Textarea {...p} value={tagsToText(captionPreset.requiredHashtags)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, requiredHashtags: textToTags(e.target.value) }))} placeholder="#datsan, #bongda..." />}
+            <Field label="Required Hashtags">
+              {(p) => <Textarea {...p} value={tagsToText(captionPreset.requiredHashtags)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, requiredHashtags: textToTags(e.target.value) }))} placeholder="#courtbooking, #badminton, #football..." />}
             </Field>
-            <Field label="Hashtag gợi ý">
+            <Field label="Suggested Hashtags">
               {(p) => <Textarea {...p} value={tagsToText(captionPreset.optionalHashtags)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, optionalHashtags: textToTags(e.target.value) }))} placeholder="#football, #weekendmatch..." />}
             </Field>
-            <Field label="Hashtag không dùng">
+            <Field label="Excluded Hashtags">
               {(p) => <Textarea {...p} value={tagsToText(captionPreset.bannedHashtags)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, bannedHashtags: textToTags(e.target.value) }))} placeholder="#cheap, #spam..." />}
             </Field>
-            <Field label="Keyword bắt buộc">
-              {(p) => <Textarea {...p} value={tagsToText(captionPreset.requiredKeywords)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, requiredKeywords: textToTags(e.target.value) }))} placeholder="sân mới, ưu đãi giờ vàng..." />}
+            <Field label="Required Keywords">
+              {(p) => <Textarea {...p} value={tagsToText(captionPreset.requiredKeywords)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, requiredKeywords: textToTags(e.target.value) }))} placeholder="new courts, peak hour discount..." />}
             </Field>
-            <Field label="Keyword tránh dùng">
-              {(p) => <Textarea {...p} value={tagsToText(captionPreset.bannedKeywords)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, bannedKeywords: textToTags(e.target.value) }))} placeholder="rẻ nhất, số 1 tuyệt đối..." />}
+            <Field label="Excluded Keywords">
+              {(p) => <Textarea {...p} value={tagsToText(captionPreset.bannedKeywords)} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, bannedKeywords: textToTags(e.target.value) }))} placeholder="cheapest, guaranteed #1..." />}
             </Field>
-            <Field label="Phong cách emoji">
+            <Field label="Emoji Style">
               {(p) => (
                 <Select {...p} value={captionPreset.emojiStyle ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, emojiStyle: e.target.value }))}>
-                  <option value="">Chọn emoji style</option>
-                  <option value="Không dùng">Không dùng</option>
-                  <option value="Ít">Ít</option>
-                  <option value="Vừa phải">Vừa phải</option>
-                  <option value="Nổi bật">Nổi bật</option>
+                  <option value="">Select emoji style</option>
+                  <option value="None">None</option>
+                  <option value="Minimal">Minimal</option>
+                  <option value="Moderate">Moderate</option>
+                  <option value="Prominent">Prominent</option>
                 </Select>
               )}
             </Field>
           </div>
 
-          <Field label="Cấu trúc caption">
-            {(p) => <Input {...p} value={captionPreset.formatStyle ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, formatStyle: e.target.value }))} placeholder="Hook -> lợi ích -> CTA -> hashtag" />}
+          <Field label="Caption Structure">
+            {(p) => <Input {...p} value={captionPreset.formatStyle ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, formatStyle: e.target.value }))} placeholder="Hook -> Benefits -> CTA -> Hashtags" />}
           </Field>
 
-          <Field label="Ví dụ caption mẫu">
-            {(p) => <Textarea {...p} value={captionPreset.sampleCaptions ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, sampleCaptions: e.target.value }))} placeholder="Có slot đẹp cho tối nay, sân mới thay cỏ..." />}
+          <Field label="Sample Captions">
+            {(p) => <Textarea {...p} value={captionPreset.sampleCaptions ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, sampleCaptions: e.target.value }))} placeholder="Prime court available tonight, newly renovated turf..." />}
           </Field>
 
-          <Field label="Hướng dẫn thêm">
-            {(p) => <Textarea {...p} value={captionPreset.extraInstructions ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, extraInstructions: e.target.value }))} placeholder="Giữ văn phong rủ rê, tránh quá nhiều hashtag, ưu tiên CTA ngắn..." />}
+          <Field label="Additional Instructions">
+            {(p) => <Textarea {...p} value={captionPreset.extraInstructions ?? ""} onChange={(e) => setCaptionPreset((prev) => ({ ...prev, extraInstructions: e.target.value }))} placeholder="Maintain engaging tone, avoid hashtag spam, prefer punchy CTAs..." />}
           </Field>
         </div>
       </div>
@@ -1120,25 +1120,25 @@ export default function PresetPage() {
     return (
       <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-medium">Watermark mặc định</h4>
-          <p className="text-xs text-muted-foreground">Áp dụng cho preset video hoặc image của tab hiện tại.</p>
+          <h4 className="text-sm font-medium">Default Watermark</h4>
+          <p className="text-xs text-muted-foreground">Applies to video or image presets in the current tab.</p>
         </div>
-        <Field label="Loại watermark">
+        <Field label="Watermark Type">
           {(p) => (
             <Select {...p} value={watermarkMode} onChange={(e) => setWatermarkMode(e.target.value as WatermarkMode)}>
-              <option value="disabled">Không dùng</option>
+              <option value="disabled">Disabled</option>
               <option value="text">Text</option>
-              <option value="image">Ảnh</option>
+              <option value="image">Image</option>
             </Select>
           )}
         </Field>
         {watermarkMode === "text" && (
-          <Field label="Nội dung text watermark">
+          <Field label="Watermark Text Content">
             {(p) => <Input {...p} value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} placeholder="@yourbrand" />}
           </Field>
         )}
         {watermarkMode === "image" && (
-          <Field label="Media ID watermark">
+          <Field label="Watermark Media ID">
             {(p) => <Input {...p} value={watermarkImageMediaId} onChange={(e) => setWatermarkImageMediaId(e.target.value)} placeholder="asset id PNG watermark" />}
           </Field>
         )}
@@ -1156,8 +1156,8 @@ export default function PresetPage() {
             {/* Per-ratio position settings */}
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-foreground mb-1 block">Vị trí watermark theo tỉ lệ khung hình</label>
-                <p className="text-xs text-muted-foreground mb-2">Tuỳ chỉnh vị trí riêng cho từng tỉ lệ — giúp watermark không bị lệch khung.</p>
+                <label className="text-xs font-medium text-foreground mb-1 block">Watermark Position by Aspect Ratio</label>
+                <p className="text-xs text-muted-foreground mb-2">Customize position per ratio to prevent watermark clipping.</p>
                 <div className="flex gap-1.5 flex-wrap">
                   {(["9:16", "16:9", "1:1", "4:5"] as const).map(r => (
                     <button
@@ -1170,31 +1170,31 @@ export default function PresetPage() {
                           : "border-border bg-background hover:bg-muted text-muted-foreground"
                       }`}
                     >
-                      {r === "9:16" ? "📱 9:16 Dọc" : r === "16:9" ? "🖥️ 16:9 Ngang" : r === "1:1" ? "⬛ 1:1 Vuông" : "🖼️ 4:5 Chân dung"}
+                      {r === "9:16" ? "📱 9:16 Vertical" : r === "16:9" ? "🖥️ 16:9 Landscape" : r === "1:1" ? "⬛ 1:1 Square" : "🖼️ 4:5 Portrait"}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
-                <Field label="Vị trí mặc định">
+                <Field label="Default Position">
                   {(p) => (
                     <Select {...p} value={watermarkPositionsByRatio[watermarkRatioTab].position} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], position: e.target.value } }))}>
                       <option value="top-left">Top left</option>
                       <option value="top-right">Top right</option>
                       <option value="bottom-left">Bottom left</option>
                       <option value="bottom-right">Bottom right</option>
-                      <option value="custom">Tùy chỉnh (X, Y)</option>
+                      <option value="custom">Custom (X, Y)</option>
                     </Select>
                   )}
                 </Field>
 
                 {watermarkPositionsByRatio[watermarkRatioTab].position === "custom" && (
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label={`Vị trí X (${watermarkPositionsByRatio[watermarkRatioTab].positionX})`}>
+                    <Field label={`Position X (${watermarkPositionsByRatio[watermarkRatioTab].positionX})`}>
                       {(p) => <Input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionsByRatio[watermarkRatioTab].positionX} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], positionX: e.target.value } }))} />}
                     </Field>
-                    <Field label={`Vị trí Y (${watermarkPositionsByRatio[watermarkRatioTab].positionY})`}>
+                    <Field label={`Position Y (${watermarkPositionsByRatio[watermarkRatioTab].positionY})`}>
                       {(p) => <Input {...p} type="range" min={0} max={1} step="0.01" value={watermarkPositionsByRatio[watermarkRatioTab].positionY} onChange={(e) => setWatermarkPositionsByRatio(prev => ({ ...prev, [watermarkRatioTab]: { ...prev[watermarkRatioTab], positionY: e.target.value } }))} />}
                     </Field>
                   </div>
@@ -1211,28 +1211,28 @@ export default function PresetPage() {
     if (kind === "video") {
       return (
         <>
-          <p>Tỉ lệ: <span className="font-medium text-foreground">{preset.output_ratio || "9:16"}</span></p>
-          <p>Voice: <span className="font-medium text-foreground">{preset.dub_mode === "none" ? "Không lồng tiếng" : (preset.voice_name || "Mặc định")}</span></p>
-          <p>Subtitle: <span className="font-medium text-foreground">{preset.auto_vietsub === false ? "Tắt" : (preset.subtitle_preset || "tiktok_bold")}</span></p>
-          <p>Text on-screen: <span className="font-medium text-foreground">{preset.translate_on_screen_text ? "Dịch & đè text" : "Tắt"}</span></p>
+          <p>Ratio: <span className="font-medium text-foreground">{preset.output_ratio || "9:16"}</span></p>
+          <p>Voice: <span className="font-medium text-foreground">{preset.dub_mode === "none" ? "No dubbing" : (preset.voice_name || "Default")}</span></p>
+          <p>Subtitle: <span className="font-medium text-foreground">{preset.auto_vietsub === false ? "Disabled" : (preset.subtitle_preset || "tiktok_bold")}</span></p>
+          <p>Text on-screen: <span className="font-medium text-foreground">{preset.translate_on_screen_text ? "Translate & overlay" : "Disabled"}</span></p>
         </>
       );
     }
     if (kind === "image") {
       return (
         <>
-          <p>Tỉ lệ: <span className="font-medium text-foreground">{preset.output_ratio || "9:16"}</span></p>
+          <p>Ratio: <span className="font-medium text-foreground">{preset.output_ratio || "9:16"}</span></p>
           <p>Image translate: <span className="font-medium text-foreground">{preset.image_translate || "none"}</span></p>
-          <p>Template: <span className="font-medium text-foreground">{preset.editor_template && Object.keys(preset.editor_template).length ? "Đã lưu" : "Chưa có"}</span></p>
+          <p>Template: <span className="font-medium text-foreground">{preset.editor_template && Object.keys(preset.editor_template).length ? "Saved" : "None"}</span></p>
         </>
       );
     }
     const platforms = normalizeStringArray(preset.platforms);
     return (
       <>
-        <p>Platform: <span className="font-medium text-foreground">{platforms.length ? platforms.join(", ") : "Chưa chọn"}</span></p>
-        <p>Tone: <span className="font-medium text-foreground">{preset.tone_and_voice || "Chưa set"}</span></p>
-        <p>CTA: <span className="font-medium text-foreground">{preset.cta || "Chưa set"}</span></p>
+        <p>Platform: <span className="font-medium text-foreground">{platforms.length ? platforms.join(", ") : "None selected"}</span></p>
+        <p>Tone: <span className="font-medium text-foreground">{preset.tone_and_voice || "Not set"}</span></p>
+        <p>CTA: <span className="font-medium text-foreground">{preset.cta || "Not set"}</span></p>
       </>
     );
   }
@@ -1240,8 +1240,8 @@ export default function PresetPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Cấu hình Preset Remix"
-        description="Quản lý riêng preset video, image và caption để Remix Studio chọn đúng cấu hình cho từng phần."
+        title="Remix Preset Configuration"
+        description="Manage video, image, and caption presets so Remix Studio applies the exact configuration for each workflow."
       />
 
       <Tabs
@@ -1262,29 +1262,29 @@ export default function PresetPage() {
                 <div>
                   <h2 className="text-lg font-medium">
                     {nextKind === "video"
-                      ? "Danh sách Video Preset"
+                      ? "Video Presets"
                       : nextKind === "image"
-                        ? "Danh sách Image Preset"
-                        : "Danh sách Caption Preset"}
+                        ? "Image Presets"
+                        : "Caption Presets"}
                   </h2>
                   <p className="text-sm text-muted-foreground">
                     {nextKind === "video"
-                      ? "Preset cho voice, subtitle, text on-screen và watermark."
+                      ? "Presets for voice dubbing, subtitles, on-screen text, and watermark."
                       : nextKind === "image"
-                        ? "Preset cho image translate, watermark và editor template."
-                        : "Preset cho tone, platform, hashtag, CTA và quy tắc viết caption."}
+                        ? "Presets for image translation, watermark, and editor templates."
+                        : "Presets for tone, target platforms, hashtags, CTA, and copywriting rules."}
                   </p>
                 </div>
                 <Button onClick={() => openCreate(nextKind)}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Tạo {nextKind} preset
+                  Create {nextKind} preset
                 </Button>
               </div>
 
               {loading ? (
-                <div className="rounded-lg border border-border bg-muted/10 p-10 text-center text-muted-foreground">Đang tải preset...</div>
+                <div className="rounded-lg border border-border bg-muted/10 p-10 text-center text-muted-foreground">Loading presets...</div>
               ) : activePresets.length === 0 ? (
-                <div className="rounded-lg border border-border bg-muted/10 p-10 text-center text-muted-foreground">Chưa có preset nào.</div>
+                <div className="rounded-lg border border-border bg-muted/10 p-10 text-center text-muted-foreground">No presets found.</div>
               ) : (
                 <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
                   {activePresets.map((preset) => (
@@ -1300,7 +1300,7 @@ export default function PresetPage() {
                           </div>
                           {preset.is_default && (
                             <span className="mt-2 inline-block rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
-                              Mặc định
+                              Default
                             </span>
                           )}
                         </div>
@@ -1312,7 +1312,7 @@ export default function PresetPage() {
                             onClick={() => handleSetDefault(preset.id)}
                           >
                             <Check className="mr-1 h-4 w-4" />
-                            {preset.is_default ? "Mặc định" : "Chọn mặc định"}
+                            {preset.is_default ? "Default" : "Set as Default"}
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => openEdit(nextKind, preset)}>
                             <Edit2 className="h-4 w-4" />
@@ -1334,13 +1334,13 @@ export default function PresetPage() {
               {isCreating && presetKind === nextKind && (
                 <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
                   <div className="mb-6 flex items-center justify-between border-b border-border pb-4">
-                    <h3 className="text-lg font-semibold">{editingId ? "Chỉnh sửa preset" : "Tạo preset mới"}</h3>
-                    <Button variant="ghost" onClick={() => setIsCreating(false)}>Huỷ</Button>
+                    <h3 className="text-lg font-semibold">{editingId ? "Edit Preset" : "Create New Preset"}</h3>
+                    <Button variant="ghost" onClick={() => setIsCreating(false)}>Cancel</Button>
                   </div>
                   {nextKind === "video" ? renderVideoForm() : nextKind === "image" ? renderImageForm() : renderCaptionForm()}
                   <div className="mt-6 flex justify-end gap-3 border-t border-border pt-4">
-                    <Button variant="outline" onClick={() => setIsCreating(false)}>Huỷ</Button>
-                    <Button onClick={() => void handleSave()}>{editingId ? "Lưu thay đổi" : "Tạo preset"}</Button>
+                    <Button variant="outline" onClick={() => setIsCreating(false)}>Cancel</Button>
+                    <Button onClick={() => void handleSave()}>{editingId ? "Save Changes" : "Create Preset"}</Button>
                   </div>
                 </div>
               )}

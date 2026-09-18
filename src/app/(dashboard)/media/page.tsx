@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 function timeAgo(dateString: string) {
   const date = new Date(dateString);
   const diffInSeconds = Math.round((date.getTime() - Date.now()) / 1000);
-  const rtf = new Intl.RelativeTimeFormat('vi', { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
   
   const days = Math.round(diffInSeconds / 86400);
   if (Math.abs(days) > 0) return rtf.format(days, 'day');
@@ -29,13 +29,13 @@ export default async function MediaPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Thư viện Media</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Media Library</h1>
       </div>
       
       {!assets || assets.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-            <p>Chưa có file media nào.</p>
+            <p>No media files found.</p>
           </CardContent>
         </Card>
       ) : (

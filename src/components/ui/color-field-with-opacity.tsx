@@ -78,7 +78,7 @@ export function ColorFieldWithOpacity({
         {/* Color picker */}
         <label
           className="relative cursor-pointer"
-          title={`Chọn màu: ${label}`}
+          title={`Select color: ${label}`}
         >
           <span
             className="block h-8 w-10 rounded-md border border-border shadow-sm"
@@ -91,7 +91,7 @@ export function ColorFieldWithOpacity({
               onChange(combineHexColorAndOpacity(e.target.value, parsed.opacity))
             }
             className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            aria-label={`Màu ${label}`}
+            aria-label={`Color: ${label}`}
           />
         </label>
 

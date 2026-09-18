@@ -26,9 +26,9 @@ import { titleFor, type Role } from "./nav";
  */
 
 const ROLE_LABEL: Record<Role, string> = {
-  admin:  "Quản trị",
-  editor: "Biên tập",
-  viewer: "Chỉ xem",
+  admin:  "Admin",
+  editor: "Editor",
+  viewer: "Viewer",
 };
 
 export function Topbar({
@@ -90,7 +90,7 @@ export function Topbar({
           "text-muted-foreground hover:bg-muted hover:text-foreground transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         )}
-        aria-label="Mở menu"
+        aria-label="Open menu"
       >
         <Menu className="size-4" aria-hidden="true" />
       </button>
@@ -114,10 +114,10 @@ export function Topbar({
             "hover:bg-muted hover:text-foreground transition-colors duration-150",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           )}
-          aria-label="Tìm kiếm (⌘K)"
+          aria-label="Search (⌘K)"
         >
           <Search className="size-3.5" aria-hidden="true" />
-          <span className="hidden lg:block">Tìm kiếm…</span>
+          <span className="hidden lg:block">Search…</span>
           <kbd className="hidden lg:block rounded bg-border px-1 py-0.5 text-2xs font-mono">⌘K</kbd>
         </button>
 
@@ -129,7 +129,7 @@ export function Topbar({
             "text-muted-foreground hover:bg-muted hover:text-foreground transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           )}
-          aria-label="Thông báo"
+          aria-label="Notifications"
         >
           <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -147,7 +147,7 @@ export function Topbar({
                 "hover:bg-muted transition-colors duration-150",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
               )}
-              aria-label="Tài khoản"
+              aria-label="Account"
             >
               {/* Avatar */}
               <span className="grid size-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary to-accent text-2xs font-bold text-white">
@@ -170,9 +170,9 @@ export function Topbar({
               </span>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Tài khoản</DropdownMenuLabel>
+            <DropdownMenuLabel>Account</DropdownMenuLabel>
             <DropdownMenuItem asChild>
-              <Link href="/settings">Cài đặt</Link>
+              <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -181,7 +181,7 @@ export function Topbar({
               disabled={signingOut}
             >
               <LogOut className="size-4" aria-hidden="true" />
-              {signingOut ? "Đang thoát…" : "Đăng xuất"}
+              {signingOut ? "Signing out…" : "Sign out"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -26,7 +26,7 @@ export function SignOutButton() {
       disabled={loading}
       className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
     >
-      {loading ? "Đang thoát…" : "Đăng xuất"}
+      {loading ? "Signing out…" : "Sign out"}
     </button>
   );
 }

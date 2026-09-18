@@ -5,18 +5,26 @@ type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 /** Paths reachable without an authenticated session. */
 const PUBLIC_PATHS = [
-  "/",
-  "/sport-hub",
-  "/api/lark",
-  "/templates",
-  "/portal",
   "/login",
   "/auth/callback",
+  "/fonts",
+  "/templates",
+  "/api/webhooks",
+  "/community",
+  "/projects",
+  "/trending",
+  "/kols",
+  "/reports",
+  "/team",
+  "/api/sport-hub",
+  "/api/lark",
+  "/sport-hub",
 ];
 
 function isPublicPath(pathname: string): boolean {
   return (
     pathname === "/" ||
+    pathname.startsWith("/_next") ||
     PUBLIC_PATHS.some(
       (p) => p !== "/" && (pathname === p || pathname.startsWith(`${p}/`))
     )

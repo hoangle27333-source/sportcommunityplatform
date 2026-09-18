@@ -132,63 +132,69 @@ export default function SeedingPage() {
         body: JSON.stringify(addForm),
       });
       const data = await res.json();
-      if (res.ok) {
-        setShowAddModal(false);
-        setAddForm({ name: "", platform: "facebook", fbTargetType: "profile" });
-        await loadAccounts();
-      } else {
-        alert(data.error ?? "Lỗi tạo account");
+      if (!res.ok) {
+        alert(data.error ?? "Failed to create account");
+        return;
       }
+      setShowAddModal(false);
+      setAddForm({ name: "", platform: "facebook", fbTargetType: "profile" });
+      await loadAccounts();
+    } catch (err: unknown) {
+      alert(`Error: ${(err as Error).message}`);
     } finally {
       setAddingAccount(false);
     }
   }
 
-  // ── Connect account ──────────────────────────────────────────────────────
-  async function handleConnect(account: UnofficialAccount) {
-    setConnectingId(account.id);
+  // Launch browser for manual login
+  const handleConnect = async (acc: UnofficialAccount) => {
+    setConnectingId(acc.id);
     try {
-      const res = await fetch("/api/playwright/connect", {
+      const res = await fetch("/api/channels/unofficial/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: account.id, accountName: account.name }),
+        body: JSON.stringify({ accountId: acc.id }),
       });
-
-      const data = await res.json().catch(() => ({}));
-
+      const data = await res.json();
       if (!res.ok) {
+        alert(`Failed to launch browser: ${data.error || res.statusText || "Check that worker is running."}`);
         setConnectingId(null);
-        alert(`Lỗi khi kích hoạt browser: ${data.error || res.statusText || "Kiểm tra worker đang chạy."}`);
         return;
       }
+      pollSession(acc.id);
     } catch (err: any) {
+      alert(`Connection error: ${err.message}`);
       setConnectingId(null);
-      alert(`Lỗi kết nối: ${err.message}`);
-      return;
     }
+  };
 
-    // Poll status until active or timeout
-    let tries = 0;
-    const poll = setInterval(async () => {
-      tries++;
-      if (tries > 90) { // 3 min max
-        clearInterval(poll);
-        setConnectingId(null);
-        return;
+  // Poll session until active or checkpoint
+  const pollSession = (accountId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/channels/unofficial");
+        const data = await res.json();
+        const found = (data.accounts || []).find((a: UnofficialAccount) => a.id === accountId);
+        if (found) {
+          setAccounts(data.accounts);
+          if (found.session_status === "active" || found.session_status === "checkpoint") {
+            clearInterval(interval);
+            setConnectingId(null);
+          }
+        }
+      } catch {
+        // ignore
       }
-      const r = await fetch(`/api/playwright/connect/status?accountId=${account.id}`);
-      if (!r.ok) return;
-      const d = await r.json();
-      if (d.status === "active") {
-        clearInterval(poll);
-        setConnectingId(null);
-        await loadAccounts();
-      }
-    }, 2000);
-  }
+    }, 4000);
 
-  // ── Generate AI comment variants ──────────────────────────────────────────
-  async function handleGenerateAI() {
+    setTimeout(() => {
+      clearInterval(interval);
+      setConnectingId(null);
+    }, 120_000);
+  };
+
+  // Generate AI comment variants
+  const handleGenerateAI = async () => {
     if (!form.aiBrief.trim()) return;
     setGeneratingAI(true);
     try {
@@ -198,61 +204,72 @@ export default function SeedingPage() {
         body: JSON.stringify({ brief: form.aiBrief }),
       });
       const data = await res.json();
-      if (res.ok) {
-        setForm((f) => ({ ...f, aiVariants: data.variants, selectedVariant: data.variants[0] ?? "" }));
-      } else {
-        alert(data.error ?? "Lỗi AI generate");
+      if (!res.ok) {
+        alert(data.error ?? "AI generation failed");
+        return;
       }
+      setForm((f) => ({
+        ...f,
+        aiVariants: data.variants || [],
+        selectedVariant: data.variants?.[0] || "",
+        commentContent: data.variants?.[0] || "",
+      }));
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
     } finally {
       setGeneratingAI(false);
     }
-  }
+  };
 
-  // ── Submit seeding job ────────────────────────────────────────────────────
-  async function handleSubmit(e: React.FormEvent) {
+  // Submit seeding job
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setSubmitResult(null);
 
-    const commentContent = form.commentMode === "ai_generate"
-      ? form.selectedVariant
-      : form.commentContent;
+    const commentBody =
+      form.commentMode === "ai_generate"
+        ? form.selectedVariant || form.commentContent
+        : form.commentContent;
 
-    const body = {
+    const payload = {
       accountId: form.accountId,
       action: form.action,
       targetPostUrl: form.targetPostUrl || undefined,
-      postCaption: form.postCaption || undefined,
-      commentContent: commentContent || undefined,
-      commentMode: form.commentMode,
-      reactionType: form.reactionType,
-      shareCaption: form.shareCaption || undefined,
-      runAt: form.scheduleMode === "later" && form.runAt ? form.runAt : null,
+      postCaption: form.action === "post" ? form.postCaption : undefined,
+      commentContent: form.action === "comment" ? commentBody : undefined,
+      reactionType: form.action === "react" ? form.reactionType : undefined,
+      shareCaption: form.action === "share" ? form.shareCaption : undefined,
+      runAt: form.scheduleMode === "later" && form.runAt ? new Date(form.runAt).toISOString() : undefined,
     };
 
-    const res = await fetch("/api/seeding", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-    if (res.ok) {
-      setSubmitResult({ ok: true, msg: `Job tạo thành công (${form.scheduleMode === "later" ? "đã lên lịch" : "đang thực thi ngay"})` });
-      await loadJobs();
-    } else {
-      setSubmitResult({ ok: false, msg: data.error ?? "Lỗi tạo job" });
+    try {
+      const res = await fetch("/api/seeding/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSubmitResult({ ok: true, msg: `Job created successfully (${form.scheduleMode === "later" ? "scheduled" : "executing now"})` });
+        setForm((f) => ({ ...f, targetPostUrl: "", postCaption: "", commentContent: "", aiBrief: "", aiVariants: [], selectedVariant: "" }));
+      } else {
+        setSubmitResult({ ok: false, msg: data.error ?? "Failed to create job" });
+      }
+    } catch (err: any) {
+      setSubmitResult({ ok: false, msg: `Error: ${err.message}` });
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
-  }
+  };
 
-  const tabBtn = (t: typeof activeTab, label: string, count?: number) => (
+  const tabBtn = (tab: "accounts" | "create" | "history", label: string, count?: number) => (
     <button
-      onClick={() => setActiveTab(t)}
+      onClick={() => { setActiveTab(tab); setSubmitResult(null); }}
       className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-        activeTab === t
+        activeTab === tab
           ? "bg-white text-gray-900 shadow-sm"
-          : "text-gray-500 hover:text-gray-700"
+          : "text-gray-500 hover:text-gray-900"
       }`}
     >
       {label}
@@ -273,16 +290,16 @@ export default function SeedingPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Seeding (Unofficial)</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Tự động đăng bài, comment, like, share qua browser automation.{" "}
-          <span className="text-amber-600 font-medium">⚠ Nội bộ thử nghiệm.</span>
+          Automate posting, comments, likes, and shares via browser automation.{" "}
+          <span className="text-amber-600 font-medium">⚠ Internal testing only.</span>
         </p>
       </div>
 
       {/* Tab bar */}
       <div className="mb-6 flex gap-1 rounded-lg bg-gray-100 p-1 w-fit">
         {tabBtn("accounts", "Accounts", needsAction)}
-        {tabBtn("create", "Tạo Job")}
-        {tabBtn("history", `Lịch sử (${jobs.length})`)}
+        {tabBtn("create", "Create Job")}
+        {tabBtn("history", `History (${jobs.length})`)}
       </div>
 
       {/* ── Tab 1: Accounts ── */}
@@ -290,39 +307,39 @@ export default function SeedingPage() {
         <div>
           <div className="mb-4 flex items-center justify-between">
             <p className="text-sm text-gray-600">
-              {accounts.length} account unofficial đã kết nối.
+              {accounts.length} unofficial account{accounts.length === 1 ? "" : "s"} connected.
             </p>
             <button
               onClick={() => setShowAddModal(true)}
               className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
             >
-              + Thêm account
+              + Add Account
             </button>
           </div>
 
-          {loading && <p className="text-sm text-gray-400">Đang tải...</p>}
+          {loading && <p className="text-sm text-gray-400">Loading…</p>}
 
           <div className="overflow-hidden rounded-lg border border-gray-200">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-left text-gray-500">
                 <tr>
                   <th className="px-4 py-2 font-medium">Account</th>
-                  <th className="px-4 py-2 font-medium">Loại kênh</th>
+                  <th className="px-4 py-2 font-medium">Channel Type</th>
                   <th className="px-4 py-2 font-medium">Session</th>
-                  <th className="px-4 py-2 font-medium">Hoạt động cuối</th>
-                  <th className="px-4 py-2 font-medium">Thao tác</th>
+                  <th className="px-4 py-2 font-medium">Last Active</th>
+                  <th className="px-4 py-2 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {accounts.length === 0 && !loading && (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                      Chưa có account unofficial.{" "}
+                      No unofficial accounts connected.{" "}
                       <button
                         onClick={() => setShowAddModal(true)}
                         className="text-indigo-600 underline"
                       >
-                        Thêm account ngay
+                        Add account now
                       </button>
                     </td>
                   </tr>
@@ -344,7 +361,7 @@ export default function SeedingPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {acc.last_action_at
-                        ? new Date(acc.last_action_at).toLocaleString("vi-VN")
+                        ? new Date(acc.last_action_at).toLocaleString("en-US")
                         : "—"}
                     </td>
                     <td className="px-4 py-3">
@@ -354,10 +371,10 @@ export default function SeedingPage() {
                         className="rounded px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50"
                       >
                         {connectingId === acc.id
-                          ? "⏳ Chờ đăng nhập..."
+                          ? "⏳ Waiting for login…"
                           : acc.session_status === "active"
-                          ? "Kết nối lại"
-                          : "Đăng nhập"}
+                          ? "Reconnect"
+                          : "Log in"}
                       </button>
                     </td>
                   </tr>
@@ -368,8 +385,8 @@ export default function SeedingPage() {
 
           {connectingId && (
             <div className="mt-4 rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
-              🌐 Browser đang mở — đăng nhập Facebook trong cửa sổ Chrome vừa xuất hiện.
-              Hệ thống sẽ tự động lưu session sau khi đăng nhập thành công.
+              🌐 Browser opened — log in to Facebook in the Chrome window that just appeared.
+              The session will be saved automatically once logged in.
             </div>
           )}
         </div>
@@ -393,7 +410,7 @@ export default function SeedingPage() {
           {/* Account selector */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Account seeder *
+              Seeder Account *
             </label>
             <select
               id="seeding-account"
@@ -402,7 +419,7 @@ export default function SeedingPage() {
               onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="">Chọn account...</option>
+              <option value="">Select account…</option>
               {accounts
                 .filter((a) => a.session_status === "active")
                 .map((a) => (
@@ -413,7 +430,7 @@ export default function SeedingPage() {
             </select>
             {accounts.filter((a) => a.session_status === "active").length === 0 && (
               <p className="mt-1 text-xs text-amber-600">
-                Không có account active. Vào tab Accounts để đăng nhập trước.
+                No active accounts. Go to the Accounts tab to log in first.
               </p>
             )}
           </div>
@@ -421,7 +438,7 @@ export default function SeedingPage() {
           {/* Action selector */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Loại hành động *
+              Action Type *
             </label>
             <div className="flex gap-2 flex-wrap">
               {(["post", "comment", "like", "react", "share"] as const).map((a) => (
@@ -435,7 +452,7 @@ export default function SeedingPage() {
                       : "bg-white text-gray-700 border-gray-300 hover:border-indigo-400"
                   }`}
                 >
-                  {a === "post" ? "📝 Đăng bài" :
+                  {a === "post" ? "📝 Post" :
                    a === "comment" ? "💬 Comment" :
                    a === "like" ? "👍 Like" :
                    a === "react" ? "❤️ React" :
@@ -449,14 +466,14 @@ export default function SeedingPage() {
           {form.action === "post" && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nội dung bài đăng *
+                Post Caption *
               </label>
               <textarea
                 required
                 rows={4}
                 value={form.postCaption}
                 onChange={(e) => setForm((f) => ({ ...f, postCaption: e.target.value }))}
-                placeholder="Nhập nội dung bài đăng..."
+                placeholder="Enter post caption..."
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -465,7 +482,7 @@ export default function SeedingPage() {
           {(form.action === "comment" || form.action === "like" || form.action === "react" || form.action === "share") && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                URL bài target *
+                Target Post URL *
               </label>
               <input
                 type="url"
@@ -482,7 +499,7 @@ export default function SeedingPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Chế độ comment
+                  Comment Mode
                 </label>
                 <div className="flex gap-3">
                   <label className="flex items-center gap-2 text-sm">
@@ -493,7 +510,7 @@ export default function SeedingPage() {
                       checked={form.commentMode === "manual"}
                       onChange={() => setForm((f) => ({ ...f, commentMode: "manual" }))}
                     />
-                    ✍️ Tự soạn
+                    ✍️ Manual
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -503,7 +520,7 @@ export default function SeedingPage() {
                       checked={form.commentMode === "ai_generate"}
                       onChange={() => setForm((f) => ({ ...f, commentMode: "ai_generate" }))}
                     />
-                    🤖 AI generate
+                    🤖 AI Generate
                   </label>
                 </div>
               </div>
@@ -515,7 +532,7 @@ export default function SeedingPage() {
                     rows={2}
                     value={form.commentContent}
                     onChange={(e) => setForm((f) => ({ ...f, commentContent: e.target.value }))}
-                    placeholder="Nội dung comment..."
+                    placeholder="Comment text..."
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -526,7 +543,7 @@ export default function SeedingPage() {
                       type="text"
                       value={form.aiBrief}
                       onChange={(e) => setForm((f) => ({ ...f, aiBrief: e.target.value }))}
-                      placeholder="Brief ngắn: 'comment hỏi thăm giá sân, tự nhiên'"
+                      placeholder="Short brief: 'ask naturally about court booking pricing'"
                       className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                     <button
@@ -540,7 +557,7 @@ export default function SeedingPage() {
                   </div>
                   {form.aiVariants.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-xs text-gray-500">Chọn 1 biến thể:</p>
+                      <p className="text-xs text-gray-500">Select 1 variant:</p>
                       {form.aiVariants.map((v, i) => (
                         <label
                           key={i}
@@ -571,7 +588,7 @@ export default function SeedingPage() {
           {form.action === "react" && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Loại react
+                Reaction Type
               </label>
               <select
                 value={form.reactionType}
@@ -591,13 +608,13 @@ export default function SeedingPage() {
           {form.action === "share" && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Caption khi share (tuỳ chọn)
+                Share Caption (Optional)
               </label>
               <input
                 type="text"
                 value={form.shareCaption}
                 onChange={(e) => setForm((f) => ({ ...f, shareCaption: e.target.value }))}
-                placeholder="Caption đính kèm khi share..."
+                placeholder="Caption attached when sharing..."
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -606,7 +623,7 @@ export default function SeedingPage() {
           {/* Schedule */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Thời gian thực thi
+              Execution Time
             </label>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 text-sm">
@@ -617,7 +634,7 @@ export default function SeedingPage() {
                   checked={form.scheduleMode === "now"}
                   onChange={() => setForm((f) => ({ ...f, scheduleMode: "now" }))}
                 />
-                ⚡ Thực thi ngay
+                ⚡ Run Immediately
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -627,7 +644,7 @@ export default function SeedingPage() {
                   checked={form.scheduleMode === "later"}
                   onChange={() => setForm((f) => ({ ...f, scheduleMode: "later" }))}
                 />
-                📅 Lên lịch
+                📅 Schedule
               </label>
             </div>
             {form.scheduleMode === "later" && (
@@ -646,7 +663,7 @@ export default function SeedingPage() {
             disabled={submitting}
             className="rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {submitting ? "Đang tạo..." : "Tạo Job"}
+            {submitting ? "Creating..." : "Create Job"}
           </button>
         </form>
       )}
@@ -655,12 +672,12 @@ export default function SeedingPage() {
       {activeTab === "history" && (
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm text-gray-500">{jobs.length} job gần đây</p>
+            <p className="text-sm text-gray-500">{jobs.length} recent jobs</p>
             <button
               onClick={loadJobs}
               className="text-xs text-indigo-600 hover:underline"
             >
-              Làm mới
+              Refresh
             </button>
           </div>
 
@@ -670,17 +687,17 @@ export default function SeedingPage() {
                 <tr>
                   <th className="px-4 py-2 font-medium">Account</th>
                   <th className="px-4 py-2 font-medium">Action</th>
-                  <th className="px-4 py-2 font-medium">Nội dung</th>
-                  <th className="px-4 py-2 font-medium">Lịch</th>
-                  <th className="px-4 py-2 font-medium">Trạng thái</th>
-                  <th className="px-4 py-2 font-medium">Thực thi lúc</th>
+                  <th className="px-4 py-2 font-medium">Content</th>
+                  <th className="px-4 py-2 font-medium">Schedule</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium">Executed At</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {jobs.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                      Chưa có job nào.
+                      No jobs found.
                     </td>
                   </tr>
                 )}
@@ -699,8 +716,8 @@ export default function SeedingPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {j.run_at
-                        ? new Date(j.run_at).toLocaleString("vi-VN")
-                        : "Ngay"}
+                        ? new Date(j.run_at).toLocaleString("en-US")
+                        : "Now"}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -718,7 +735,7 @@ export default function SeedingPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {j.executed_at
-                        ? new Date(j.executed_at).toLocaleString("vi-VN")
+                        ? new Date(j.executed_at).toLocaleString("en-US")
                         : "—"}
                       {j.result_post_url && (
                         <a
@@ -727,7 +744,7 @@ export default function SeedingPage() {
                           rel="noopener noreferrer"
                           className="ml-1 text-indigo-600 hover:underline"
                         >
-                          Xem bài
+                          View Post
                         </a>
                       )}
                     </td>
@@ -759,7 +776,7 @@ export default function SeedingPage() {
               className="flex items-center justify-between px-6 py-4"
               style={{ borderBottom: "1px solid hsl(var(--border))" }}
             >
-              <h3 className="text-base font-semibold">Thêm account unofficial</h3>
+              <h3 className="text-base font-semibold">Add Unofficial Account</h3>
               <button
                 onClick={() => setShowAddModal(false)}
                 style={{ color: "hsl(var(--muted-foreground))" }}
@@ -779,7 +796,7 @@ export default function SeedingPage() {
                   border: "1px solid hsl(var(--warning) / 0.3)",
                 }}
               >
-                ⚠️ Sau khi thêm, bấm <strong>Đăng nhập</strong> để mở browser và lấy session cookie.
+                ⚠️ After adding, click <strong>Login</strong> to launch browser and retrieve session cookie.
               </p>
 
               {/* Name */}
@@ -788,12 +805,12 @@ export default function SeedingPage() {
                   className="block text-sm font-medium mb-1.5"
                   style={{ color: "hsl(var(--foreground))" }}
                 >
-                  Tên account / biệt danh *
+                  Account Name / Alias *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="vd: Seeder Nguyễn Văn A"
+                  placeholder="e.g., Seeder John Doe"
                   value={addForm.name}
                   onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
                   className="w-full rounded-md px-3 py-2 text-sm outline-none transition-all"
@@ -813,7 +830,7 @@ export default function SeedingPage() {
                   className="block text-sm font-medium mb-1.5"
                   style={{ color: "hsl(var(--foreground))" }}
                 >
-                  Nền tảng
+                  Platform
                 </label>
                 <select
                   value={addForm.platform}
@@ -835,7 +852,7 @@ export default function SeedingPage() {
                   className="block text-sm font-medium mb-2"
                   style={{ color: "hsl(var(--foreground))" }}
                 >
-                  Loại kênh *
+                  Channel Type *
                 </label>
                 <div className="flex gap-4">
                   {(["page", "profile", "group"] as const).map((t) => (
@@ -870,7 +887,7 @@ export default function SeedingPage() {
                     border: "1px solid hsl(var(--border))",
                   }}
                 >
-                  Huỷ
+                  Cancel
                 </button>
                 <button
                   type="submit"
@@ -881,7 +898,7 @@ export default function SeedingPage() {
                     color: "hsl(var(--primary-foreground))",
                   }}
                 >
-                  {addingAccount ? "Đang tạo..." : "Tạo account"}
+                  {addingAccount ? "Creating..." : "Create Account"}
                 </button>
               </div>
             </form>

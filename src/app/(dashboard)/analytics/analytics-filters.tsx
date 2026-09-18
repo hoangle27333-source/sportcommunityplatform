@@ -4,16 +4,16 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 
 const PLATFORM_OPTIONS = [
-  { value: "", label: "Tất cả" },
+  { value: "", label: "All" },
   { value: "facebook", label: "Facebook" },
   { value: "instagram", label: "Instagram" },
 ];
 
 const DATE_RANGE_OPTIONS = [
-  { value: "7d", label: "7 ngày" },
-  { value: "14d", label: "14 ngày" },
-  { value: "30d", label: "30 ngày" },
-  { value: "90d", label: "90 ngày" },
+  { value: "7d", label: "7 days" },
+  { value: "14d", label: "14 days" },
+  { value: "30d", label: "30 days" },
+  { value: "90d", label: "90 days" },
 ];
 
 export function AnalyticsFilters() {
@@ -38,7 +38,7 @@ export function AnalyticsFilters() {
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
       {/* Platform */}
       <div className="flex items-center gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Nền tảng:</span>
+        <span className="text-xs font-medium text-muted-foreground">Platform:</span>
         <div className="flex items-center gap-1 rounded-full bg-muted p-0.5">
           {PLATFORM_OPTIONS.map((opt) => (
             <button
@@ -60,7 +60,7 @@ export function AnalyticsFilters() {
 
       {/* Date range */}
       <div className="flex items-center gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Khoảng thời gian:</span>
+        <span className="text-xs font-medium text-muted-foreground">Date Range:</span>
         <div className="flex items-center gap-1 rounded-full bg-muted p-0.5">
           {DATE_RANGE_OPTIONS.map((opt) => (
             <button

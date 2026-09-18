@@ -34,27 +34,27 @@ export function DashboardCharts({ trend, topPosts, engagementBreakdown }: Dashbo
         ]}
         xKey="x"
         height={280}
-        caption="Reach và Engagement theo ngày (30 ngày qua)"
+        caption="Daily Reach and Engagement (Last 30 Days)"
       />
 
       {/* 2-col breakdown */}
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Top 5 bài đăng</h3>
+          <h3 className="mb-3 text-sm font-semibold text-foreground">Top 5 Posts</h3>
           <RankBarChart
             data={topPostsData}
-            caption="Top bài đăng theo engagement"
+            caption="Top posts by engagement"
             valueLabel="Engagement"
             colorByIndex={false}
           />
         </div>
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Phân bổ tương tác</h3>
+          <h3 className="mb-3 text-sm font-semibold text-foreground">Engagement Distribution</h3>
           <DonutChart
             data={donutData}
             height={220}
-            caption="Phân bổ tương tác (Likes / Comments / Shares)"
-            centerLabel="Tương tác"
+            caption="Engagement breakdown (Likes / Comments / Shares)"
+            centerLabel="Engagement"
           />
         </div>
       </div>

@@ -29,7 +29,7 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 function fmt(ts: string | null): string {
-  return ts ? new Date(ts).toLocaleString("vi-VN") : "—";
+  return ts ? new Date(ts).toLocaleString("en-US") : "—";
 }
 
 export default async function CalendarPage() {
@@ -47,9 +47,9 @@ export default async function CalendarPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Lịch đăng</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Calendar</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Bài viết theo trạng thái và thời gian đăng.
+          Posts organized by status and scheduled publishing time.
         </p>
       </div>
 
@@ -57,19 +57,19 @@ export default async function CalendarPage() {
         <table className="w-full text-sm">
           <thead className="bg-muted text-left text-muted-foreground">
             <tr>
-              <th className="px-4 py-2 font-medium">Nội dung</th>
-              <th className="px-4 py-2 font-medium">Nền tảng chính</th>
-              <th className="px-4 py-2 font-medium">Trạng thái</th>
-              <th className="px-4 py-2 font-medium">Lên lịch</th>
-              <th className="px-4 py-2 font-medium">Đã đăng</th>
-              <th className="px-4 py-2 font-medium text-right">Thao tác</th>
+              <th className="px-4 py-2 font-medium">Content</th>
+              <th className="px-4 py-2 font-medium">Primary Platform</th>
+              <th className="px-4 py-2 font-medium">Status</th>
+              <th className="px-4 py-2 font-medium">Scheduled</th>
+              <th className="px-4 py-2 font-medium">Published</th>
+              <th className="px-4 py-2 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  Chưa có bài viết nào.
+                  No posts found.
                 </td>
               </tr>
             )}
@@ -78,7 +78,7 @@ export default async function CalendarPage() {
                 <td className="max-w-md px-4 py-3">
                   <span className="line-clamp-2 text-foreground">
                     {p.caption?.trim() || (
-                      <span className="text-muted-foreground">(chưa có caption)</span>
+                      <span className="text-muted-foreground">(no caption)</span>
                     )}
                   </span>
                 </td>

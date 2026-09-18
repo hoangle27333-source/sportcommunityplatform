@@ -60,7 +60,7 @@ const DialogContent = React.forwardRef<
             "hover:bg-muted hover:text-foreground transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           )}
-          aria-label="Đóng"
+          aria-label="Close"
         >
           <X className="size-4" aria-hidden="true" />
         </DialogClose>

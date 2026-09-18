@@ -113,9 +113,9 @@ export function ComposeForm() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Sinh caption thất bại");
+      if (!res.ok) throw new Error(data.error ?? "Failed to generate caption");
       const v: CaptionVariant[] = data.variants ?? [];
-      if (v.length === 0) throw new Error("AI không trả về caption nào.");
+      if (v.length === 0) throw new Error("AI returned no captions.");
       setVariants(v);
       applyVariant(v[0]);
       setSelectedVariant(0);
@@ -146,7 +146,7 @@ export function ComposeForm() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Sinh banner thất bại");
+      if (!res.ok) throw new Error(data.error ?? "Failed to generate banner");
       setBanner(data.asset);
     } catch (e) {
       setError((e as Error).message);
@@ -167,11 +167,11 @@ export function ComposeForm() {
   async function submit() {
     setError(null);
     if (selectedChannels.size === 0) {
-      setError("Chọn ít nhất 1 kênh để đăng.");
+      setError("Select at least 1 channel to publish.");
       return;
     }
     if (mode === "schedule" && !runAt) {
-      setError("Chọn thời gian lên lịch.");
+      setError("Select a scheduled time.");
       return;
     }
     setSubmitting(true);
@@ -190,7 +190,7 @@ export function ComposeForm() {
         }),
       });
       const created = await createRes.json();
-      if (!createRes.ok) throw new Error(created.error ?? "Tạo bài viết thất bại");
+      if (!createRes.ok) throw new Error(created.error ?? "Failed to create post");
       const postId: string = created.id;
 
       const actionRes =
@@ -202,7 +202,7 @@ export function ComposeForm() {
               body: JSON.stringify({ runAt: new Date(runAt).toISOString() }),
             });
       const actionData = await actionRes.json();
-      if (!actionRes.ok) throw new Error(actionData.error ?? "Lên lịch/đăng thất bại");
+      if (!actionRes.ok) throw new Error(actionData.error ?? "Failed to schedule or publish post");
 
       setResultPostId(postId);
       setStep("done");
@@ -224,13 +224,13 @@ export function ComposeForm() {
       {/* Step 1: Brief */}
       <section className="rounded-lg border border-gray-200 p-4">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">
-          1. Ý tưởng nội dung
+          1. Content Brief
         </h2>
         <div className="space-y-3">
           <textarea
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
             rows={3}
-            placeholder="Mô tả ngắn nội dung bạn muốn đăng, ví dụ: khuyến mãi sân badminton cuối tuần, giảm 20%..."
+            placeholder="Brief description of what you want to post, e.g., weekend badminton court promo, 20% off..."
             value={brief}
             onChange={(e) => setBrief(e.target.value)}
           />
@@ -240,7 +240,7 @@ export function ComposeForm() {
               value={campaignId}
               onChange={(e) => setCampaignId(e.target.value)}
             >
-              <option value="">Không thuộc chiến dịch</option>
+              <option value="">No campaign</option>
               {campaigns.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -263,7 +263,7 @@ export function ComposeForm() {
               disabled={!brief.trim() || generatingCaption}
               className="ml-auto rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {generatingCaption ? "Đang sinh..." : "Sinh caption (AI)"}
+              {generatingCaption ? "Generating..." : "Generate Caption (AI)"}
             </button>
           </div>
         </div>
@@ -291,7 +291,7 @@ export function ComposeForm() {
                       : "border-gray-300 text-gray-600"
                   }`}
                 >
-                  Phiên bản {i + 1}
+                  Variant {i + 1}
                 </button>
               ))}
             </div>
@@ -311,7 +311,7 @@ export function ComposeForm() {
             />
             <input
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              placeholder="Call to action (tuỳ chọn)"
+              placeholder="Call to action (optional)"
               value={cta}
               onChange={(e) => setCta(e.target.value)}
             />
@@ -323,7 +323,7 @@ export function ComposeForm() {
               disabled={!caption.trim()}
               className="mt-3 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              Tiếp tục
+              Continue
             </button>
           )}
         </section>
@@ -333,7 +333,7 @@ export function ComposeForm() {
       {(step === "media" || step === "channels" || step === "done") && (
         <section className="rounded-lg border border-gray-200 p-4">
           <h2 className="mb-3 text-sm font-semibold text-gray-900">
-            3. Banner (tuỳ chọn)
+            3. Banner (Optional)
           </h2>
           <label className="mb-3 flex items-center gap-2 text-sm text-gray-700">
             <input
@@ -341,7 +341,7 @@ export function ComposeForm() {
               checked={wantBanner}
               onChange={(e) => setWantBanner(e.target.checked)}
             />
-            Sinh banner cho bài này
+            Generate banner for this post
           </label>
           {wantBanner && (
             <div className="space-y-3">
@@ -359,14 +359,14 @@ export function ComposeForm() {
                 </select>
                 <input
                   className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  placeholder="Tiêu đề (mặc định lấy từ caption)"
+                  placeholder="Title (defaults to caption)"
                   value={bannerTitle}
                   onChange={(e) => setBannerTitle(e.target.value)}
                 />
               </div>
               <input
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                placeholder="Phụ đề (tuỳ chọn)"
+                placeholder="Subtitle (optional)"
                 value={bannerSubtitle}
                 onChange={(e) => setBannerSubtitle(e.target.value)}
               />
@@ -376,7 +376,7 @@ export function ComposeForm() {
                 disabled={generatingBanner}
                 className="rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
-                {generatingBanner ? "Đang tạo..." : "Tạo banner"}
+                {generatingBanner ? "Creating..." : "Create Banner"}
               </button>
               {banner && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -394,7 +394,7 @@ export function ComposeForm() {
               onClick={() => setStep("channels")}
               className="mt-3 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
             >
-              Tiếp tục
+              Continue
             </button>
           )}
         </section>
@@ -404,13 +404,13 @@ export function ComposeForm() {
       {(step === "channels" || step === "done") && (
         <section className="rounded-lg border border-gray-200 p-4">
           <h2 className="mb-3 text-sm font-semibold text-gray-900">
-            4. Kênh đăng &amp; lịch
+            4. Target Channels &amp; Schedule
           </h2>
           {channels.length === 0 ? (
             <p className="text-sm text-gray-500">
-              Chưa có kênh nào được kết nối.{" "}
+              No channels connected.{" "}
               <a href="/channels" className="text-blue-600 underline">
-                Kết nối kênh
+                Connect channel
               </a>
             </p>
           ) : (
@@ -444,7 +444,7 @@ export function ComposeForm() {
                 checked={mode === "now"}
                 onChange={() => setMode("now")}
               />
-              Đăng ngay
+              Publish now
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -453,7 +453,7 @@ export function ComposeForm() {
                 checked={mode === "schedule"}
                 onChange={() => setMode("schedule")}
               />
-              Lên lịch
+              Schedule
             </label>
             {mode === "schedule" && (
               <input
@@ -473,10 +473,10 @@ export function ComposeForm() {
               className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {submitting
-                ? "Đang xử lý..."
+                ? "Processing..."
                 : mode === "now"
-                  ? "Đăng ngay"
-                  : "Lên lịch"}
+                  ? "Publish Now"
+                  : "Schedule"}
             </button>
           )}
         </section>
@@ -484,10 +484,10 @@ export function ComposeForm() {
 
       {step === "done" && (
         <div className="rounded-md bg-green-50 px-4 py-3 text-sm text-green-700">
-          Đã tạo bài viết{" "}
-          {mode === "now" ? "và đưa vào hàng đợi đăng ngay" : "và lên lịch"}.{" "}
+          Post created{" "}
+          {mode === "now" ? "and queued for immediate publishing" : "and scheduled"}.{" "}
           <a href="/calendar" className="underline">
-            Xem lịch đăng
+            View Calendar
           </a>
           .
         </div>

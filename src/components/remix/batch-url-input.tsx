@@ -46,15 +46,15 @@ export function BatchURLInput({ value, onChange, maxUrls = 10 }: { value: string
     <div className="space-y-4">
       <textarea
         className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-        placeholder="Dán các link video vào đây, mỗi link một dòng..."
+        placeholder="Paste video links here, one link per line…"
         value={text}
         onChange={e => setText(e.target.value)}
         onBlur={handleBlur}
       />
       
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>Danh sách Link ({lines.length})</span>
-        <span>{value.length} / {maxUrls} URL hợp lệ</span>
+        <span>Link List ({lines.length})</span>
+        <span>{value.length} / {maxUrls} valid URLs</span>
       </div>
 
       {lines.length > 0 && (
@@ -69,7 +69,7 @@ export function BatchURLInput({ value, onChange, maxUrls = 10 }: { value: string
                 <div className="flex items-center gap-3 overflow-hidden flex-1">
                   {status === 'valid' ? <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" /> : <XCircle className="h-4 w-4 text-destructive flex-shrink-0" />}
                   <span className="font-medium text-[10px] uppercase bg-muted px-2 py-0.5 rounded text-muted-foreground flex-shrink-0">
-                    {isValid ? getPlatformName(line) : 'Lỗi'}
+                    {isValid ? getPlatformName(line) : 'Error'}
                   </span>
                   <span className="truncate text-muted-foreground">{line.length > 60 ? line.substring(0, 60) + '...' : line}</span>
                 </div>

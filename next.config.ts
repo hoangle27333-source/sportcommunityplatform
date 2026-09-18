@@ -2,8 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Emit a self-contained server bundle for the Docker `web` image.
-  output: "standalone",
+  // Emit a self-contained server bundle for the Docker `web` image when requested.
+  output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
   // Native/binary deps that must not be webpack-bundled — they load platform
   // .node addons at runtime (resvg/sharp) or read font/wasm files (satori).
   // Next externalizes these for server components/route handlers.

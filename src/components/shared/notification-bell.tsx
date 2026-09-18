@@ -19,11 +19,11 @@ interface Notification {
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Vừa xong";
-  if (mins < 60) return `${mins} phút trước`;
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  return `${Math.floor(hours / 24)} ngày trước`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function getIcon(type: Notification["type"]) {
@@ -155,12 +155,12 @@ export function NotificationBell() {
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-[380px] max-w-[calc(100vw-32px)] rounded-md border border-border bg-card text-card-foreground shadow-lg z-50 overflow-hidden flex flex-col max-h-[480px]">
           <div className="flex items-center justify-between border-b border-border p-3">
-            <h3 className="font-semibold text-sm">Thông báo</h3>
+            <h3 className="font-semibold text-sm">Notifications</h3>
             <button
               onClick={markAllRead}
               className="text-xs text-primary hover:underline font-medium"
             >
-              Đánh dấu tất cả đã đọc
+              Mark all as read
             </button>
           </div>
 
@@ -168,7 +168,7 @@ export function NotificationBell() {
             {notifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-muted-foreground space-y-3">
                 <Bell className="size-8 opacity-20" />
-                <p className="text-sm">Chưa có thông báo nào</p>
+                <p className="text-sm">No notifications yet</p>
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -217,7 +217,7 @@ export function NotificationBell() {
                 router.push("/notifications");
               }}
             >
-              Xem tất cả
+              View all
             </Button>
           </div>
         </div>

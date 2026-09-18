@@ -37,9 +37,9 @@ export default async function CampaignsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Chiến dịch</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Campaigns</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Quản lý chiến dịch nội dung và chạy phân tích AI Learning.
+          Manage content campaigns and run AI Learning analysis.
         </p>
       </div>
 
@@ -47,17 +47,17 @@ export default async function CampaignsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-gray-500">
             <tr>
-              <th className="px-4 py-2 font-medium">Tên</th>
-              <th className="px-4 py-2 font-medium">Mục tiêu</th>
-              <th className="px-4 py-2 font-medium">Trạng thái</th>
-              <th className="px-4 py-2 font-medium">Tạo lúc</th>
+              <th className="px-4 py-2 font-medium">Name</th>
+              <th className="px-4 py-2 font-medium">Goal</th>
+              <th className="px-4 py-2 font-medium">Status</th>
+              <th className="px-4 py-2 font-medium">Created At</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
-                  Chưa có chiến dịch nào.
+                  No campaigns found.
                 </td>
               </tr>
             )}
@@ -77,7 +77,7 @@ export default async function CampaignsPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-500">
-                  {new Date(c.created_at).toLocaleDateString("vi-VN")}
+                  {new Date(c.created_at).toLocaleDateString("en-US")}
                 </td>
               </tr>
             ))}

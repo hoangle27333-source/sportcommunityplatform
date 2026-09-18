@@ -16,7 +16,7 @@ interface BlurRegionPickerProps {
   onChange: (region: BlurRegion) => void;
   defaultEnabled: boolean;
   onToggle: (enabled: boolean) => void;
-  /** Bật chế độ AI tự detect vùng phụ đề gốc (thay thế chọn vùng thủ công). */
+  /** Enable AI auto-detect for original subtitle region. */
   autoDetect?: boolean;
   onAutoDetectChange?: (enabled: boolean) => void;
   label?: string;
@@ -32,9 +32,9 @@ export function BlurRegionPicker({
   onToggle,
   autoDetect,
   onAutoDetectChange,
-  label = "Blur text on-screen gốc",
-  autoDetectLabel = "AI tự phát hiện vùng text on-screen gốc",
-  autoDetectDescription = "Gemini Vision phân tích 3 khung hình để xác định chính xác vùng chữ gốc. Nếu không tìm thấy, video sẽ không bị làm mờ.",
+  label = "Blur original on-screen text",
+  autoDetectLabel = "AI auto-detect original on-screen text region",
+  autoDetectDescription = "Gemini Vision analyzes 3 video frames to pinpoint original subtitle areas. If not detected, video will not be blurred.",
 }: BlurRegionPickerProps) {
   const [preset, setPreset] = useState<'18' | '25' | 'custom'>('18');
 
@@ -62,7 +62,7 @@ export function BlurRegionPicker({
 
       {defaultEnabled && (
         <div className="space-y-4 pt-3 border-t">
-          {/* Chế độ AI Auto-Detect */}
+          {/* AI Auto-Detect Mode */}
           <div 
             className="flex items-start gap-3 bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer select-none hover:bg-primary/10 transition-colors"
             onClick={() => onAutoDetectChange?.(!autoDetect)}
@@ -84,18 +84,18 @@ export function BlurRegionPicker({
             </div>
           </div>
 
-          {/* Chọn vùng thủ công — ẩn khi bật Auto-Detect */}
+          {/* Manual Region Selection */}
           {!autoDetect && (
             <>
               <div className="flex gap-2 flex-wrap">
                 <Button type="button" variant={preset === '18' ? 'primary' : 'outline'} size="sm" onClick={() => applyPreset('18')}>
-                  Dưới cùng 18%
+                  Bottom 18%
                 </Button>
                 <Button type="button" variant={preset === '25' ? 'primary' : 'outline'} size="sm" onClick={() => applyPreset('25')}>
-                  Dưới cùng 25%
+                  Bottom 25%
                 </Button>
                 <Button type="button" variant={preset === 'custom' ? 'primary' : 'outline'} size="sm" onClick={() => applyPreset('custom')}>
-                  Tuỳ chỉnh
+                  Custom
                 </Button>
               </div>
 

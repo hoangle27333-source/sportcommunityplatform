@@ -54,27 +54,27 @@ export default async function SettingsPage() {
   const provider = process.env.AI_PROVIDER ?? "gemini";
 
   const fmtVnd = (n: number) =>
-    new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(n);
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "VND" }).format(n);
 
   const rows = (profiles ?? []) as ProfileRow[];
 
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Cài đặt</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Quản lý người dùng, provider AI, và chi phí.
+          Manage team members, AI providers, and infrastructure costs.
         </p>
       </div>
 
       {/* AI cost */}
       <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">
-          Chi phí AI tháng này
+          AI Costs This Month
         </h2>
         <div className="grid grid-cols-3 gap-4">
           <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs text-gray-500">Tổng chi phí</p>
+            <p className="text-xs text-gray-500">Total Cost</p>
             <p
               className={`mt-1 text-2xl font-bold ${overBudget ? "text-red-600" : "text-gray-900"}`}
             >
@@ -82,17 +82,17 @@ export default async function SettingsPage() {
             </p>
             {budget > 0 && (
               <p className="mt-1 text-xs text-gray-400">
-                Ngân sách: {fmtVnd(budget)}
+                Budget: {fmtVnd(budget)}
                 {overBudget && (
                   <span className="ml-1 font-medium text-red-600">
-                    — vượt ngưỡng!
+                    — over budget!
                   </span>
                 )}
               </p>
             )}
           </div>
           <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs text-gray-500">Theo loại nội dung</p>
+            <p className="text-xs text-gray-500">By Content Type</p>
             <ul className="mt-1 space-y-0.5 text-sm text-gray-700">
               {Object.keys(byKind).length === 0 && (
                 <li className="text-gray-400">—</li>
@@ -106,7 +106,7 @@ export default async function SettingsPage() {
             </ul>
           </div>
           <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-xs text-gray-500">Theo provider</p>
+            <p className="text-xs text-gray-500">By Provider</p>
             <ul className="mt-1 space-y-0.5 text-sm text-gray-700">
               {Object.keys(byProvider).length === 0 && (
                 <li className="text-gray-400">—</li>
@@ -121,21 +121,21 @@ export default async function SettingsPage() {
           </div>
         </div>
         <p className="mt-2 text-xs text-gray-400">
-          Provider AI hiện tại: <strong>{provider}</strong>
+          Current AI Provider: <strong>{provider}</strong>
         </p>
       </section>
 
       {/* Users */}
       <section>
         <h2 className="mb-3 text-sm font-semibold text-gray-900">
-          Người dùng &amp; phân quyền
+          Users &amp; Permissions
         </h2>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-left text-gray-500">
-              <th className="py-2 font-medium">Tên</th>
+              <th className="py-2 font-medium">Name</th>
               <th className="py-2 font-medium">Email</th>
-              <th className="py-2 font-medium">Vai trò</th>
+              <th className="py-2 font-medium">Role</th>
             </tr>
           </thead>
           <tbody>
@@ -153,8 +153,8 @@ export default async function SettingsPage() {
           </tbody>
         </table>
         <p className="mt-2 text-xs text-gray-400">
-          Nâng quyền user mới (mặc định viewer) được thực hiện thủ công bởi admin
-          (R1.3). Thao tác đổi role sẽ được ghi vào audit log (R1.6).
+          New user role elevation (default: viewer) is performed manually by administrators
+          (R1.3). Role modification events are recorded in the audit log (R1.6).
         </p>
       </section>
 

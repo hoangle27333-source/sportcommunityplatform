@@ -5,14 +5,11 @@ import { RemixStudio } from "./remix-studio";
 export const dynamic = "force-dynamic";
 
 /**
- * /remix — Remix Studio (flow auto-generate content).
+ * /remix — Remix Studio (SPEC §8).
  *
- * Luồng: chọn nguồn (upload / link của mình / link tham khảo) → chọn đầu ra +
- * option → AI lập kế hoạch & pipeline chạy → xem kết quả → gửi phản hồi để sửa
- * → duyệt thì tạo bài nháp đưa vào calendar.
- *
- * Trang này server-render danh sách job gần đây + campaign để chọn; mọi tương
- * tác (tạo job, poll trạng thái, feedback, duyệt) nằm trong client component.
+ * Workflow: choose source (upload / own link / reference link) -> choose output +
+ * options -> AI plans and pipeline executes -> preview result -> submit feedback or
+ * approve to draft a calendar post.
  */
 
 interface CampaignOption {
@@ -54,7 +51,7 @@ export default async function RemixPage() {
     <div className="space-y-6">
       <PageHeader
         title="Remix Studio"
-        description="Đưa nội dung của bạn (hoặc một link tham khảo) vào đây — AI lập kế hoạch biên tập, hệ thống chạy pipeline, bạn xem và duyệt."
+        description="Input your content or a reference link — AI plans the edit, runs the media pipeline, and presents the output for your review and approval."
       />
       <RemixStudio
         campaigns={(campaignsRes.data ?? []) as CampaignOption[]}

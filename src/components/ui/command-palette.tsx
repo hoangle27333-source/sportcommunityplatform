@@ -35,16 +35,16 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
  */
 
 const PAGES = [
-  { href: "/",           label: "Tổng quan",       icon: LayoutDashboard, shortcut: "G H" },
-  { href: "/compose",    label: "Tạo nội dung",    icon: PenSquare,       shortcut: "G C" },
-  { href: "/calendar",   label: "Lịch đăng",       icon: CalendarDays,    shortcut: "G L" },
-  { href: "/campaigns",  label: "Chiến dịch",      icon: Sparkles },
-  { href: "/analytics",  label: "Phân tích",       icon: BarChart3,       shortcut: "G A" },
+  { href: "/",           label: "Overview",        icon: LayoutDashboard, shortcut: "G H" },
+  { href: "/compose",    label: "Compose",         icon: PenSquare,       shortcut: "G C" },
+  { href: "/calendar",   label: "Calendar",        icon: CalendarDays,    shortcut: "G L" },
+  { href: "/campaigns",  label: "Campaigns",       icon: Sparkles },
+  { href: "/analytics",  label: "Analytics",       icon: BarChart3,       shortcut: "G A" },
   { href: "/remix",      label: "Remix Studio",    icon: Wand2,           shortcut: "G R" },
-  { href: "/media",      label: "Thư viện media",  icon: Images },
-  { href: "/engagement", label: "Tương tác",       icon: MessageSquare },
-  { href: "/channels",   label: "Kênh",            icon: Radio },
-  { href: "/settings",   label: "Cài đặt",         icon: Settings },
+  { href: "/media",      label: "Media Library",   icon: Images },
+  { href: "/engagement", label: "Engagement",      icon: MessageSquare },
+  { href: "/channels",   label: "Channels",        icon: Radio },
+  { href: "/settings",   label: "Settings",        icon: Settings },
 ];
 
 export function CommandPalette({
@@ -69,10 +69,10 @@ export function CommandPalette({
         aria-label="Command palette"
       >
         <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-2.5">
-          <CommandInput placeholder="Tìm trang, bài đăng, chiến dịch…" />
+          <CommandInput placeholder="Search pages, posts, campaigns…" />
           <CommandList>
-            <CommandEmpty>Không tìm thấy kết quả nào.</CommandEmpty>
-            <CommandGroup heading="Trang">
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandGroup heading="Pages">
               {PAGES.map((page) => (
                 <CommandItem
                   key={page.href}
@@ -88,28 +88,28 @@ export function CommandPalette({
               ))}
             </CommandGroup>
             <CommandSeparator />
-            <CommandGroup heading="Thao tác nhanh">
+            <CommandGroup heading="Quick Actions">
               <CommandItem
-                value="Tạo bài đăng mới"
+                value="Create new post"
                 onSelect={() => navigate("/compose")}
               >
                 <PenSquare className="size-4 text-primary" aria-hidden="true" />
-                <span>Tạo bài đăng mới</span>
+                <span>Create new post</span>
                 <CommandShortcut>⌘ N</CommandShortcut>
               </CommandItem>
               <CommandItem
-                value="Remix video mới"
+                value="Remix new video"
                 onSelect={() => navigate("/remix")}
               >
                 <Wand2 className="size-4 text-accent" aria-hidden="true" />
-                <span>Remix video mới</span>
+                <span>Remix new video</span>
               </CommandItem>
               <CommandItem
-                value="Xem lịch đăng"
+                value="View calendar"
                 onSelect={() => navigate("/calendar")}
               >
                 <CalendarDays className="size-4 text-muted-foreground" aria-hidden="true" />
-                <span>Xem lịch đăng</span>
+                <span>View calendar</span>
               </CommandItem>
             </CommandGroup>
           </CommandList>

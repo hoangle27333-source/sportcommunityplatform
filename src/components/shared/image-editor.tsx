@@ -68,7 +68,7 @@ export default function ImageEditor({
             annotationsCommon={{
               fill: "#ff0000",
             }}
-            Text={{ text: "Nhập chữ..." }}
+            Text={{ text: "Enter text…" }}
             Rotate={{ angle: 90, componentType: "slider" }}
             Crop={{
               presetsItems: [

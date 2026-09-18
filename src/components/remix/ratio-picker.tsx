@@ -8,11 +8,11 @@ interface RatioPickerProps {
 }
 
 const RATIOS = [
-  { key: '9:16', label: 'Dọc', width: 27, height: 48 },
-  { key: '16:9', label: 'Ngang', width: 48, height: 27 },
-  { key: '1:1', label: 'Vuông', width: 36, height: 36 },
-  { key: '4:5', label: 'Chân dung', width: 32, height: 40 },
-  { key: 'original', label: 'Gốc', width: 36, height: 36 },
+  { key: '9:16', label: 'Vertical', width: 27, height: 48 },
+  { key: '16:9', label: 'Landscape', width: 48, height: 27 },
+  { key: '1:1', label: 'Square', width: 36, height: 36 },
+  { key: '4:5', label: 'Portrait', width: 32, height: 40 },
+  { key: 'original', label: 'Original', width: 36, height: 36 },
 ];
 
 export function RatioPicker({ value, onChange }: RatioPickerProps) {

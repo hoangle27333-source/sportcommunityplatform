@@ -180,7 +180,7 @@ export function ChartLegend({
  */
 export function ChartEmpty({
   height,
-  message = "Chưa có dữ liệu",
+  message = "No data available",
   hint,
 }: {
   height: number;

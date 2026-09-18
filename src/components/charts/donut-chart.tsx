@@ -15,7 +15,7 @@ import {
  * Part-to-whole breakdown (cost by kind, posts by status).
  *
  * Donut rather than pie so the total can sit in the hole — the number people
- * actually want to read. Capped at 5 slices plus "Khác": beyond that, angles get
+ * actually want to read. Capped at 5 slices plus "Other": beyond that, angles get
  * too close to compare and the ranking bar chart is the better form.
  */
 
@@ -49,13 +49,13 @@ export function DonutChart({
     return <ChartEmpty height={height} />;
   }
 
-  // Keep the five biggest slices; fold the tail into "Khác".
+  // Keep the five biggest slices; fold the tail into "Other".
   const sorted = [...nonZero].sort((a, b) => b.value - a.value);
   const head = sorted.slice(0, 5);
   const tail = sorted.slice(5);
   const slices: DonutDatum[] =
     tail.length > 0
-      ? [...head, { label: "Khác", value: tail.reduce((s, d) => s + d.value, 0) }]
+      ? [...head, { label: "Other", value: tail.reduce((s, d) => s + d.value, 0) }]
       : head;
 
   const colored = slices.map((s, i) => ({ ...s, fill: s.color ?? seriesColor(i) }));
@@ -112,7 +112,7 @@ export function DonutChart({
 
       <ChartDataTable
         caption={caption}
-        columns={["Hạng mục", "Giá trị", "Tỷ lệ"]}
+        columns={["Category", "Value", "Share"]}
         rows={colored.map((s) => [
           s.label,
           format(s.value),

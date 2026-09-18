@@ -36,7 +36,7 @@ export default async function LoginPage({
           </h1>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
-          Đăng nhập để tiếp tục
+          Sign in to continue
         </p>
         <LoginForm next={next ?? "/"} />
       </div>

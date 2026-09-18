@@ -23,9 +23,9 @@ import type { Role } from "./nav";
  */
 
 const ROLE_LABEL: Record<Role, string> = {
-  admin: "Quản trị",
-  editor: "Biên tập",
-  viewer: "Chỉ xem",
+  admin: "Admin",
+  editor: "Editor",
+  viewer: "Viewer",
 };
 
 export function UserMenu({
@@ -183,7 +183,7 @@ export function UserMenu({
             ) : (
               <LogOut className="size-4 text-muted-foreground" aria-hidden="true" />
             )}
-            {loading ? "Đang thoát…" : "Đăng xuất"}
+            {loading ? "Signing out…" : "Sign out"}
           </button>
         </div>
       )}

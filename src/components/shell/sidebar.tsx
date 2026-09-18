@@ -182,20 +182,20 @@ export function DesktopSidebar({
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                   collapsed && "justify-center",
                 )}
-                aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               >
                 {collapsed ? (
                   <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
                 ) : (
                   <>
                     <ChevronLeft className="size-4 shrink-0" aria-hidden="true" />
-                    <span>Thu gọn</span>
+                    <span>Collapse</span>
                   </>
                 )}
               </button>
             </TooltipTrigger>
             {collapsed && (
-              <TooltipContent side="right">Mở rộng sidebar</TooltipContent>
+              <TooltipContent side="right">Expand sidebar</TooltipContent>
             )}
           </Tooltip>
         </div>

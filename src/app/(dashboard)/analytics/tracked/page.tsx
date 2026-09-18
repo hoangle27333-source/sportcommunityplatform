@@ -7,10 +7,10 @@ import { Radar } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 const LABEL_FILTERS = [
-  { value: "", label: "Tất cả" },
-  { value: "competitor", label: "Đối thủ" },
-  { value: "own", label: "Của mình" },
-  { value: "reference", label: "Tham khảo" },
+  { value: "", label: "All" },
+  { value: "competitor", label: "Competitor" },
+  { value: "own", label: "Own" },
+  { value: "reference", label: "Reference" },
 ];
 
 /**
@@ -45,8 +45,8 @@ export default async function TrackedAccountsPage({
     <div className="space-y-8 p-4 sm:p-6">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <PageHeader
-        title="Theo dõi đối thủ"
-        description="Theo dõi chỉ số công khai của các tài khoản Facebook và Instagram. Dữ liệu được cào tự động bằng trình duyệt headless."
+        title="Tracked Accounts & Competitors"
+        description="Monitor public social media metrics across Facebook Pages and Instagram profiles automatically."
       />
 
       {/* ── Add account form ────────────────────────────────────────────────── */}
@@ -73,9 +73,9 @@ export default async function TrackedAccountsPage({
       {empty ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
           <Radar className="mb-3 size-8 text-muted-foreground" aria-hidden="true" />
-          <p className="text-sm font-medium text-foreground">Chưa có tài khoản nào</p>
+          <p className="text-sm font-medium text-foreground">No accounts tracked yet</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Dán URL Facebook Page hoặc Instagram profile vào ô trên để bắt đầu theo dõi.
+            Paste a Facebook Page or Instagram profile URL above to start tracking.
           </p>
         </div>
       ) : (

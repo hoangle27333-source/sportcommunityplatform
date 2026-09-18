@@ -37,7 +37,7 @@ interface SuggestionRow {
 }
 
 function num(v: number | null): string {
-  return v == null ? "—" : v.toLocaleString("vi-VN");
+  return v == null ? "—" : v.toLocaleString("en-US");
 }
 
 export default async function AnalyticsPage({
@@ -155,8 +155,8 @@ export default async function AnalyticsPage({
     <div className="space-y-8 p-4 sm:p-6">
       {/* Header */}
       <PageHeader
-        title="Phân tích"
-        description="Hiệu suất bài đăng và học hỏi từ dữ liệu thực tế."
+        title="Analytics"
+        description="Post performance metrics and AI-driven insights from live data."
       />
 
       {/* Filter bar */}
@@ -167,24 +167,24 @@ export default async function AnalyticsPage({
       {/* KPI row */}
       <StatGrid>
         <StatCard
-          label="Bài có dữ liệu"
-          value={metrics.length.toLocaleString("vi-VN")}
+          label="Posts with Data"
+          value={metrics.length.toLocaleString("en-US")}
           icon={BarChart3}
           tone="primary"
         />
         <StatCard
-          label="Tổng reach"
-          value={totals.reach.toLocaleString("vi-VN")}
+          label="Total Reach"
+          value={totals.reach.toLocaleString("en-US")}
           icon={Eye}
           tone="info"
-          hint={`${days} ngày qua`}
+          hint={`Last ${days} days`}
         />
         <StatCard
-          label="Tổng engagement"
-          value={totals.engagement.toLocaleString("vi-VN")}
+          label="Total Engagement"
+          value={totals.engagement.toLocaleString("en-US")}
           icon={Heart}
           tone="success"
-          hint={`${days} ngày qua`}
+          hint={`Last ${days} days`}
         />
         <StatCard
           label="Avg. Engagement Rate"
@@ -196,7 +196,7 @@ export default async function AnalyticsPage({
       </StatGrid>
 
       {/* Charts */}
-      <Section title="Biểu đồ hiệu suất">
+      <Section title="Performance Charts">
         <AnalyticsCharts
           timeSeries={timeSeries}
           topPosts={topPosts}
@@ -209,12 +209,12 @@ export default async function AnalyticsPage({
       </Section>
 
       {/* AI Suggestions */}
-      <Section title="Đề xuất AI Learning">
+      <Section title="AI Learning Suggestions">
         <AnalyticsSuggestions suggestions={(suggestions ?? []) as SuggestionRow[]} />
       </Section>
 
       {/* Metrics table */}
-      <Section title="Bảng chỉ số">
+      <Section title="Raw Metrics">
         <div className="overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm tabular">
             <thead className="border-b border-border bg-muted/50 text-left">
@@ -232,7 +232,7 @@ export default async function AnalyticsPage({
                 </th>
                 <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">Shares</th>
                 <th className="px-4 py-2.5 text-xs font-medium text-muted-foreground">
-                  Cập nhật
+                  Captured At
                 </th>
               </tr>
             </thead>
@@ -243,7 +243,7 @@ export default async function AnalyticsPage({
                     colSpan={7}
                     className="px-4 py-10 text-center text-sm text-muted-foreground"
                   >
-                    Chưa có dữ liệu. Analytics sync chạy mỗi 6 giờ.
+                    No metrics data available yet. Analytics sync runs every 6 hours.
                   </td>
                 </tr>
               )}
@@ -259,7 +259,7 @@ export default async function AnalyticsPage({
                   <td className="px-4 py-3">{num(m.comments)}</td>
                   <td className="px-4 py-3">{num(m.shares)}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {new Date(m.captured_at).toLocaleString("vi-VN")}
+                    {new Date(m.captured_at).toLocaleString("en-US")}
                   </td>
                 </tr>
               ))}

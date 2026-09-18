@@ -20,10 +20,10 @@ interface EngagementRow {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: "Chờ duyệt",
-  approved: "Đã duyệt",
-  sent: "Đã gửi",
-  skipped: "Bỏ qua",
+  pending: "Pending",
+  approved: "Approved",
+  sent: "Sent",
+  skipped: "Skipped",
 };
 
 export default async function EngagementPage() {
@@ -41,43 +41,43 @@ export default async function EngagementPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Tương tác</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Engagement Review</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Comment / inbox trên chính Page của bạn. AI gợi ý phản hồi — người
-          duyệt quyết định gửi (tuân thủ điều khoản Meta).
+          Comments and messages on your official pages. AI suggests responses — human
+          reviewers approve before sending (Meta policy compliant).
         </p>
       </div>
 
       <div className="mb-4 text-sm text-gray-600">
-        {pending} mục đang chờ duyệt.
+        {pending} item{pending === 1 ? "" : "s"} awaiting review.
       </div>
 
       <div className="space-y-3">
         {rows.length === 0 && (
           <p className="text-sm text-gray-400">
-            Chưa có tương tác nào được thu thập. Kết nối webhook Meta hoặc chạy
-            ingest để kéo comment.
+            No engagement items collected yet. Connect Meta webhooks or run
+            ingest to pull comments and messages.
           </p>
         )}
         {rows.map((item) => (
           <div key={item.id} className="rounded-lg border border-gray-200 p-4">
             <div className="mb-2 flex items-center gap-2">
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                {item.type === "comment" ? "Comment" : "Inbox"}
+                {item.type === "comment" ? "Comment" : "Direct Message"}
               </span>
               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
                 {STATUS_LABEL[item.status] ?? item.status}
               </span>
               <span className="ml-auto text-xs text-gray-400">
-                {new Date(item.created_at).toLocaleString("vi-VN")}
+                {new Date(item.created_at).toLocaleString("en-US")}
               </span>
             </div>
             <p className="text-sm text-gray-900">
-              {item.message ?? <em className="text-gray-400">(không có nội dung)</em>}
+              {item.message ?? <em className="text-gray-400">(no message content)</em>}
             </p>
             {item.suggested_reply && (
               <div className="mt-2 rounded-md bg-gray-50 p-2">
-                <p className="text-xs font-medium text-gray-500">AI gợi ý:</p>
+                <p className="text-xs font-medium text-gray-500">AI Suggested Reply:</p>
                 <p className="text-sm text-gray-800">{item.suggested_reply}</p>
               </div>
             )}

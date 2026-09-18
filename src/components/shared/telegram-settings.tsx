@@ -37,8 +37,8 @@ export function TelegramSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telegramChatId: chatId.trim() || null }),
       });
-      if (!res.ok) throw new Error("Cập nhật thất bại");
-      setSuccess("Đã lưu Chat ID thành công!");
+      if (!res.ok) throw new Error("Update failed");
+      setSuccess("Telegram Chat ID saved successfully!");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -56,9 +56,9 @@ export function TelegramSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telegramChatId: null }),
       });
-      if (!res.ok) throw new Error("Xóa thất bại");
+      if (!res.ok) throw new Error("Failed to disconnect");
       setChatId("");
-      setSuccess("Đã ngắt kết nối Telegram.");
+      setSuccess("Telegram disconnected successfully.");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -72,29 +72,29 @@ export function TelegramSettings() {
 
   return (
     <div className="border border-border bg-card text-card-foreground rounded-xl p-6 shadow-sm">
-      <h3 className="text-lg font-semibold mb-1">📨 Thông báo Telegram</h3>
+      <h3 className="text-lg font-semibold mb-1">📨 Telegram Notifications</h3>
       <p className="text-sm text-muted-foreground mb-6">
-        Nhận thông báo tức thì khi video xử lý xong, thất bại hoặc có feedback mới.
+        Receive instant alerts when videos finish processing, fail, or receive new feedback.
       </p>
 
       <div className="text-sm text-muted-foreground mb-6 space-y-2">
-        <p className="font-medium text-foreground">Hướng dẫn thiết lập:</p>
+        <p className="font-medium text-foreground">Setup instructions:</p>
         <ol className="list-decimal pl-5 space-y-1">
           <li>
-            Tìm bot{" "}
+            Find the bot{" "}
             <span className="font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded">
               @ContentHubBot
             </span>{" "}
-            trên Telegram
+            on Telegram
           </li>
           <li>
-            Gửi lệnh{" "}
+            Send the command{" "}
             <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-foreground">
               /start
             </span>{" "}
-            để lấy Chat ID của bạn
+            to get your Chat ID
           </li>
-          <li>Dán Chat ID vào ô bên dưới và nhấn Lưu</li>
+          <li>Paste the Chat ID into the field below and click Save</li>
         </ol>
       </div>
 
@@ -116,28 +116,28 @@ export function TelegramSettings() {
             type="text"
             value={chatId}
             onChange={(e) => setChatId(e.target.value)}
-            placeholder="VD: 123456789"
+            placeholder="e.g. 123456789"
             className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           <p className="text-xs text-muted-foreground">
-            Chat ID nhận được sau khi gửi /start cho bot.
+            Your personal Chat ID received after sending /start to the bot.
           </p>
         </div>
 
         <div className="flex gap-2">
           <Button onClick={handleSave} disabled={saving || !chatId.trim()}>
-            {saving ? "Đang lưu..." : "Lưu"}
+            {saving ? "Saving…" : "Save"}
           </Button>
           {chatId && (
             <Button variant="outline" onClick={handleClear} disabled={saving}>
-              Ngắt kết nối
+              Disconnect
             </Button>
           )}
         </div>
 
         {chatId && (
           <p className="text-xs text-green-600 dark:text-green-400 font-medium">
-            🟢 Đã kết nối — Chat ID: {chatId}
+            🟢 Connected — Chat ID: {chatId}
           </p>
         )}
       </div>

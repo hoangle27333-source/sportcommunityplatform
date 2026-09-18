@@ -48,37 +48,37 @@ const WRITE: Role[] = ["admin", "editor"];
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Vận hành",
+    label: "Operations",
     items: [
-      { href: "/",          label: "Tổng quan",      icon: LayoutDashboard, roles: ALL },
-      { href: "/compose",   label: "Tạo nội dung",   icon: PenSquare,       roles: WRITE },
-      { href: "/posts",     label: "Bài đăng",        icon: Images,          roles: ALL, badgeKey: "drafts" },
-      { href: "/calendar",  label: "Lịch đăng",       icon: CalendarDays,    roles: ALL },
-      { href: "/campaigns", label: "Chiến dịch",      icon: Sparkles,        roles: WRITE },
+      { href: "/",          label: "Overview",       icon: LayoutDashboard, roles: ALL },
+      { href: "/compose",   label: "Compose",        icon: PenSquare,       roles: WRITE },
+      { href: "/posts",     label: "Posts",          icon: Images,          roles: ALL, badgeKey: "drafts" },
+      { href: "/calendar",  label: "Calendar",       icon: CalendarDays,    roles: ALL },
+      { href: "/campaigns", label: "Campaigns",      icon: Sparkles,        roles: WRITE },
     ],
   },
   {
-    label: "Nội dung",
+    label: "Content",
     items: [
       { href: "/remix",         label: "Remix Studio",     icon: Wand2,   roles: WRITE, badgeKey: "remixReview" },
-      { href: "/remix/presets", label: "Cấu hình Remix",   icon: Sliders, roles: WRITE },
-      { href: "/media",         label: "Thư viện media",   icon: Images,  roles: ALL },
+      { href: "/remix/presets", label: "Remix Presets",    icon: Sliders, roles: WRITE },
+      { href: "/media",         label: "Media Library",    icon: Images,  roles: ALL },
     ],
   },
   {
-    label: "Tăng trưởng",
+    label: "Growth",
     items: [
-      { href: "/analytics",         label: "Phân tích",        icon: BarChart3,    roles: ALL },
-      { href: "/engagement",        label: "Tương tác",        icon: MessageSquare, roles: WRITE, badgeKey: "pendingEngagement" },
+      { href: "/analytics",         label: "Analytics",        icon: BarChart3,    roles: ALL },
+      { href: "/engagement",        label: "Engagement",       icon: MessageSquare, roles: WRITE, badgeKey: "pendingEngagement" },
       { href: "/seeding",           label: "Seeding",          icon: Syringe,      roles: WRITE },
     ],
   },
   {
-    label: "Hệ thống",
+    label: "System",
     items: [
-      { href: "/notifications", label: "Thông báo",  icon: Bell,     roles: ALL },
-      { href: "/channels",      label: "Kênh",       icon: Radio,    roles: ["admin"], badgeKey: "needsReauth" },
-      { href: "/settings",      label: "Cài đặt",    icon: Settings, roles: ["admin"] },
+      { href: "/notifications", label: "Notifications",  icon: Bell,     roles: ALL },
+      { href: "/channels",      label: "Channels",       icon: Radio,    roles: ["admin"], badgeKey: "needsReauth" },
+      { href: "/settings",      label: "Settings",       icon: Settings, roles: ["admin"] },
     ],
   },
 ];

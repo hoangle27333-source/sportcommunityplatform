@@ -42,7 +42,7 @@ export function RankBarChart({
   height,
   format = fullNumber,
   caption,
-  valueLabel = "Giá trị",
+  valueLabel = "Value",
   colorByIndex = false,
   className,
 }: {
@@ -106,7 +106,7 @@ export function RankBarChart({
 
       <ChartDataTable
         caption={caption}
-        columns={["Hạng mục", valueLabel]}
+        columns={["Category", valueLabel]}
         rows={data.map((d) => [d.label, format(d.value)])}
       />
     </div>

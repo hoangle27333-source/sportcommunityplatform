@@ -18,6 +18,6 @@ export const config = {
      *   - favicon and common static asset extensions
      * so we don't pay the auth revalidation cost on assets.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|fonts/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|ttf|woff|woff2|eot)$).*)",
   ],
 };

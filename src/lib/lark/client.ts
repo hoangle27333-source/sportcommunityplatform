@@ -3,6 +3,12 @@
  * Single Source of Truth for Sports KOL & Community Platform
  */
 
+import {
+  fetchProjectParticipants,
+  DEFAULT_PROJECT_BRANDS,
+  filterAndApplyProjectOverrides,
+} from "@/lib/sport-hub/project-participants-store";
+
 const LARK_BASE_URL = "https://open.larksuite.com/open-apis";
 
 export const LARK_CONFIG = {
@@ -139,11 +145,12 @@ function extractNumber(val: any): number {
  * Fetch and aggregate entire Sport KOL & Community Dashboard data
  */
 export async function getLarkDashboardData() {
-  const [kolRaw, communityRaw, postRaw, reportRaw] = await Promise.all([
+  const [kolRaw, communityRaw, postRaw, reportRaw, projectRaw] = await Promise.all([
     fetchTableRecords(LARK_CONFIG.tables.kols).catch(() => []),
     fetchTableRecords(LARK_CONFIG.tables.communities).catch(() => []),
     fetchTableRecords(LARK_CONFIG.tables.posts).catch(() => []),
     fetchTableRecords(LARK_CONFIG.tables.reports).catch(() => []),
+    fetchTableRecords(LARK_CONFIG.tables.projects).catch(() => []),
   ]);
 
   // 1. Process KOLs
@@ -167,12 +174,12 @@ export async function getLarkDashboardData() {
         sport: sport.filter(Boolean),
         tier: extractText(f["KOL Tier"] || f["Phân loại"] || "Micro (10k - 50k)"),
         platform: extractText(f["Platform"] || f["Nền tảng"] || "Facebook"),
-        geography: extractText(f["Geography"] || f["Khu vực"] || "Toàn quốc"),
+        geography: extractText(f["Geography"] || f["Khu vực"] || "Nationwide"),
         followers: extractNumber(f["Followers"] || f["Followers / Thành viên"]),
         avgViews: extractNumber(f["Avg Views"]),
         er: extractNumber(f["Engagement Rate%"] || f["Tỷ lệ tương tác (ER %)"]),
         quotation: extractNumber(f["Quotation (VND)"] || f["Bảng giá tham khảo (VNĐ)"]),
-        status: extractText(f["Status"] || f["Trạng thái hợp tác"] || "Đang hợp tác"),
+        status: extractText(f["Status"] || f["Trạng thái hợp tác"] || "Active Partnership"),
         info: extractText(f["Information"] || f["Bio / Giới thiệu"]),
         profileUrl: f["Link Profile"]?.link || f["Kênh Social chính"]?.link || "#",
       };
@@ -198,14 +205,14 @@ export async function getLarkDashboardData() {
         id: r.record_id,
         name,
         sport: sport.filter(Boolean),
-        geography: extractText(f["Khu vực (Geography)"] || "Toàn quốc"),
+        geography: extractText(f["Khu vực (Geography)"] || "Nationwide"),
         members: extractNumber(f["Số lượng Thành viên (Members)"]),
         platform: extractText(f["Nền tảng"] || "Facebook Group"),
         groupUrl: f["Link Nhóm (Group URL)"]?.link || "#",
-        activityLevel: extractText(f["Mức độ hoạt động"] || "Hoạt động sôi nổi"),
+        activityLevel: extractText(f["Mức độ hoạt động"] || "Very Active"),
         adminContact: extractText(f["Admin / Đầu mối liên hệ"]),
         pricePerPin: extractNumber(f["Chi phí ghim bài / tháng (VNĐ)"]),
-        status: extractText(f["Trạng thái hợp tác"] || "Đang hợp tác"),
+        status: extractText(f["Trạng thái hợp tác"] || "Active Partnership"),
       };
     })
     .filter(Boolean);
@@ -231,7 +238,7 @@ export async function getLarkDashboardData() {
       return {
         id: r.record_id,
         title,
-        author: author || "Chưa gắn tên",
+        author: author || "Unknown Author",
         kolRecordIds,
         platform: extractText(f["Nền tảng (Platform)"] || "Facebook"),
         likes: extractNumber(f["Lượt Thích (Likes)"]),
@@ -239,8 +246,8 @@ export async function getLarkDashboardData() {
         views: extractNumber(f["Lượt Xem Video (Views)"]),
         er: extractNumber(f["Tỷ lệ tương tác (ER %)"]),
         postUrl: f["Link bài viết (Post URL)"]?.link || "#",
-        viralGrade: extractText(f["Đánh giá độ Viral"] || "Xu Hướng"),
-        status: extractText(f["Trạng thái xử lý"] || "Đã duyệt"),
+        viralGrade: extractText(f["Đánh giá độ Viral"] || "Trending"),
+        status: extractText(f["Trạng thái xử lý"] || "Approved"),
       };
     })
     .filter(Boolean);
@@ -265,12 +272,12 @@ export async function getLarkDashboardData() {
       return {
         id: r.record_id,
         title,
-        kolName: kolName || "Chưa gắn tên",
+        kolName: kolName || "Unnamed",
         kolRecordIds,
         project: extractText(f["Tên dự án tham gia"]),
         score: extractNumber(f["Đánh giá chung (1 - 5 sao)"]) || 5,
         attitude: extractNumber(f["Điểm thái độ hợp tác (1 - 5 sao)"]) || 5,
-        deadline: extractText(f["Tiến độ bàn giao (Deadline)"] || "Đúng hạn"),
+        deadline: extractText(f["Tiến độ bàn giao (Deadline)"] || "On Time"),
         kpiCommit: extractNumber(f["KPI cam kết"]),
         kpiActual: extractNumber(f["KPI thực tế đạt được"]),
         kpiRate: extractNumber(f["Tỷ lệ hoàn thành KPI (%)"]),
@@ -280,7 +287,65 @@ export async function getLarkDashboardData() {
     })
     .filter(Boolean);
 
-  // 5. Calculate KPI Metrics
+  const allParticipants = await fetchProjectParticipants().catch(() => []);
+
+  // 5. Process Projects
+  const projects = projectRaw
+    .map((r: any) => {
+      const f = r.fields || {};
+      const name = extractText(f["Tên Chiến Dịch"] || f["Tên Dự Án"] || f["Name"]);
+      if (!name) return null;
+
+      const rawBrand = extractText(f["Thương hiệu / Nhãn hàng"] || f["Brand"]);
+      const matchedPreset =
+        DEFAULT_PROJECT_BRANDS[r.record_id] ||
+        (name.includes("Pickleball") ? DEFAULT_PROJECT_BRANDS["c3a08ca8-0823-4302-a28f-b6c49468f30f"] : undefined) ||
+        (name.includes("Marathon") || name.includes("Giày Chạy") ? DEFAULT_PROJECT_BRANDS["recvvzfpeuGL65"] : undefined) ||
+        (name.includes("Doanh Nhân Trẻ") ? DEFAULT_PROJECT_BRANDS["recvvzfpwR4PfU"] : undefined);
+
+      let brands: string[] = [];
+      if (matchedPreset?.brands && matchedPreset.brands.length > 0) {
+        brands = matchedPreset.brands;
+      } else if (rawBrand) {
+        brands = rawBrand.split(",").map((s: string) => s.trim()).filter(Boolean);
+      } else {
+        brands = ["Sport Booking Hub"];
+      }
+
+      const brandDetails = matchedPreset?.brandDetails || [];
+
+      const matchedParticipants = allParticipants.filter((p) => {
+        if (p.projectId === r.record_id) return true;
+        if (name.includes("Pickleball Mùa Hè") && (p.projectId === "c3a08ca8-0823-4302-a28f-b6c49468f30f" || p.projectId === "recvvsOelZ0xR2")) return true;
+        if ((name.includes("Đại Sứ Giày Chạy") || name.includes("Marathon")) && p.projectId === "recvvzfpeuGL65") return true;
+        if (name.includes("Doanh Nhân Trẻ") && p.projectId === "recvvzfpwR4PfU") return true;
+        return false;
+      });
+
+      const budget = extractNumber(f["Ngân sách dự kiến (VNĐ)"] || f["Budget"]);
+      const allocatedBudget = matchedParticipants.reduce((sum, p) => sum + (p.agreedFee || 0), 0);
+
+      return {
+        id: r.record_id,
+        name,
+        brand: brands[0] || rawBrand || "Sport Booking Hub",
+        brands,
+        brandDetails,
+        budget,
+        allocatedBudget,
+        startDate: extractText(f["Thời gian bắt đầu"]),
+        endDate: extractText(f["Thời gian kết thúc"]),
+        pic: extractText(f["Người phụ trách (PIC)"] || f["PIC"]),
+        objective: extractText(f["Mục tiêu chính"] || f["Objective"]),
+        status: extractText(f["Trạng thái dự án"] || f["Status"] || "Planning"),
+        participants: matchedParticipants,
+      };
+    })
+    .filter(Boolean);
+
+  const activeProjects = filterAndApplyProjectOverrides(projects.filter(Boolean) as any);
+
+  // 6. Calculate KPI Metrics
   const totalKols = kols.length;
   const totalReach = kols.reduce((sum: number, k: any) => sum + (k.followers || 0), 0);
   const totalCommunities = communities.length;
@@ -298,6 +363,8 @@ export async function getLarkDashboardData() {
         )
       : 5.0;
   const totalPosts = posts.length;
+  const totalProjects = activeProjects.length;
+  const totalBudget = activeProjects.reduce((sum: number, p: any) => sum + (p.budget || 0), 0);
 
   return {
     kpis: {
@@ -307,11 +374,14 @@ export async function getLarkDashboardData() {
       totalCommunities,
       totalCommunityMembers,
       totalPosts,
+      totalProjects,
+      totalBudget,
     },
     kols,
     communities,
     posts,
     reports,
+    projects: activeProjects,
   };
 }
 
@@ -353,3 +423,57 @@ export async function batchInsertRecords(tableId: string, records: any[]) {
 
   return { count: successCount };
 }
+
+/**
+ * Update a single record in a Lark Bitable table
+ */
+export async function updateRecord(
+  tableId: string,
+  recordId: string,
+  fields: Record<string, any>
+) {
+  const token = await getTenantAccessToken();
+  const url = `${LARK_BASE_URL}/bitable/v1/apps/${LARK_CONFIG.baseToken}/tables/${tableId}/records/${recordId}`;
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fields }),
+  });
+
+  const data = await res.json();
+  if (data.code !== 0) {
+    console.error(`Update failed on table ${tableId} record ${recordId}:`, data.msg);
+    throw new Error(data.msg || "Lỗi cập nhật dữ liệu trên Lark Base");
+  }
+
+  return data.data;
+}
+
+/**
+ * Delete a single record from a Lark Bitable table
+ */
+export async function deleteRecord(tableId: string, recordId: string) {
+  const token = await getTenantAccessToken();
+  const url = `${LARK_BASE_URL}/bitable/v1/apps/${LARK_CONFIG.baseToken}/tables/${tableId}/records/${recordId}`;
+
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const data = await res.json();
+  if (data.code !== 0) {
+    console.error(`Delete failed on table ${tableId} record ${recordId}:`, data.msg);
+    throw new Error(data.msg || "Lỗi xóa bản ghi trên Lark Base");
+  }
+
+  return data.data;
+}
+

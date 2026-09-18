@@ -63,9 +63,9 @@ const SUBTITLE_PRESETS: Record<SubtitlePresetKey, {
 export function SubtitleConfig({
   value,
   onChange,
-  title = "Cấu hình phụ đề",
-  sampleText = "Đây là phụ đề mẫu",
-  autoDescription = "AI tự phát hiện vị trí phụ đề gốc (thường bottom 18%) và chèn phụ đề mới trong vùng đã làm mờ. Nếu không phát hiện được, mặc định đặt ở dưới cùng.",
+  title = "Subtitle Configuration",
+  sampleText = "Sample subtitle preview",
+  autoDescription = "AI automatically detects original subtitle placement (typically bottom 18%) and inserts new subtitles into the blurred region. Defaults to bottom if not detected.",
 }: {
   value: SubtitleSettings;
   onChange: (s: SubtitleSettings) => void;
@@ -114,7 +114,7 @@ export function SubtitleConfig({
       {/* Font & Size */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">Font chữ</label>
+          <label className="text-xs text-muted-foreground mb-1 block">Font Family</label>
           <select
             value={value.font}
             onChange={(e) => update({ font: e.target.value })}
@@ -128,7 +128,7 @@ export function SubtitleConfig({
           </select>
         </div>
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">Kích cỡ</label>
+          <label className="text-xs text-muted-foreground mb-1 block">Font Size</label>
           <input
             type="number"
             min={12}
@@ -143,19 +143,19 @@ export function SubtitleConfig({
       {/* Colors & Styles */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <ColorFieldWithOpacity
-          label="Màu chữ"
+          label="Text Color"
           value={value.color}
           onChange={(next) => update({ color: next })}
           fallback="#FFFFFF"
         />
         <ColorFieldWithOpacity
-          label="Màu nền / viền"
+          label="Background / Border Color"
           value={value.bgColor}
           onChange={(next) => update({ bgColor: next })}
           fallback="#000000"
         />
         <ColorFieldWithOpacity
-          label="Màu nhấn từng từ"
+          label="Highlight Color"
           value={value.highlightColor ?? "#FFF200"}
           onChange={(next) => update({ highlightColor: next })}
           fallback="#FFF200"
@@ -169,7 +169,7 @@ export function SubtitleConfig({
             onChange={(e) => update({ bold: e.target.checked })}
             className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
           />
-          Đậm
+          Bold
         </label>
         <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
           <input
@@ -178,50 +178,50 @@ export function SubtitleConfig({
             onChange={(e) => update({ italic: e.target.checked })}
             className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
           />
-          Nghiêng
+          Italic
         </label>
       </div>
 
       {/* Border Style & Outline Thickness */}
       <div className="space-y-2 pt-1">
-        <label className="text-xs text-muted-foreground block">Hiệu ứng hiển thị</label>
+        <label className="text-xs text-muted-foreground block">Animation Effect</label>
         <div className="flex flex-wrap gap-4 mb-3">
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={(value.animation ?? 'static') === 'static'} onChange={() => update({ animation: 'static' })} />
-            Tĩnh
+            Static
           </label>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={value.animation === 'word_highlight'} onChange={() => update({ animation: 'word_highlight' })} />
-            Highlight từng chữ
+            Word Highlight
           </label>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={value.animation === 'reveal_words'} onChange={() => update({ animation: 'reveal_words' })} />
-            Nhả từng chữ
+            Word Reveal
           </label>
         </div>
-        <label className="text-xs text-muted-foreground block">Kiểu đường viền / nền</label>
+        <label className="text-xs text-muted-foreground block">Border & Background Style</label>
         <div className="flex flex-wrap gap-4">
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={value.borderStyle === 0} onChange={() => update({ borderStyle: 0, backgroundBlur: false })} />
-            Không có
+            None
           </label>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={value.borderStyle === 1} onChange={() => update({ borderStyle: 1, backgroundBlur: false })} />
-            Viền chữ
+            Text Outline
           </label>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={value.borderStyle === 3 && !value.backgroundBlur} onChange={() => update({ borderStyle: 3, backgroundBlur: false })} />
-            Hộp nền
+            Background Box
           </label>
           <label className="flex items-center gap-1.5 text-sm cursor-pointer">
             <input type="radio" checked={value.borderStyle === 3 && !!value.backgroundBlur} onChange={() => update({ borderStyle: 3, backgroundBlur: true })} />
-            Hộp nền mờ (blur)
+            Blurred Background Box
           </label>
         </div>
         
         {value.borderStyle === 1 && (
           <div className="flex items-center gap-2 mt-2 bg-muted/30 p-2 rounded-md border border-border/50">
-            <span className="text-xs text-muted-foreground">Độ dày viền:</span>
+            <span className="text-xs text-muted-foreground">Outline thickness:</span>
             <input 
               type="range" min={1} max={5} 
               className="w-32" 
@@ -235,18 +235,18 @@ export function SubtitleConfig({
 
       {/* Position */}
       <div className="space-y-2">
-        <label className="text-xs text-muted-foreground block">Vị trí</label>
+        <label className="text-xs text-muted-foreground block">Position</label>
         <div className="flex gap-1 bg-muted/50 border border-input p-1 rounded-md w-fit shadow-sm">
           <button 
             type="button"
             className={`px-3 py-1 text-xs rounded-sm transition-all ${value.position === 'top' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => update({ position: 'top' })}
-          >Trên</button>
+          >Top</button>
           <button 
             type="button"
             className={`px-3 py-1 text-xs rounded-sm transition-all ${value.position === 'bottom' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => update({ position: 'bottom' })}
-          >Dưới</button>
+          >Bottom</button>
           <button
             type="button"
             className={`px-3 py-1 text-xs rounded-sm transition-all flex items-center gap-1 ${

@@ -18,9 +18,9 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [tab, setTab] = useState<'all' | 'favorites'>('all');
-  const [gender, setGender] = useState('Tất cả');
-  const [region, setRegion] = useState('Tất cả');
-  const [style, setStyle] = useState('Tất cả');
+  const [gender, setGender] = useState('All');
+  const [region, setRegion] = useState('All');
+  const [style, setStyle] = useState('All');
   const [loading, setLoading] = useState(false);
   
   useEffect(() => {
@@ -34,9 +34,9 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (gender !== 'Tất cả') params.append('gender', gender === 'Nữ' ? 'female' : 'male');
-      if (region !== 'Tất cả') params.append('region', region);
-      if (style !== 'Tất cả') params.append('style', style);
+      if (gender !== 'All') params.append('gender', gender === 'Female' ? 'female' : 'male');
+      if (region !== 'All') params.append('region', region);
+      if (style !== 'All') params.append('style', style);
       
       const res = await fetch(`/api/remix/voices?${params.toString()}`);
       if (res.ok) {
@@ -45,19 +45,19 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
       } else {
         // Mock data for UI development if API is not yet implemented
         setVoices([
-          { name: 'vi-VN-WaveNet-A', gender: 'female', region: 'Bắc', style: 'Tự nhiên', tier: 'wavenet' },
-          { name: 'vi-VN-WaveNet-B', gender: 'male', region: 'Bắc', style: 'Trầm ấm', tier: 'wavenet' },
-          { name: 'vi-VN-WaveNet-C', gender: 'female', region: 'Nam', style: 'Trẻ trung', tier: 'wavenet' },
-          { name: 'vi-VN-Neural2-A', gender: 'female', region: 'Bắc', style: 'Chuyên nghiệp', tier: 'neural2' },
-          { name: 'vi-VN-Neural2-D', gender: 'male', region: 'Nam', style: 'Tiêu chuẩn', tier: 'neural2' },
+          { name: 'vi-VN-WaveNet-A', gender: 'female', region: 'Northern', style: 'Natural', tier: 'wavenet' },
+          { name: 'vi-VN-WaveNet-B', gender: 'male', region: 'Northern', style: 'Warm', tier: 'wavenet' },
+          { name: 'vi-VN-WaveNet-C', gender: 'female', region: 'Southern', style: 'Youthful', tier: 'wavenet' },
+          { name: 'vi-VN-Neural2-A', gender: 'female', region: 'Northern', style: 'Professional', tier: 'neural2' },
+          { name: 'vi-VN-Neural2-D', gender: 'male', region: 'Southern', style: 'Standard', tier: 'neural2' },
         ]);
       }
     } catch (e) {
       console.error(e);
       // Fallback
       setVoices([
-        { name: 'vi-VN-WaveNet-A', gender: 'female', region: 'Bắc', style: 'Tự nhiên', tier: 'wavenet' },
-        { name: 'vi-VN-WaveNet-B', gender: 'male', region: 'Bắc', style: 'Trầm ấm', tier: 'wavenet' },
+        { name: 'vi-VN-WaveNet-A', gender: 'female', region: 'Northern', style: 'Natural', tier: 'wavenet' },
+        { name: 'vi-VN-WaveNet-B', gender: 'male', region: 'Northern', style: 'Warm', tier: 'wavenet' },
       ]);
     } finally {
       setLoading(false);
@@ -124,7 +124,7 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
         onClick={() => setOpen(true)}
         className="w-full justify-between bg-background"
       >
-        {value ? formatVoiceName(value) : "Chọn giọng lồng tiếng"}
+        {value ? formatVoiceName(value) : "Select voiceover"}
         <ChevronDown className="h-4 w-4 opacity-50" />
       </Button>
 
@@ -132,7 +132,7 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="relative w-full max-w-3xl max-h-[85vh] bg-background rounded-xl shadow-2xl overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-border/50 bg-background/95 sticky top-0 z-10">
-              <h3 className="text-lg font-semibold">Chọn giọng lồng tiếng</h3>
+              <h3 className="text-lg font-semibold">Select Voiceover</h3>
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)}>
                 <X className="h-5 w-5" />
               </Button>
@@ -141,30 +141,30 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
             <div className="p-4 space-y-4">
               <div className="flex flex-wrap gap-4">
                 <div className="flex-1 min-w-[120px]">
-                  <label className="text-xs text-muted-foreground mb-1 block">Giới tính</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">Gender</label>
                   <select className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={gender} onChange={e => setGender(e.target.value)}>
-                    <option>Tất cả</option>
-                    <option>Nữ</option>
-                    <option>Nam</option>
+                    <option>All</option>
+                    <option>Female</option>
+                    <option>Male</option>
                   </select>
                 </div>
                 <div className="flex-1 min-w-[120px]">
-                  <label className="text-xs text-muted-foreground mb-1 block">Vùng miền</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">Region / Accent</label>
                   <select className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={region} onChange={e => setRegion(e.target.value)}>
-                    <option>Tất cả</option>
-                    <option>Bắc</option>
-                    <option>Nam</option>
+                    <option>All</option>
+                    <option>Northern</option>
+                    <option>Southern</option>
                   </select>
                 </div>
                 <div className="flex-1 min-w-[120px]">
-                  <label className="text-xs text-muted-foreground mb-1 block">Phong cách</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">Style</label>
                   <select className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={style} onChange={e => setStyle(e.target.value)}>
-                    <option>Tất cả</option>
-                    <option>Trẻ trung</option>
-                    <option>Tự nhiên</option>
-                    <option>Trầm ấm</option>
-                    <option>Chuyên nghiệp</option>
-                    <option>Tiêu chuẩn</option>
+                    <option>All</option>
+                    <option>Youthful</option>
+                    <option>Natural</option>
+                    <option>Warm</option>
+                    <option>Professional</option>
+                    <option>Standard</option>
                   </select>
                 </div>
               </div>
@@ -176,7 +176,7 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
                   className="tab-item"
                   onClick={() => setTab('all')}
                 >
-                  Tất cả
+                  All
                 </button>
                 <button
                   type="button"
@@ -184,15 +184,15 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
                   className="tab-item"
                   onClick={() => setTab('favorites')}
                 >
-                  ⭐ Yêu thích
+                  ⭐ Favorites
                 </button>
               </div>
               
               <div className="overflow-y-auto h-[350px] space-y-2 pr-2 scrollbar-thin">
                 {loading ? (
-                  <div className="text-center py-8 text-muted-foreground text-sm">Đang tải...</div>
+                  <div className="text-center py-8 text-muted-foreground text-sm">Loading voices…</div>
                 ) : filteredVoices.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground text-sm">Không tìm thấy giọng đọc phù hợp.</div>
+                  <div className="text-center py-8 text-muted-foreground text-sm">No matching voiceovers found.</div>
                 ) : (
                   filteredVoices.map(v => (
                     <div
@@ -208,11 +208,11 @@ export function VoiceSelector({ value, onChange, disabled }: { value: string, on
                           {formatVoiceName(v.name)}
                         </div>
                         <div className="flex flex-wrap gap-2 mt-2">
-                          <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{v.gender === 'female' ? 'Nữ' : 'Nam'}</span>
+                          <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{v.gender === 'female' ? 'Female' : 'Male'}</span>
                           <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{v.region}</span>
                           <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{v.style}</span>
                           {v.tier === 'wavenet' || v.tier === 'standard' ? (
-                            <span className="text-[10px] bg-success/20 text-success px-1.5 py-0.5 rounded font-medium">Miễn phí</span>
+                            <span className="text-[10px] bg-success/20 text-success px-1.5 py-0.5 rounded font-medium">Free</span>
                           ) : (
                             <span className="text-[10px] bg-warning/20 text-warning px-1.5 py-0.5 rounded font-medium">💰 Premium</span>
                           )}

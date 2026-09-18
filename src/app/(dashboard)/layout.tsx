@@ -14,6 +14,8 @@ import type { NavCounts, Role } from "@/components/shell/nav";
  * count crosses the wire) and handed to the client shell as plain numbers.
  */
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardLayout({
   children,
 }: {
