@@ -36,3 +36,7 @@ test-results/
 tmp/
 .render-cache/
 .vercel
+scripts/
+*.py
+portal_data.json
+portal/

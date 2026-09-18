@@ -3,32 +3,50 @@ import { NextResponse, type NextRequest } from "next/server";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
-/**
- * Refreshes the Supabase auth session on every request and enforces the
- * "must be logged in" rule (requirements R1.1).
- *
- * Returns the (possibly redirected) response with refreshed session cookies.
- * Call this from the root middleware.ts. Route-level role checks (admin/editor)
- * happen in Server Components / route handlers + RLS — this only gates auth.
- */
-
 /** Paths reachable without an authenticated session. */
-const PUBLIC_PATHS = ["/login", "/auth/callback"];
+const PUBLIC_PATHS = [
+  "/",
+  "/sport-hub",
+  "/api/lark",
+  "/templates",
+  "/portal",
+  "/login",
+  "/auth/callback",
+];
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  return (
+    pathname === "/" ||
+    PUBLIC_PATHS.some(
+      (p) => p !== "/" && (pathname === p || pathname.startsWith(`${p}/`))
+    )
   );
 }
 
 export async function updateSession(
-  request: NextRequest,
+  request: NextRequest
 ): Promise<NextResponse> {
+  const { pathname } = request.nextUrl;
+  const isPublic = isPublicPath(pathname);
+
+  // For public routes (except /login where we might redirect logged-in users), pass through immediately
+  if (isPublic && pathname !== "/login") {
+    return NextResponse.next({ request });
+  }
+
+  // If Supabase credentials are not configured, allow public access
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  ) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
         getAll() {
@@ -36,15 +54,15 @@ export async function updateSession(
         },
         setAll(cookiesToSet: CookieToSet[]) {
           cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
+            request.cookies.set(name, value)
           );
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
+            response.cookies.set(name, value, options)
           );
         },
       },
-    },
+    }
   );
 
   // IMPORTANT: getUser() revalidates the token with Supabase (not just decode),
@@ -53,10 +71,8 @@ export async function updateSession(
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
   // R1.1: unauthenticated access to any non-public route -> redirect to /login.
-  if (!user && !isPublicPath(pathname)) {
+  if (!user && !isPublic) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", pathname);

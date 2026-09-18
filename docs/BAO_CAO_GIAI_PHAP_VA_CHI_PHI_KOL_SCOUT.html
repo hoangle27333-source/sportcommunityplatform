@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>BÁO CÁO PHÂN TÍCH GIẢI PHÁP & CHI PHÍ VẬN HÀNH</title>
+<style>
+  body {
+    font-family: 'Calibri', 'Arial', sans-serif;
+    line-height: 1.6;
+    color: #2D3748;
+    margin: 40px;
+  }
+  h1 {
+    color: #1A365D;
+    font-size: 20pt;
+    border-bottom: 2px solid #2B6CB0;
+    padding-bottom: 8px;
+    margin-top: 20px;
+    text-align: center;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 12pt;
+    color: #4A5568;
+    font-weight: bold;
+    margin-bottom: 30px;
+  }
+  h2 {
+    color: #2B6CB0;
+    font-size: 14pt;
+    border-bottom: 1px solid #E2E8F0;
+    padding-bottom: 5px;
+    margin-top: 25px;
+  }
+  h3 {
+    color: #2D3748;
+    font-size: 12pt;
+    margin-top: 15px;
+  }
+  p, li {
+    font-size: 11pt;
+    color: #2D3748;
+  }
+  .highlight-box {
+    background-color: #EBF8FF;
+    border-left: 5px solid #3182CE;
+    padding: 12px 16px;
+    margin: 15px 0;
+    border-radius: 4px;
+  }
+  .warning-box {
+    background-color: #FFF5F5;
+    border-left: 5px solid #E53E3E;
+    padding: 12px 16px;
+    margin: 15px 0;
+    border-radius: 4px;
+  }
+  .success-box {
+    background-color: #F0FFF4;
+    border-left: 5px solid #38A169;
+    padding: 12px 16px;
+    margin: 15px 0;
+    border-radius: 4px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0 25px 0;
+    font-size: 10.5pt;
+  }
+  th {
+    background-color: #2B6CB0;
+    color: #FFFFFF;
+    font-weight: bold;
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid #CBD5E0;
+  }
+  td {
+    padding: 8px 10px;
+    border: 1px solid #E2E8F0;
+    vertical-align: top;
+  }
+  tr:nth-child(even) {
+    background-color: #F7FAFC;
+  }
+  .badge-rec {
+    color: #276749;
+    font-weight: bold;
+  }
+  .badge-warn {
+    color: #C53030;
+    font-weight: bold;
+  }
+  .footer-note {
+    font-size: 9pt;
+    color: #718096;
+    margin-top: 30px;
+    border-top: 1px solid #E2E8F0;
+    padding-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<h1>BÁO CÁO PHÂN TÍCH GIẢI PHÁP & CHI PHÍ VẬN HÀNH</h1>
+<div class="subtitle">DỰ ÁN: HỆ THỐNG QUẢN TRỊ & TÌM KIẾM DỮ LIỆU KOL / COMMUNITY THỂ THAO<br><span style="font-size: 10pt; font-weight: normal; color: #718096;">Mô hình: Nền tảng độc lập (Standalone Platform) | Ngày lập: Tháng 09/2026</span></div>
+
+<h2>1. TỔNG QUAN & TÓM TẮT ĐỀ XUẤT CHIẾN LƯỢC (EXECUTIVE SUMMARY)</h2>
+<p>Báo cáo này đánh giá tính khả thi kỹ thuật, chi phí đầu tư ban đầu và chi phí vận hành hàng tháng cho 2 tính năng trọng tâm khi tách thành một nền tảng độc lập:</p>
+<ul>
+  <li><b>Module 1</b>: Không gian quản trị dữ liệu KOLs &amp; Community mảng thể thao, theo dõi lịch sử làm việc và biểu mẫu (Form) đánh giá hiệu suất sau mỗi chiến dịch.</li>
+  <li><b>Module 2</b>: Công cụ tìm kiếm &amp; tổng hợp dữ liệu tự động (Scout) từ Facebook, Instagram và Threads.</li>
+</ul>
+
+<div class="highlight-box">
+  <b>ĐỀ XUẤT LỰA CHỌN TỐI ƯU CHO CLIENT:</b>
+  <ul>
+    <li><b>Module 1</b>: Khuyến nghị sử dụng nền tảng <b>Lark Base</b> có sẵn. Vừa tiết kiệm 100% chi phí lập trình ban đầu, vừa có tính năng form đánh giá tùy biến linh hoạt trong 30 giây, hỗ trợ Mobile App hoàn chỉnh và <b>chi phí phần mềm hoàn toàn 0 VNĐ</b>.</li>
+    <li><b>Module 2</b>: Khuyến nghị tích hợp qua <b>Apify API</b>. Do Meta (FB/Instagram/Threads) hiện tại đã đóng toàn bộ API tìm kiếm công khai và áp dụng hệ thống quét chống bot cực kỳ khắt khe, việc tự viết bot cào dữ liệu sẽ là "bẫy chi phí" và thường xuyên bị gián đoạn. Apify đảm bảo dữ liệu ổn định với chi phí trọn gói chỉ <b>~/tháng</b> (~1.250.000 VNĐ).</li>
+  </ul>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 20%;">Hạng mục</th>
+      <th style="width: 30%;">Giải pháp đề xuất</th>
+      <th style="width: 30%;">Lý do cốt lõi</th>
+      <th style="width: 20%;">Chi phí định kỳ</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Module 1 (KOL CRM)</b></td>
+      <td><span class="badge-rec">Lark Base (No-code Hub)</span></td>
+      <td>Triển khai trong 24h; form đánh giá tùy biến không cần dev; có mobile app; không lo lỗi bảo trì.</td>
+      <td><b>0 VNĐ / tháng</b><br>(Gói Free đến 50 user)</td>
+    </tr>
+    <tr>
+      <td><b>Module 2 (Scout Meta)</b></td>
+      <td><span class="badge-rec">Tích hợp Apify API</span></td>
+      <td>Meta chặn bot và đóng API công khai. Apify bao trọn gói proxy dân cư sạch và bypass captcha.</td>
+      <td><b>~1.250.000 VNĐ / tháng</b><br>(~ USD)</td>
+    </tr>
+    <tr>
+      <td><b>Hạ tầng Platform</b></td>
+      <td>Cloud VPS + Cloudflare R2</td>
+      <td>Vận hành web/app độc lập, lưu trữ hợp đồng/ảnh nghiệm thu miễn phí băng thông.</td>
+      <td><b>~350.000 – 400.000 VNĐ / tháng</b><br>(~ USD)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>2. PHÂN TÍCH MODULE 1: KHÔNG GIAN DỮ LIỆU KOL &amp; FORM ĐÁNH GIÁ CHIẾN DỊCH</h2>
+
+<h3>2.1. Yêu cầu bài toán</h3>
+<ul>
+  <li>Lưu trữ hồ sơ KOLs &amp; Community mảng Sport (bộ môn, khu vực, lượng follow, liên hệ, bảng giá...).</li>
+  <li>Khi kết thúc dự án, nhân sự phụ trách điền form đánh giá (kết quả thực tế vs cam kết, thái độ hợp tác, tính kỷ luật, điểm sao, lưu ý/phốt).</li>
+  <li>Khi nhân sự khác bắt đầu dự án mới có thể tra cứu lại toàn bộ lịch sử hợp tác và nhận xét trong quá khứ để ra quyết định.</li>
+</ul>
+
+<h3>2.2. So sánh các phương án thực hiện</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Tiêu chí</th>
+      <th style="width: 37.5%;">Phương án 1A: Tự lập trình (Custom Code)</th>
+      <th style="width: 37.5%;">Phương án 1B: Nền tảng có sẵn (Lark Base) [Khuyên dùng]</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Cách thức thực hiện</b></td>
+      <td>Viết toàn bộ code Web, API Backend và Database (Postgres) từ đầu.</td>
+      <td>Thiết lập Relational Base trên Lark, tạo Form View và bảng liên kết.</td>
+    </tr>
+    <tr>
+      <td><b>Thời gian triển khai</b></td>
+      <td>2.5 – 3.5 tuần (13 – 19 ngày công dev).</td>
+      <td><b>1 – 2 ngày làm việc</b>.</td>
+    </tr>
+    <tr>
+      <td><b>Chi phí đầu tư ban đầu</b></td>
+      <td><b>20.000.000 – 30.000.000 VNĐ</b>.</td>
+      <td><b>2.000.000 – 3.000.000 VNĐ</b> (hoặc tự cấu hình nội bộ 0 VNĐ).</td>
+    </tr>
+    <tr>
+      <td><b>Tính linh hoạt của Form</b></td>
+      <td><span class="badge-warn">Kém linh hoạt</span>: Mỗi khi muốn đổi câu hỏi đánh giá phải nhờ dev sửa code &amp; sửa database.</td>
+      <td><span class="badge-rec">Cực kỳ linh hoạt</span>: Quản lý/Marketing tự thêm bớt cột/tiêu chí trong 30 giây.</td>
+    </tr>
+    <tr>
+      <td><b>Trải nghiệm trên Di động</b></td>
+      <td>Phải tốn công code thêm giao diện Responsive cho mobile.</td>
+      <td><b>Sẵn có App di động (Lark Mobile)</b> mượt mà cho iOS &amp; Android.</td>
+    </tr>
+    <tr>
+      <td><b>Chi phí bản quyền hàng tháng</b></td>
+      <td>0 VNĐ (tự host).</td>
+      <td><b>0 VNĐ</b> (Lark Free Tier hỗ trợ tối đa 50 user, 20.000 records/base).</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="success-box">
+  <b>KẾT LUẬN CHO MODULE 1:</b> Phương án sử dụng <b>Lark Base</b> vượt trội hoàn toàn về tốc độ đưa vào sử dụng, độ linh hoạt khi chỉnh sửa form đánh giá và không phát sinh chi phí phát triển đắt đỏ ban đầu.
+</div>
+
+<h2>3. PHÂN TÍCH MODULE 2: CÔNG CỤ SCOUT TRÊN FACEBOOK, INSTAGRAM, THREADS</h2>
+
+<h3>3.1. Thực tế kỹ thuật: Tại sao KHÔNG THỂ tự viết Bot cào Meta hiện nay?</h3>
+<p>Meta đang áp dụng cơ chế bảo vệ chống thu thập dữ liệu (Anti-scraping) nghiêm ngặt nhất thế giới:</p>
+<ol>
+  <li><b>Meta Graph API đã đóng hoàn toàn tính năng tìm kiếm công khai</b>: Kể từ sau các sự cố bảo mật quyền riêng tư, Meta không cho phép bên thứ ba tìm kiếm profile người dùng hoặc quét thành viên nhóm công khai. Instagram API chỉ cho phép đọc dữ liệu tài khoản của chính doanh nghiệp ủy quyền; Facebook Group API bắt buộc phải là Admin group; Threads API không có công cụ tìm kiếm diện rộng.</li>
+  <li><b>Chặn ngay dải IP máy chủ Datacenter</b>: Nếu dùng máy chủ đám mây thông thường (AWS, Google Cloud, DigitalOcean) để cào dữ liệu, Meta sẽ chặn IP tại cổng mạng ngay lập tức.</li>
+  <li><b>Khóa tài khoản (Checkpoint)</b>: Các tài khoản clone/ảo dùng để đăng nhập quét dữ liệu sẽ bị thuật toán của Meta phát hiện hành vi bot và khóa tài khoản chỉ sau vài chục truy vấn.</li>
+  <li><b>Giao diện thay đổi liên tục</b>: Meta thường xuyên xáo trộn cấu trúc mã HTML/CSS. Bộ cào tự viết hôm nay có thể ngừng hoạt động hoàn toàn vào tuần tới.</li>
+</ol>
+
+<div class="warning-box">
+  <b>CẢNH BÁO "BẪY CHI PHÍ":</b> Nếu cố tình tự xây dựng bộ cào riêng, doanh nghiệp sẽ phải chi trả từ <b> – /tháng (2.5 – 7.5 triệu VNĐ)</b> chỉ riêng tiền mua Proxy Dân Cư xoay vòng (Residential Proxies), đồng thời mất 15 – 20 giờ dev mỗi tháng chỉ để túc trực sửa lỗi khi bot bị chặn.
+</div>
+
+<h3>3.2. Giải pháp tối ưu: Tích hợp qua Apify API</h3>
+<p><b>Apify</b> là nền tảng điện toán đám mây chuyên nghiệp chuyên cung cấp các bộ cào dữ liệu (Actors) cho Facebook, Instagram và Threads:</p>
+<ul>
+  <li><b>Apify lo toàn bộ hạ tầng phức tạp</b>: Họ sở hữu hàng triệu địa chỉ IP dân cư sạch toàn cầu, cơ chế tự giải Captcha và đội ngũ kỹ sư liên tục cập nhật mã cào mỗi khi Meta thay đổi giao diện.</li>
+  <li><b>Dữ liệu chuẩn hóa trả về qua API</b>: Hệ thống của chúng ta chỉ cần gửi lệnh tìm kiếm, Apify sẽ trả về dữ liệu chuẩn JSON: Tên, Bio, Hashtag, Số followers, Vị trí địa lý, Tỷ lệ tương tác (ER), Số thành viên nhóm.</li>
+  <li><b>Chi phí dự đoán được và ổn định</b>: Gói <b>/tháng (~1.250.000 VNĐ)</b> của Apify đã đủ quét thoải mái từ 3.000 – 8.000 hồ sơ mỗi tháng.</li>
+</ul>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 30%;">Khoản mục chi phí</th>
+      <th style="width: 35%;">Tự xây dựng Crawler &amp; Proxy</th>
+      <th style="width: 35%;">Sử dụng Apify API [Khuyên dùng]</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Chi phí lập trình ban đầu</b></td>
+      <td>20.000.000 – 35.000.000 VNĐ (4 – 6 tuần)</td>
+      <td><b>5.000.000 – 8.000.000 VNĐ</b> (1 tuần kết nối API)</td>
+    </tr>
+    <tr>
+      <td><b>Máy chủ chạy bot (Worker RAM lớn)</b></td>
+      <td>500.000 – 1.000.000 VNĐ / tháng</td>
+      <td><b>0 VNĐ</b> (Apify chạy trên cloud của họ)</td>
+    </tr>
+    <tr>
+      <td><b>Chi phí Proxy Dân Cư xoay vòng</b></td>
+      <td>2.500.000 – 5.000.000 VNĐ / tháng</td>
+      <td><b>Đã bao gồm trọn gói trong Apify</b></td>
+    </tr>
+    <tr>
+      <td><b>Dịch vụ giải Captcha tự động</b></td>
+      <td>200.000 – 400.000 VNĐ / tháng</td>
+      <td><b>Đã bao gồm trọn gói trong Apify</b></td>
+    </tr>
+    <tr>
+      <td><b>Phí thuê bao API</b></td>
+      <td>0 VNĐ</td>
+      <td><b>~1.250.000 VNĐ / tháng</b> ( USD)</td>
+    </tr>
+    <tr>
+      <td><b>Độ ổn định hệ thống</b></td>
+      <td><span class="badge-warn">Kém (dễ chết bất thình lình)</span></td>
+      <td><span class="badge-rec">Rất cao (Cam kết chất lượng dịch vụ SLA)</span></td>
+    </tr>
+    <tr>
+      <td><b>TỔNG CHI PHÍ VẬN HÀNH / THÁNG</b></td>
+      <td><b>~3.200.000 – 6.400.000 VNĐ / tháng</b></td>
+      <td><b>~1.250.000 VNĐ / tháng</b> ( USD)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>4. DỰ TOÁN TỔNG CHI PHÍ VẬN HÀNH HÀNG THÁNG CỦA TOÀN BỘ NỀN TẢNG (ZERO-INFRA MODEL)</h2>
+<p>Do sử dụng <b>Lark Base</b> làm trung tâm quản trị (đã bao gồm sẵn Web App, Cơ sở dữ liệu, Biểu mẫu, App Mobile và 100GB lưu trữ), toàn bộ chi phí máy chủ và hạ tầng độc lập được <b>cắt giảm về 0 VNĐ</b>. Chi phí vận hành định kỳ duy nhất chỉ là gói dịch vụ cào dữ liệu Apify:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 28%;">Cấu phần hạ tầng</th>
+      <th style="width: 32%;">Dịch vụ / Cấu hình đề xuất</th>
+      <th style="width: 20%;">Chi phí / Tháng (VNĐ)</th>
+      <th style="width: 20%;">Ghi chú</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Module 1 (KOL CRM & Form)</b></td>
+      <td>Lark Base (Bản Free)</td>
+      <td><b>0 VNĐ</b></td>
+      <td>Gói Free hỗ trợ 50 users, 20.000 bản ghi.</td>
+    </tr>
+    <tr>
+      <td><b>Module 2 (Scout Engine Meta)</b></td>
+      <td>Apify Starter Plan</td>
+      <td><b>~1.250.000 VNĐ</b></td>
+      <td> USD / tháng (cào 3.000 – 8.000 profile).</td>
+    </tr>
+    <tr>
+      <td><b>Máy chủ Web & Backend</b></td>
+      <td>Serverless (Tích hợp sẵn trên Lark Cloud)</td>
+      <td><b>0 VNĐ</b></td>
+      <td>Không tốn tiền thuê VPS hay bảo trì server.</td>
+    </tr>
+    <tr>
+      <td><b>Cơ sở dữ liệu (Database)</b></td>
+      <td>Lark Base Relational Engine</td>
+      <td><b>0 VNĐ</b></td>
+      <td>Lưu trữ trực tiếp trên Lark.</td>
+    </tr>
+    <tr>
+      <td><b>Lưu trữ ảnh nghiệm thu / File</b></td>
+      <td>Lark Cloud Drive</td>
+      <td><b>0 VNĐ</b></td>
+      <td>Sẵn có 100GB dung lượng miễn phí.</td>
+    </tr>
+    <tr style="background-color: #EBF8FF; font-weight: bold;">
+      <td colspan="2">TỔNG CHI PHÍ VẬN HÀNH ĐỊNH KỲ / THÁNG</td>
+      <td colspan="2" style="color: #2B6CB0; font-size: 11pt;">~1.250.000 VNĐ / tháng (~ USD / tháng)</td>
+    </tr>
+    <tr style="background-color: #FEFCBF; font-weight: bold;">
+      <td colspan="2">TỔNG CHI PHÍ VẬN HÀNH TRỌN GÓI / NĂM</td>
+      <td colspan="2" style="color: #B7791F; font-size: 11pt;">~15.000.000 VNĐ / năm (~ USD / năm)</td>
+    </tr>
+  </tbody>
+</table>
+<p style="font-style: italic; color: #4A5568;">*Ghi chú: Nếu trong tương lai Client có nhu cầu phát triển một Web Portal độc quyền mang tên miền riêng (ví dụ: kol.congty.com), khi đó mới cần đầu tư thêm máy chủ Cloud VPS (~350.000 VNĐ/tháng).</p>
+
+<h2>5. LỘ TRÌNH TRIỂN KHAI ĐỀ XUẤT (ACTIONABLE ROADMAP)</h2>
+
+<ol>
+  <li>
+    <b>Giai đoạn 1: Đưa Module 1 vào hoạt động thực tế ngay lập tức (Tuần 1)</b>
+    <ul>
+      <li>Cấu hình không gian <b>Lark Base</b>: Bảng danh bạ KOL/Community thể thao, Bảng dự án, Biểu mẫu đánh giá hiệu quả sau chiến dịch.</li>
+      <li>Bàn giao và tập huấn ngắn hạn cho nhân viên để bắt đầu nhập liệu và đánh giá các dự án hiện hữu.</li>
+      <li><i>Lợi ích</i>: Doanh nghiệp không phải chờ đợi phát triển phần mềm, dữ liệu được tích lũy ngay từ ngày đầu tiên.</li>
+    </ul>
+  </li>
+  <li>
+    <b>Giai đoạn 2: Tích hợp Module 2 (Scout qua Apify) &amp; Hoàn thiện Platform (Tuần 2 – Tuần 3)</b>
+    <ul>
+      <li>Kết nối hệ thống với <b>Apify API</b> để thực hiện tác vụ scout tự động theo từ khóa bộ môn thể thao và khu vực.</li>
+      <li>Tạo giao diện hiển thị danh sách scout và tính năng <i>"1-Click Lưu vào Database"</i> để đưa KOL từ mạng xã hội vào Lark Base.</li>
+      <li>Kiểm thử thực tế, đóng gói hạ tầng Cloud VPS và bàn giao toàn bộ nền tảng độc lập.</li>
+    </ul>
+  </li>
+</ol>
+
+<div class="footer-note">
+  Báo cáo được chuẩn bị bởi đội ngũ Kỹ thuật &amp; Kiến trúc Giải pháp. Mọi thắc mắc và yêu cầu điều chỉnh chi tiết vui lòng liên hệ trực tiếp.
+</div>
+
+</body>
+</html>

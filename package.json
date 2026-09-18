@@ -57,6 +57,7 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "^2.5.5",
     "vaul": "^1.1.2",
+    "xlsx": "^0.18.5",
     "youtube-dl-exec": "^3.1.9",
     "zod": "^3.23.8"
   },

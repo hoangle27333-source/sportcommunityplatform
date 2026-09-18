@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>BẢNG KHẢO SÁT & XÁC ĐỊNH YÊU CẦU HỆ THỐNG LARK PORTAL</title>
+<style>
+  body {
+    font-family: 'Calibri', 'Arial', sans-serif;
+    line-height: 1.6;
+    color: #2D3748;
+    margin: 40px;
+  }
+  h1 {
+    color: #1A365D;
+    font-size: 18pt;
+    border-bottom: 2px solid #2B6CB0;
+    padding-bottom: 8px;
+    margin-top: 10px;
+    text-align: center;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 11pt;
+    color: #4A5568;
+    font-weight: bold;
+    margin-bottom: 25px;
+  }
+  h2 {
+    color: #2B6CB0;
+    font-size: 13pt;
+    border-bottom: 1px solid #E2E8F0;
+    padding-bottom: 4px;
+    margin-top: 25px;
+  }
+  h3 {
+    color: #2D3748;
+    font-size: 11.5pt;
+    margin-top: 15px;
+  }
+  p, li {
+    font-size: 10.5pt;
+    color: #2D3748;
+  }
+  .intro-box {
+    background-color: #EBF8FF;
+    border-left: 4px solid #3182CE;
+    padding: 10px 14px;
+    margin: 15px 0;
+    border-radius: 4px;
+    font-size: 10.5pt;
+  }
+  .question-box {
+    background-color: #F7FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 12px 0 20px 0;
+  }
+  .checkbox-item {
+    margin: 6px 0;
+    font-size: 10.5pt;
+  }
+  .fill-line {
+    border-bottom: 1px dotted #718096;
+    display: inline-block;
+    width: 80%;
+    height: 14px;
+  }
+  .sign-table {
+    width: 100%;
+    margin-top: 40px;
+    border: none;
+  }
+  .sign-table td {
+    border: none;
+    width: 50%;
+    text-align: center;
+    vertical-align: top;
+    font-size: 10.5pt;
+  }
+</style>
+</head>
+<body>
+
+<h1>BẢNG KHẢO SÁT &amp; XÁC ĐỊNH YÊU CẦU CHI TIẾT (REQUIREMENTS SPECIFICATION)</h1>
+<div class="subtitle">
+  DỰ ÁN: CỔNG QUẢN TRỊ &amp; KHÁM PHÁ DỮ LIỆU KOL / COMMUNITY THỂ THAO TRÊN LARK BASE<br>
+  <span style="font-size: 9.5pt; font-weight: normal; color: #718096;">Phiên bản: 1.0 | Ngày lập: Tháng 09/2026 | Đơn vị thực hiện: Đội ngũ Kỹ thuật &amp; Tư vấn Giải pháp</span>
+</div>
+
+<div class="intro-box">
+  <b>Kính gửi: Ban Quản lý Dự án &amp; Quý Khách hàng,</b><br>
+  Nhằm mục tiêu xây dựng một không gian làm việc tập trung (Dashboard Portal) trực quan, cho phép người dùng thao tác hoàn toàn qua các <b>Nút bấm chức năng (Action Buttons)</b> và chuyển đổi linh hoạt giữa các <b>Chế độ xem đa chiều (Multi-views)</b> — hạn chế tối đa việc phải vào các bảng dữ liệu thô (Raw Data) — kính mời Quý khách hàng cùng xác định các yêu cầu cụ thể dưới đây.
+</div>
+
+<h2>PHẦN 1: THIẾT KẾ TRANG CHỦ TRUNG TÂM (PORTAL HOMEPAGE) &amp; NÚT HÀNH ĐỘNG</h2>
+<p><i>Người dùng khi đăng nhập vào hệ thống sẽ chỉ nhìn thấy một Màn hình điều khiển trung tâm (Dashboard). Tại đây có sẵn các nút bấm thao tác nhanh:</i></p>
+
+<div class="question-box">
+  <h3>1.1. Quý khách muốn xuất hiện những Nút Bấm Hành Động Nhanh (Action Buttons) nào tại trang chủ?</h3>
+  <div class="checkbox-item">[ &nbsp; ] <b>Nút 1: "🔍 Yêu Cầu Scout Tự Động"</b> — Bấm vào mở Biểu mẫu nhập từ khóa (ví dụ: <i>Pickleball Hà Nội, Tennis Sài Gòn</i>), chọn số lượng &rarr; Bot Apify tự động chạy ngầm cào dữ liệu về hệ thống.</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Nút 2: "⭐ Đánh Giá KOL Sau Dự Án"</b> — Bấm vào mở Form nghiệm thu sau chiến dịch (chấm điểm sao, thái độ, deadline, KPI cam kết vs thực tế, tải lên ảnh hợp đồng/nghiệm thu).</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Nút 3: "➕ Thêm Nhanh 1 KOL Mới"</b> — Mở form nhập nhanh thông tin một cá nhân KOL/VĐV mới gặp ngoài đời lưu ngay vào hệ thống.</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Nút 4: "👥 Thêm Nhanh 1 Group / Cộng Đồng Mới"</b> — Mở form nhập nhanh thông tin một CLB / Hội nhóm thể thao mới.</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Nút 5: "📁 Tải Lên Danh Sách (Import File Excel/CSV)"</b> — Kích hoạt luồng tải tệp Excel danh bạ cũ đưa vào hệ thống trong 5 giây.</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Nút 6: Nhu cầu khác (nếu có):</b> ............................................................................................................................</div>
+</div>
+
+<h2>PHẦN 2: ĐỊNH NGHĨA CÁC CHẾ ĐỘ XEM ĐA CHIỀU (MULTI-VIEWS)</h2>
+<p><i>Hệ thống hỗ trợ chuyển đổi linh hoạt giữa các góc nhìn dữ liệu mà người dùng không cần phải lọc bằng tay:</i></p>
+
+<div class="question-box">
+  <h3>2.1. Chế độ xem theo Bộ Môn Thể Thao (Sport Niche Views)</h3>
+  <div class="checkbox-item">[ &nbsp; ] <b>Dạng Thẻ Danh Thiếp (Gallery Cards) [Khuyên dùng]:</b> Mỗi KOL/Group là một card hình ảnh trực quan, có các tab chuyển đổi nhanh trên đầu: <i>[Tất cả] | [Pickleball] | [Tennis] | [Chạy bộ / Marathon] | [Gym &amp; Fitness] | [Cầu lông] | [Bóng đá] | [Golf]...</i></div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Dạng Bảng Phân Cụm (Grouped Table):</b> Dạng bảng danh sách nhưng tự động gom nhóm rõ ràng theo từng môn.</div>
+  <p><b>Danh mục các môn thể thao chính cần quản lý:</b></p>
+  <ul>
+    <li>Pickleball</li>
+    <li>Tennis</li>
+    <li>Chạy bộ / Marathon / Trail</li>
+    <li>Gym / Fitness / Yoga / Pilates</li>
+    <li>Cầu lông</li>
+    <li>Bóng đá</li>
+    <li>Đạp xe (Cycling)</li>
+    <li>Golf</li>
+    <li>Môn bổ sung: ........................................................................................................................................................</li>
+  </ul>
+</div>
+
+<div class="question-box">
+  <h3>2.2. Chế độ xem theo Vùng Miền &amp; Địa Lý (Geography Views)</h3>
+  <p>Để phục vụ cho các chiến dịch và sự kiện diễn ra tại từng địa phương cụ thể:</p>
+  <div class="checkbox-item">[ &nbsp; ] Phân chia theo <b>Vùng miền lớn:</b> <i>Toàn quốc, Miền Bắc, Miền Trung, Miền Nam</i>.</div>
+  <div class="checkbox-item">[ &nbsp; ] Phân chia theo <b>Thành phố trọng điểm:</b> <i>Hà Nội, TP. Hồ Chí Minh, Đà Nẵng, Hải Phòng, Cần Thơ...</i></div>
+  <div class="checkbox-item">[ &nbsp; ] Kết hợp cả hai (Lọc được đồng thời cả Vùng và Tỉnh thành).</div>
+</div>
+
+<div class="question-box">
+  <h3>2.3. Chế độ xem theo Kênh Mạng Xã Hội (Channel Views)</h3>
+  <div class="checkbox-item">[ &nbsp; ] Tab <b>Instagram Influencers:</b> Tập trung vào hình ảnh đẹp, Reels, phong cách sống thể thao.</div>
+  <div class="checkbox-item">[ &nbsp; ] Tab <b>Facebook &amp; Groups:</b> Tập trung vào bài viết chuyên sâu, thảo luận cộng đồng, livestream.</div>
+  <div class="checkbox-item">[ &nbsp; ] Tab <b>Threads Creators:</b> Tập trung vào nội dung thảo luận văn bản, quan điểm cá nhân.</div>
+  <div class="checkbox-item">[ &nbsp; ] Tab <b>TikTok Sport Creators:</b> Tập trung vào các video ngắn viral triệu view.</div>
+  <div class="checkbox-item">[ &nbsp; ] Tab <b>YouTube Sport Channels:</b> Video dài hướng dẫn kỹ thuật, review phụ kiện/giải đấu.</div>
+</div>
+
+<div class="question-box">
+  <h3>2.4. Chế độ xem theo Quy Mô / Phân Khúc (Tier Views)</h3>
+  <div class="checkbox-item">[ &nbsp; ] <b>Nano-Influencer:</b> Dưới 10.000 followers (chi phí thấp/miễn phí, độ gắn kết cao).</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Micro-Influencer:</b> 10.000 – 50.000 followers (tương tác cao, phù hợp lan tỏa phong trào).</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Macro-Influencer:</b> 50.000 – 200.000 followers (uy tín cao, chuyên môn tốt).</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Mega-Influencer:</b> Trên 200.000 followers (VĐV quốc gia, người nổi tiếng).</div>
+</div>
+
+<h2>PHẦN 3: HỒ SƠ TỔNG HỢP 360° CỦA MỘT KOL (KOL 360° DOSSIER)</h2>
+<p><i>Khi nhân sự chuẩn bị dự án mới và click chọn 1 KOL cụ thể, toàn bộ "lý lịch" sẽ hiển thị tập trung trên 1 trang:</i></p>
+
+<div class="question-box">
+  <h3>3.1. Các khối thông tin Quý khách muốn xuất hiện trên Hồ Sơ 360° này:</h3>
+  <div class="checkbox-item">[ &nbsp; ] <b>Khối 1: Thông tin định danh &amp; Liên hệ:</b> Ảnh đại diện, Tên thật, Nickname, Giới tính, Khu vực, Email, SĐT/Zalo quản lý.</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Khối 2: Ma trận đa kênh (Channel Matrix):</b> Bảng thống kê Followers, Lượt xem trung bình (Avg Views), Tỷ lệ tương tác (ER %) của từng kênh (Insta, FB, Threads, TikTok).</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Khối 3: Bảng giá tham khảo (Rate Card):</b> Đơn giá ước tính theo từng gói (1 Post ảnh / 1 Video Reels / 1 Video TikTok / 1 Buổi tham gia sự kiện).</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Khối 4: Lịch sử hợp tác &amp; Đánh giá nội bộ (Project History):</b>
+    <ul>
+      <li>Điểm Rating trung bình: &#11088;&#11088;&#11088;&#11088;&#11088; (1 – 5 sao)</li>
+      <li>Điểm thái độ làm việc: &#11088;&#11088;&#11088;&#11088;&#11088; (1 – 5 sao)</li>
+      <li>Độ đúng hạn deadline (Đúng hạn / Trễ hẹn)</li>
+      <li>Tỷ lệ hoàn thành KPI cam kết (%)</li>
+      <li>Toàn bộ ghi chú kinh nghiệm của các dự án trước (Tính cách, lưu ý khi làm việc, cảnh báo phốt nếu có).</li>
+    </ul>
+  </div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Khối 5: Các bài viết / Video Reels gần đây (Scouted Posts):</b> Danh sách bài post nổi bật đã cào được kèm số view, số like và link xem trực tiếp.</div>
+</div>
+
+<h2>PHẦN 4: BIỂU MẪU ĐÁNH GIÁ SAU DỰ ÁN (POST-PROJECT REVIEW FORM)</h2>
+<p><i>Biểu mẫu cho nhân sự phụ trách điền trên điện thoại hoặc máy tính sau khi kết thúc chiến dịch:</i></p>
+
+<div class="question-box">
+  <h3>4.1. Danh mục câu hỏi trong Form đánh giá:</h3>
+  <ol>
+    <li><b>Chiến dịch áp dụng:</b> Chọn từ danh sách dự án công ty đang chạy.</li>
+    <li><b>KOL / Đối tác nghiệm thu:</b> Chọn từ danh bạ KOLs.</li>
+    <li><b>Chi phí thực tế thanh toán (VNĐ):</b> Số tiền thực chi.</li>
+    <li><b>Hạng mục bàn giao:</b> [ &nbsp; ] Post ảnh &nbsp; [ &nbsp; ] Video Reels &nbsp; [ &nbsp; ] Check-in sự kiện &nbsp; [ &nbsp; ] Khác</li>
+    <li><b>Đánh giá chung về hiệu quả:</b> Thang điểm 1 – 5 sao (&#11088;&#11088;&#11088;&#11088;&#11088;).</li>
+    <li><b>Đánh giá thái độ hợp tác:</b> Thang điểm 1 – 5 sao.</li>
+    <li><b>Đảm bảo tiến độ / Deadline:</b> ( ) Rất đúng hạn &nbsp; ( ) Đúng hạn &nbsp; ( ) Trễ hạn có báo trước &nbsp; ( ) Vi phạm deadline</li>
+    <li><b>Số liệu KPI đạt được:</b> Số Views thực tế vs Cam kết; Số Lượt tương tác thực tế vs Cam kết.</li>
+    <li><b>Ghi chú quan trọng cho người sau:</b> Kinh nghiệm thực tế khi làm việc với KOL này.</li>
+    <li><b>Tệp đính kèm:</b> Tải lên ảnh chụp màn hình nghiệm thu bài đăng, hóa đơn hoặc hợp đồng thanh lý.</li>
+  </ol>
+  <p><b>Góp ý / Bổ sung câu hỏi khác:</b> ............................................................................................................................</p>
+</div>
+
+<h2>PHẦN 5: PHÂN QUYỀN TRUY CẬP &amp; BẢO MẬT (PERMISSIONS)</h2>
+
+<div class="question-box">
+  <h3>5.1. Phân quyền xem Bảng giá (Rate card) và Chi phí dự án:</h3>
+  <div class="checkbox-item">[ &nbsp; ] <b>Phương án 1 (Nội bộ mở):</b> Toàn bộ nhân viên trong team Marketing/Vận hành đều được xem Bảng giá để tiện lên kế hoạch chiến dịch.</div>
+  <div class="checkbox-item">[ &nbsp; ] <b>Phương án 2 (Bảo mật theo cấp bậc):</b> Nhân viên chỉ được xem thông tin liên hệ và chỉ số social; Chỉ có cấp Quản lý (PM, Marketing Lead, Ban Giám Đốc) mới được xem cột Bảng giá và Chi phí thực tế thanh toán.</div>
+
+  <h3>5.2. Quyền xóa dữ liệu và chỉnh sửa hệ thống:</h3>
+  <div class="checkbox-item">[ &nbsp; ] Mọi nhân viên đều được quyền thêm KOL mới và nộp form đánh giá sau dự án.</div>
+  <div class="checkbox-item">[ &nbsp; ] Chỉ có Quản trị viên (Admin) mới có quyền Xóa hồ sơ KOL hoặc Sửa cấu trúc các trường thông tin.</div>
+</div>
+
+<table class="sign-table">
+  <tr>
+    <td>
+      <b>ĐẠI DIỆN ĐỘI NGŨ PHÁT TRIỂN</b><br>
+      <i>(Ký và ghi rõ họ tên)</i><br><br><br><br>
+    </td>
+    <td>
+      <b>ĐẠI DIỆN KHÁCH HÀNG PHÊ DUYỆT</b><br>
+      <i>(Ký và ghi rõ họ tên)</i><br><br><br><br>
+      Họ và tên: ..............................................................<br>
+      Chức vụ: .................................................................<br>
+      Ngày xác nhận: ...... / ...... / 2026
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>HƯỚNG DẪN THIẾT LẬP VÀ VẬN HÀNH PORTAL & DASHBOARD TRÊN LARK BASE</title>
+<style>
+  body {
+    font-family: 'Calibri', 'Arial', sans-serif;
+    line-height: 1.6;
+    color: #2D3748;
+    margin: 40px;
+  }
+  h1 {
+    color: #1A365D;
+    font-size: 18pt;
+    border-bottom: 2px solid #2B6CB0;
+    padding-bottom: 8px;
+    margin-top: 10px;
+    text-align: center;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 11pt;
+    color: #4A5568;
+    font-weight: bold;
+    margin-bottom: 25px;
+  }
+  h2 {
+    color: #2B6CB0;
+    font-size: 13pt;
+    border-bottom: 1px solid #E2E8F0;
+    padding-bottom: 4px;
+    margin-top: 25px;
+  }
+  h3 {
+    color: #2D3748;
+    font-size: 11.5pt;
+    margin-top: 16px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 10pt;
+  }
+  th, td {
+    border: 1px solid #CBD5E0;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: middle;
+  }
+  th {
+    background-color: #EDF2F7;
+    color: #2D3748;
+    font-weight: bold;
+  }
+  tr:nth-child(even) {
+    background-color: #F7FAFC;
+  }
+  .highlight-box {
+    background-color: #EBF8FF;
+    border-left: 4px solid #3182CE;
+    padding: 12px;
+    margin: 15px 0;
+    border-radius: 4px;
+  }
+  .link-button {
+    font-weight: bold;
+    color: #2B6CB0;
+  }
+  code {
+    background-color: #EDF2F7;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 9.5pt;
+  }
+  ul, ol {
+    margin-top: 6px;
+    margin-bottom: 12px;
+  }
+  li {
+    margin-bottom: 5px;
+  }
+</style>
+</head>
+<body>
+
+<h1>HƯỚNG DẪN THIẾT LẬP VÀ VẬN HÀNH PORTAL & DASHBOARD TRÊN LARK BASE</h1>
+<div class="subtitle">HỆ THỐNG QUẢN LÝ, TUYỂN CHỌN (SCOUT) & ĐÁNG GIÁ KOLS / COMMUNITIES THỂ THAO</div>
+
+<div class="highlight-box">
+  <strong>Link truy cập Lark Base chính thức:</strong> <br>
+  <a href="https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe" target="_blank">https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe</a><br>
+  <strong>Tài khoản Quản trị cấp cao (Owner/Admin):</strong> <code>leminhhoangtk2000@gmail.com</code> (Đã cấp quyền toàn quyền chỉnh sửa và cấu hình).
+</div>
+
+<h2>1. TỔNG QUAN KIẾN TRÚC ZERO-INFRA PORTAL</h2>
+<p>Hệ thống được thiết kế và triển khai 100% trên nền tảng Lark Base. Người dùng và ban quản lý không cần đầu tư máy chủ server hay cài đặt phần mềm phức tạp:</p>
+<ul>
+  <li><strong>Không chạm bảng thô:</strong> Sử dụng các Form nhập liệu trực quan, tự động điều hướng và kiểm tra hợp lệ.</li>
+  <li><strong>Phân tách đa góc nhìn (15 Multi-Views):</strong> Cho phép xem theo Thẻ ảnh (Gallery), Kéo thả Kanban, Lịch biểu Gantt, hoặc Lọc theo Bộ môn/Khu vực.</li>
+  <li><strong>Hồ sơ toàn cảnh 360° (Relational Dossier):</strong> Mỗi hồ sơ KOL tự động liên kết với lịch sử chiến dịch, điểm đánh giá hiệu quả và danh sách các bài viết/video hot trend đã được cào về.</li>
+</ul>
+
+<h2>2. TRUNG TÂM HÀNH ĐỘNG (ACTION PORTAL) - 4 LIÊN KẾT NHẬP LIỆU</h2>
+<p>Thay vì để nhân sự hoặc khách hàng truy cập trực tiếp vào bảng tính raw data, hãy chia sẻ và sử dụng 4 đường link sau:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Tác vụ hành động</th>
+      <th style="width: 40%;">Mục đích & Người sử dụng</th>
+      <th style="width: 35%;">Đường dẫn truy cập trực tiếp</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>🚀 Yêu Cầu Scout Tự Động</strong></td>
+      <td>Nhập link Facebook/Instagram/Threads của KOL hoặc Từ khóa chiến dịch. Bot Apify sẽ tự động quét thông tin và đồng bộ về Base.</td>
+      <td><a class="link-button" href="https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tbl7JHIEfZNQRaD3&view=vew9DSEeqi" target="_blank">Mở Form Scout Tự Động</a></td>
+    </tr>
+    <tr>
+      <td><strong>⭐ Đánh Giá & Nghiệm Thu</strong></td>
+      <td>Nhân sự dự án điền chấm điểm uy tín (1-5 sao), hiệu quả booking, thái độ làm việc và đính kèm báo cáo sau khi kết thúc chiến dịch.</td>
+      <td><a class="link-button" href="https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tblz9lj9JCxMwJE3&view=vew5lEGugY" target="_blank">Mở Form Nghiệm Thu Dự Án</a></td>
+    </tr>
+    <tr>
+      <td><strong>👤 Thêm Mới Hồ Sơ KOL</strong></td>
+      <td>Nhập nhanh profile KOL thủ công kèm hợp đồng, rate card, số điện thoại người quản lý để đưa vào CRM.</td>
+      <td><a class="link-button" href="https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tbllpqJ68WvvqHL4&view=vewKYvj9vc" target="_blank">Mở Form Thêm Mới KOL</a></td>
+    </tr>
+    <tr>
+      <td><strong>👥 Thêm Mới Hội Nhóm / CLB</strong></td>
+      <td>Cập nhật Group chạy bộ, CLB Pickleball, hội nhóm bóng đá phong trào, link group và thông tin liên hệ Admin.</td>
+      <td><a class="link-button" href="https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tblMYU5kXPhKV6X5&view=vew0GaYFb5" target="_blank">Mở Form Thêm Mới Group</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>3. HỆ THỐNG 15 MULTI-VIEWS CHUYÊN BIỆT ĐÃ THIẾT LẬP</h2>
+
+<h3>A. Bảng 1: List KOLs (Quản lý Hồ sơ Nhân sự)</h3>
+<ul>
+  <li><strong>🖼️ Gallery - Thẻ Danh Thiếp KOLs:</strong> Hiển thị dạng thẻ ảnh trực quan với Avatar, Bộ môn thể thao, Phân khúc (Tier), Số người theo dõi, Điểm đánh giá.</li>
+  <li><strong>📊 Kanban - Theo Phân Khúc (Tier):</strong> Các cột kéo thả phân loại Celebrity, Mega, Macro, Micro, Nano.</li>
+  <li><strong>🏅 Kanban - Theo Bộ Môn Thể Thao:</strong> Phân nhóm trực quan: Chạy bộ (Running), Bóng đá, Pickleball, Gym & Fitness, Cầu lông...</li>
+  <li><strong>🤝 Kanban - Trạng Thái Hợp Tác:</strong> Quản lý đường ống quan hệ: <em>Đang tiếp cận &rarr; Đang đàm phán &rarr; Đang chạy chiến dịch &rarr; Hợp tác dài hạn</em>.</li>
+  <li><strong>📍 Grid - Khu Vực Hà Nội:</strong> Lọc danh sách KOLs hoạt động và sinh sống tại khu vực miền Bắc.</li>
+  <li><strong>📍 Grid - Khu Vực TP.HCM:</strong> Lọc danh sách KOLs tại khu vực miền Nam.</li>
+  <li><strong>📱 Grid - Kênh Instagram:</strong> Nhóm KOLs tập trung phát triển hình ảnh và video ngắn Reels.</li>
+  <li><strong>📘 Grid - Kênh Facebook & Threads:</strong> Nhóm KOLs mạnh về thảo luận cộng đồng và bài viết chia sẻ.</li>
+</ul>
+
+<h3>B. Bảng 2: List Community (Hội Nhóm & Câu Lạc Bộ Thể Thao)</h3>
+<ul>
+  <li><strong>🖼️ Gallery - Danh Thiếp Nhóm & CLB:</strong> Thẻ hiển thị hình ảnh câu lạc bộ, số lượng thành viên, tỉnh thành hoạt động.</li>
+  <li><strong>🏅 Kanban - Theo Bộ Môn:</strong> Phân cột theo Chạy bộ, Pickleball, Tennis, Đạp xe.</li>
+  <li><strong>🌐 Grid - Nền Tảng:</strong> Lọc theo Group Facebook, Nhóm Zalo VIP, Câu lạc bộ Strava.</li>
+</ul>
+
+<h3>C. Bảng 6: Post Scout (Kho Dữ Liệu Bài Viết & Xu Hướng Hot)</h3>
+<ul>
+  <li><strong>🔥 Kanban - Theo Độ Viral:</strong> Phân loại bài viết theo mức độ tương tác: <em>Siêu Hot (&gt;100k views), Xu Hướng Tốt, Tiêu Chuẩn</em>.</li>
+  <li><strong>🖼️ Gallery - Video Reels & Bài Viết:</strong> Xem trực quan các video Reels thể thao, bài review sản phẩm để lấy cảm hứng kịch bản.</li>
+</ul>
+
+<h3>D. Bảng 3: List Project (Quản Lý Chiến Dịch Booking)</h3>
+<ul>
+  <li><strong>📌 Kanban - Tiến Độ Chiến Dịch:</strong> Quản lý các phase: <em>Lên kế hoạch &rarr; Booking KOL &rarr; Đang triển khai &rarr; Nghiệm thu &rarr; Đã quyết toán</em>.</li>
+  <li><strong>📅 Gantt - Dòng Thời Gian Chiến Dịch:</strong> Timeline trực quan ngày bắt đầu, ngày lên bài, ngày hoàn thành chiến dịch.</li>
+</ul>
+
+<h2>4. HỒ SƠ 360° ĐA CHIỀU (RELATIONAL DOSSIER)</h2>
+<p>Tính năng liên kết bảng (Linked Records) đã được thiết lập thành công. Khi nhấp vào bất kỳ một KOL nào trong hệ thống, cửa sổ chi tiết sẽ tự động hiển thị:</p>
+<ol>
+  <li><strong>⭐ Lịch Sử Đánh Giá & Dự Án:</strong> Cho biết KOL này đã tham gia những dự án nào, nhãn hàng nào, đạt bao nhiêu sao, có vi phạm hợp đồng hay đúng deadline không.</li>
+  <li><strong>🎬 Bài Viết & Reels Đã Scout:</strong> Danh sách toàn bộ các bài đăng mạng xã hội của KOL đã được hệ thống cào về kèm số liệu like, share, comment.</li>
+</ol>
+
+<h2>5. HƯỚNG DẪN TẠO DASHBOARD BÁO CÁO (TRANG TỔNG QUAN) TRÊN LARK</h2>
+<p>Để tạo trang Dashboard biểu đồ tổng quan hiển thị chỉ số cho sếp và khách hàng:</p>
+<ol>
+  <li><strong>Tạo Tab Dashboard:</strong> Nhấp vào nút dấu <code>+</code> ở thanh điều hướng bảng tính, chọn <strong>Thêm Dashboard (Add Dashboard)</strong>. Đặt tên: <em>📊 Dashboard Điều Hành KOLs Thể Thao</em>.</li>
+  <li><strong>Thêm Widget 1 (KPI Metrics):</strong> Chọn Chart Type: <em>Metric / Number</em> &rarr; Chọn bảng <code>List KOLs</code> &rarr; Chọn hàm <code>COUNT</code> để hiển thị "Tổng số lượng KOLs trong mạng lưới".</li>
+  <li><strong>Thêm Widget 2 (Cơ cấu Tier):</strong> Chọn Chart Type: <em>Pie Chart (Biểu đồ tròn)</em> &rarr; Nhóm theo cột <code>Tier</code>. Hiển thị tỷ lệ phần trăm giữa Micro, Macro, Mega KOLs.</li>
+  <li><strong>Thêm Widget 3 (Phân bổ Bộ môn):</strong> Chọn Chart Type: <em>Bar Chart (Cột ngang)</em> &rarr; Trục X chọn <code>Bộ môn</code> &rarr; Trục Y chọn <code>COUNT(Họ tên)</code>. Nhận diện ngay bộ môn nào đang có nguồn lực phong phú.</li>
+  <li><strong>Thêm Widget 4 (Tiến độ Scout Request):</strong> Chọn Chart Type: <em>Donut Chart</em> từ bảng <code>Scout request</code> &rarr; Nhóm theo <code>Trạng thái xử lý</code>.</li>
+  <li><strong>Thêm Widget 5 (Điểm nghiệm thu trung bình):</strong> Chọn Chart Type: <em>Metric / Gauge</em> từ bảng <code>Report Form</code> &rarr; Tính giá trị trung bình cột <code>Đánh giá hiệu quả (sao)</code>.</li>
+</ol>
+
+<h2>6. KẾT LUẬN & ĐỀ XUẤT TIẾP THEO</h2>
+<p>Với hệ thống Lark Base Portal đã xây dựng, toàn bộ quy trình từ khâu <strong>Tìm kiếm (Scout) &rarr; Đàm phán (CRM) &rarr; Triển khai (Project) &rarr; Nghiệm thu (Review)</strong> đều được chuẩn hóa và tự động hóa cao cấp, bảo đảm trải nghiệm tiện lợi, trực quan nhất cho khách hàng.</p>
+
+</body>
+</html>

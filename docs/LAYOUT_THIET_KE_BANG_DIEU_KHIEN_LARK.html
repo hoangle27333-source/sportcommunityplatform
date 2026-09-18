@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>BẢN THIẾT KẾ LAYOUT & USER FLOW BẢNG ĐIỀU KHIỂN (LARK BASE DASHBOARD)</title>
+<style>
+  body { font-family: 'Calibri', 'Arial', sans-serif; line-height: 1.6; color: #2D3748; margin: 40px; }
+  h1 { color: #1A365D; font-size: 18pt; border-bottom: 2px solid #2B6CB0; padding-bottom: 8px; margin-top: 10px; text-align: center; }
+  .subtitle { text-align: center; font-size: 11pt; color: #4A5568; font-weight: bold; margin-bottom: 25px; }
+  h2 { color: #2B6CB0; font-size: 13pt; border-bottom: 1px solid #E2E8F0; padding-bottom: 4px; margin-top: 25px; }
+  h3 { color: #2D3748; font-size: 11.5pt; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 10pt; }
+  th, td { border: 1px solid #CBD5E0; padding: 8px 10px; text-align: left; vertical-align: middle; }
+  th { background-color: #EDF2F7; color: #2D3748; font-weight: bold; }
+  tr:nth-child(even) { background-color: #F7FAFC; }
+  .highlight-box { background-color: #EBF8FF; border-left: 4px solid #3182CE; padding: 12px; margin: 15px 0; border-radius: 4px; }
+  code { background-color: #EDF2F7; padding: 2px 4px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 9.5pt; }
+  pre { background-color: #F7FAFC; border: 1px solid #E2E8F0; padding: 12px; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 9.5pt; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>BẢN THIẾT KẾ LAYOUT & USER FLOW BẢNG ĐIỀU KHIỂN (LARK BASE DASHBOARD)</h1>
+<div class="subtitle">HỆ THỐNG QUẢN LÝ, TUYỂN CHỌN (SCOUT) & ĐÁNH GIÁ KOLS / COMMUNITIES THỂ THAO</div>
+
+<div class="highlight-box">
+  <strong>Mục tiêu thiết kế:</strong> Dành cho Account/PM & Khách hàng. Tạo không gian làm việc tổng hợp chuẩn mực, kết hợp giữa <strong>Phím tắt thao tác nhanh (Action Hub)</strong>, <strong>Bộ tra cứu hồ sơ 360° (Interactive Dossier)</strong> và <strong>Báo cáo biểu đồ phân tích (Analytics Charts)</strong> mà không cần chạm vào các bảng dữ liệu raw.
+</div>
+
+<h2>1. USER FLOW (LUỒNG TRẢI NGHIỆM NGƯỜI DÙNG)</h2>
+<ol>
+  <li><strong>Bước 1 - Truy cập & Thao tác nhanh (Action Hub):</strong> Người dùng mở Bảng điều khiển, thấy ngay 4 nút bấm lớn để mở Form Scout, Form Nghiệm thu, Form Thêm KOL/CLB chỉ bằng 1 cú nhấp.</li>
+  <li><strong>Bước 2 - Nắm bắt sức khỏe mạng lưới (KPI Snapshot):</strong> Xem ngay 4 chỉ số cốt lõi: Tổng số KOLs, Tổng Reach ước tính (Followers), Điểm đánh giá uy tín trung bình (⭐) và Số lượng chiến dịch đang triển khai.</li>
+  <li><strong>Bước 3 - Tra cứu toàn cảnh hồ sơ 360° (Interactive Dossier):</strong> Dùng thanh lọc <code>Slicer</code> chọn Bộ môn hoặc Phân khúc Tier &rarr; Danh sách KOL tương ứng hiển thị ngay trong bảng nhúng &rarr; Nhấp đúp vào KOL để bung popup 360° xem toàn bộ lịch sử chiến dịch, % đạt KPI, nhận xét của PM và các video Reels đã cào về.</li>
+  <li><strong>Bước 4 - Khai thác thông tin thị trường & Xu hướng (Analytics & Viral Feed):</strong> Xem cơ cấu tỷ lệ Tier (Biểu đồ tròn), phân bổ theo bộ môn (Biểu đồ cột), Top 5 KOLs tương tác cao nhất (Xếp hạng) và kho bài viết viral hot trend.</li>
+</ol>
+
+<h2>2. SƠ ĐỒ BỐ TRÍ MẶT BẰNG GIAO DIỆN (WIREFRAME LAYOUT MAP)</h2>
+<pre>
+┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 KHU VỰC 1: TRUNG TÂM HÀNH ĐỘNG (ACTION HUB) - DÃY NÚT BẤM (BUTTONS)                                  │
+│ [ 🚀 Form Scout Tự Động ]   [ ⭐ Form Nghiệm Thu Dự Án ]   [ 👤 Thêm Profile KOL ]   [ 👥 Thêm CLB ]  │
+├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 📊 KHU VỰC 2: CHỈ SỐ KPI TỔNG QUAN (METRIC CARDS) - 4 THẺ SỐ LIỆU CHÍNH                               │
+│ ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐                │
+│ │  Tổng Số KOLs    │  │  Tổng Lượng Reach│  │  Điểm Uy Tín TB  │  │Chiến Dịch Đang Chạy│               │
+│ │      8 KOLs      │  │     5.2M+ Views  │  │   4.9 / 5.0 ⭐   │  │   1 Campaign     │                │
+│ └──────────────────┘  └──────────────────┘  └──────────────────┘  └──────────────────┘                │
+├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 🔍 KHU VỰC 3: BỘ TRA CỨU HỒ SƠ TOÀN CẢNH 360° (INTERACTIVE SEARCH & DOSSIER)                          │
+│ [ Slicer 1: Chọn Bộ Môn (Tất cả / Pickleball / Chạy bộ...) ]   [ Slicer 2: Chọn Phân Khúc (Tier) ]    │
+│ ┌───────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Khối Nhúng Lưới / Kanban: Bảng List KOLs                                                          │ │
+│ │ (Avatar | Họ Tên | Bộ Môn | Tier | Followers | ⭐ Lịch Sử Đánh Giá & Dự Án | 🎬 Video Viral)        │ │
+│ └───────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 📈 KHU VỰC 4: BÁO CÁO PHÂN TÍCH THỊ TRƯỜNG & HIỆU SUẤT (CHARTS & RANKINGS)                            │
+│ ┌──────────────────────────────┐  ┌──────────────────────────────┐  ┌──────────────────────────────┐  │
+│ │ Biểu Đồ Tròn: Cơ Cấu Tier    │  │ Biểu Đồ Cột: Phân Bổ Bộ Môn  │  │ Khối Xếp Hạng: Top 5 KOL     │  │
+│ │ (Mega / Macro / Micro / Nano)│  │ (Pickleball, Running, Gym...)│  │ (Theo Followers & ER %)      │  │
+│ └──────────────────────────────┘  └──────────────────────────────┘  └──────────────────────────────┘  │
+├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 🔥 KHU VỰC 5: TIẾN ĐỘ VẬN HÀNH & KHO NỘI DUNG VIRAL (OPERATION & VIRAL FEED)                          │
+│ ┌───────────────────────────────────────────────┐  ┌────────────────────────────────────────────────┐ │
+│ │ Khối Tiến Độ (Progress / Gauge):              │  │ Khối Nhúng Lưới: Kho Bài Viết / Reels Hot Trend│ │
+│ │ Tình trạng Yêu Cầu Scout (Chờ xử lý / Xong)   │  │ (Thumbnail | Tác giả | Views | Link Post)      │ │
+│ └───────────────────────────────────────────────┘  └────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+</pre>
+
+<h2>3. HƯỚNG DẪN CẤU HÌNH CHI TIẾT TỪNG KHỐI TRÊN MÀN HÌNH LARK BASE</h2>
+
+<p>Tại giao diện màn hình Bảng điều khiển bạn đang mở, bấm nút <strong><code>+ Thêm khối</code></strong> (ở thanh trên cùng) và lần lượt chọn thiết lập các khối sau:</p>
+
+<h3>KHU VỰC 1: CÁC NÚT BẤM THAO TÁC NHANH (ACTION BUTTONS)</h3>
+<table>
+  <tr>
+    <th>Tên khối</th>
+    <th>Loại widget</th>
+    <th>Cấu hình nội dung</th>
+    <th>Hành động (Action)</th>
+  </tr>
+  <tr>
+    <td><strong>Nút Scout Tự Động</strong></td>
+    <td>Nút (Button)</td>
+    <td>Tên nút: <code>🚀 Gửi Yêu Cầu Scout (FB/IG/Threads)</code><br>Màu sắc: Xanh dương (Primary)</td>
+    <td>Mở liên kết URL:<br><code>https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tbl7JHIEfZNQRaD3&view=vew9DSEeqi</code></td>
+  </tr>
+  <tr>
+    <td><strong>Nút Nghiệm Thu</strong></td>
+    <td>Nút (Button)</td>
+    <td>Tên nút: <code>⭐ Đánh Giá & Nghiệm Thu Dự Án</code><br>Màu sắc: Cam / Vàng</td>
+    <td>Mở liên kết URL:<br><code>https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tblz9lj9JCxMwJE3&view=vew5lEGugY</code></td>
+  </tr>
+  <tr>
+    <td><strong>Nút Thêm KOL</strong></td>
+    <td>Nút (Button)</td>
+    <td>Tên nút: <code>👤 Thêm Hồ Sơ KOL Mới</code></td>
+    <td>Mở liên kết URL:<br><code>https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tbllpqJ68WvvqHL4&view=vewKYvj9vc</code></td>
+  </tr>
+  <tr>
+    <td><strong>Nút Thêm CLB</strong></td>
+    <td>Nút (Button)</td>
+    <td>Tên nút: <code>👥 Thêm Hội Nhóm / CLB Thể Thao</code></td>
+    <td>Mở liên kết URL:<br><code>https://ujpumxyv47ap.jp.larksuite.com/base/Ow1ab1cKxaOHTBs32zvjsg32phe?table=tblMYU5kXPhKV6X5&view=vew0GaYFb5</code></td>
+  </tr>
+</table>
+
+<h3>KHU VỰC 2: CÁC THẺ CHỈ SỐ KPI TỔNG QUAN (METRIC CARDS)</h3>
+<table>
+  <tr>
+    <th>Chỉ số</th>
+    <th>Loại widget</th>
+    <th>Bảng dữ liệu nguồn</th>
+    <th>Hàm tính toán</th>
+  </tr>
+  <tr>
+    <td><strong>Tổng Số KOLs</strong></td>
+    <td>Số liệu (Metric Card)</td>
+    <td>Bảng <code>List KOLs</code></td>
+    <td>Hàm <code>COUNT(Tên KOL / Kênh)</code></td>
+  </tr>
+  <tr>
+    <td><strong>Tổng Lượng Reach</strong></td>
+    <td>Số liệu (Metric Card)</td>
+    <td>Bảng <code>List KOLs</code></td>
+    <td>Hàm <code>SUM(Số lượng Followers)</code></td>
+  </tr>
+  <tr>
+    <td><strong>Điểm Uy Tín TB</strong></td>
+    <td>Số liệu (Metric Card)</td>
+    <td>Bảng <code>Report Form</code></td>
+    <td>Hàm <code>AVERAGE(Đánh giá chung 1 - 5 sao)</code></td>
+  </tr>
+  <tr>
+    <td><strong>Chiến Dịch Đang Chạy</strong></td>
+    <td>Số liệu (Metric Card)</td>
+    <td>Bảng <code>List Project</code></td>
+    <td>Hàm <code>COUNT(Tên chiến dịch)</code></td>
+  </tr>
+</table>
+
+<h3>KHU VỰC 3: BỘ TRA CỨU HỒ SƠ TOÀN CẢNH 360°</h3>
+<ul>
+  <li><strong>Khối Slicer 1 (Bộ lọc Bộ môn):</strong> Chọn loại khối <code>Slicer</code> &rarr; Chọn bảng <code>List KOLs</code> &rarr; Chọn cột <code>Bộ môn thể thao</code>.</li>
+  <li><strong>Khối Slicer 2 (Bộ lọc Tier):</strong> Chọn loại khối <code>Slicer</code> &rarr; Chọn bảng <code>List KOLs</code> &rarr; Chọn cột <code>Phân khúc (KOL Tier)</code>.</li>
+  <li><strong>Khối Lưới Nhúng (Hồ sơ KOL 360°):</strong> Chọn loại khối <code>Lưới</code> (Grid) &rarr; Chọn bảng <code>List KOLs</code>. Khi người dùng bấm lọc trên Slicer, bảng lưới này sẽ tự động thu hẹp lại. Người dùng nhấp đúp vào dòng KOL bất kỳ là bung to cửa sổ 360° (đầy đủ lịch sử dự án, rating sao và bài viết viral đã liên kết).</li>
+</ul>
+
+<h3>KHU VỰC 4: BÁO CÁO PHÂN TÍCH THỊ TRƯỜNG & HIỆU SUẤT</h3>
+<ul>
+  <li><strong>Biểu đồ tròn (Cơ cấu Tier):</strong> Chọn loại <code>Biểu đồ tròn</code> &rarr; Bảng <code>List KOLs</code> &rarr; Nhóm theo <code>Phân khúc (KOL Tier)</code> &rarr; Giá trị: <code>COUNT</code>.</li>
+  <li><strong>Biểu đồ cột (Phân bổ Bộ môn):</strong> Chọn loại <code>Cột</code> (Bar chart) &rarr; Bảng <code>List KOLs</code> &rarr; Trục X: <code>Bộ môn thể thao</code> &rarr; Trục Y: <code>COUNT</code>.</li>
+  <li><strong>Khối Xếp hạng (Top 5 KOLs):</strong> Chọn loại <code>Xếp hạng</code> (Ranking) &rarr; Bảng <code>List KOLs</code> &rarr; Tên: <code>Tên KOL / Kênh</code> &rarr; Giá trị: <code>Số lượng Followers</code> &rarr; Giới hạn: <code>Top 5</code>.</li>
+</ul>
+
+<h3>KHU VỰC 5: TIẾN ĐỘ VẬN HÀNH & KHO NỘI DUNG VIRAL</h3>
+<ul>
+  <li><strong>Khối Tiến độ / Donut (Scout Request):</strong> Chọn loại <code>Tiến độ</code> (Progress) hoặc Biểu đồ tròn &rarr; Bảng <code>Scout request</code> &rarr; Nhóm theo cột <code>Trạng thái xử lý</code>.</li>
+  <li><strong>Bảng Nhúng Kho Bài Viết Viral:</strong> Chọn loại <code>Lưới</code> (Grid) &rarr; Bảng <code>Post Scout</code> &rarr; Hiển thị các bài viết có gắn nhãn <em>Siêu Hot</em> hoặc <em>Xu Hướng Tốt</em>.</li>
+</ul>
+
+</body>
+</html>
