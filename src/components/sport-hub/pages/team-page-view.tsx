@@ -19,6 +19,7 @@ import {
   Filter,
 } from "lucide-react";
 import { PlatformHeader } from "../platform-header";
+import { ColumnInfoTooltip } from "../column-info-tooltip";
 import { createClient } from "@/lib/supabase/client";
 
 export interface TeamMember {
@@ -312,8 +313,26 @@ export function TeamPageView() {
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
                     <th className="py-2 px-4">Member Name</th>
                     <th className="py-2 px-4">Role & Access</th>
-                    <th className="py-2 px-4 text-center">PIC Projects</th>
-                    <th className="py-2 px-4 text-center">Evaluations</th>
+                    <th className="py-2 px-4 text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        <span>PIC Projects</span>
+                        <ColumnInfoTooltip
+                          title="Assigned PIC Campaigns"
+                          description="Total active and historical campaigns where this team member is designated as the primary Person in Charge."
+                          align="center"
+                        />
+                      </div>
+                    </th>
+                    <th className="py-2 px-4 text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        <span>Evaluations</span>
+                        <ColumnInfoTooltip
+                          title="Completed Evaluations"
+                          description="Total official performance and attitude assessment reports authored by this team member."
+                          align="center"
+                        />
+                      </div>
+                    </th>
                     <th className="py-2 px-4">Joined Date</th>
                   </tr>
                 </thead>

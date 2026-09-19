@@ -28,6 +28,7 @@ import { MarketTrendScoutModal } from "../market-trend-scout-modal";
 import { KolPostScoutModal } from "../kol-post-scout-modal";
 import { Kol360Modal, Community360Modal } from "../dossier-modals";
 import { AddPostModal } from "../action-modals";
+import { ColumnInfoTooltip } from "../column-info-tooltip";
 import { t, formatNumber } from "@/lib/i18n";
 import type { DashboardData, Post, KOL, Community } from "../types";
 
@@ -461,6 +462,12 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       >
                         <div className="flex items-center justify-end space-x-1">
                           <span>Views</span>
+                          <ColumnInfoTooltip
+                            title="Video Views"
+                            description="Total audience views captured directly from TikTok, Facebook, Instagram, or YouTube."
+                            formula="Audited Platform API Metrics"
+                            align="right"
+                          />
                           {sortBy === "views" ? (
                             sortOrder === "desc" ? (
                               <ArrowDown className="w-3 h-3 text-blue-600" />
@@ -478,6 +485,12 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       >
                         <div className="flex items-center justify-end space-x-1">
                           <span>Likes</span>
+                          <ColumnInfoTooltip
+                            title="Likes & Reactions"
+                            description="Total positive audience reactions recorded on this video or reel."
+                            formula="Reactions Count"
+                            align="right"
+                          />
                           {sortBy === "likes" ? (
                             sortOrder === "desc" ? (
                               <ArrowDown className="w-3 h-3 text-blue-600" />
@@ -495,6 +508,12 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       >
                         <div className="flex items-center justify-end space-x-1">
                           <span>Comments</span>
+                          <ColumnInfoTooltip
+                            title="Comments & Discussions"
+                            description="Total community replies and discussions posted under this video."
+                            formula="Comments Count"
+                            align="right"
+                          />
                           {sortBy === "comments" ? (
                             sortOrder === "desc" ? (
                               <ArrowDown className="w-3 h-3 text-blue-600" />
@@ -512,6 +531,12 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       >
                         <div className="flex items-center justify-center space-x-1">
                           <span>ER %</span>
+                          <ColumnInfoTooltip
+                            title="Video Engagement Rate (ER %)"
+                            description="Ratio of audience interactions to total video views."
+                            formula="((Likes + Comments) / Views) × 100"
+                            align="center"
+                          />
                           {sortBy === "er" ? (
                             sortOrder === "desc" ? (
                               <ArrowDown className="w-3 h-3 text-blue-600" />
@@ -523,7 +548,17 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                           )}
                         </div>
                       </th>
-                      <th className="py-2 px-2 text-center min-w-[125px]">Viral Grade</th>
+                      <th className="py-2 px-2 text-center min-w-[125px]">
+                        <div className="flex items-center justify-center space-x-1">
+                          <span>Viral Grade</span>
+                          <ColumnInfoTooltip
+                            title="Algorithmic Viral Classification"
+                            description="Automated categorization based on view velocity, engagement spikes, and organic reach benchmarks."
+                            formula="Super Viral (ER ≥ 8% & Views ≥ 500k) | High Engagement (ER ≥ 5%) | Trending"
+                            align="center"
+                          />
+                        </div>
+                      </th>
                       <th className="py-2 px-3 text-center min-w-[85px]">Actions</th>
                     </tr>
                   </thead>

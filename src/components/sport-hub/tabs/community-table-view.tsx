@@ -31,6 +31,7 @@ import { CommunityChannelDrawer } from "../community-channel-drawer";
 import { getCommunityAggregates } from "@/lib/sport-hub/kol-channels";
 import { MultiChannelCluster } from "../platform-icon";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { ColumnInfoTooltip } from "../column-info-tooltip";
 
 export interface CommunityTableViewProps {
   communities: Community[];
@@ -437,10 +438,26 @@ export function CommunityTableView({
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Members</span>
+                      <ColumnInfoTooltip
+                        title="Total Community Members"
+                        description="Total aggregated verified members across all connected platforms (Facebook Groups, Zalo, Discord, Strava)."
+                        formula="Sum(Channel Members)"
+                        align="right"
+                      />
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
-                  <th className="py-2 px-3">Activity Level</th>
+                  <th className="py-2 px-3">
+                    <div className="flex items-center space-x-1">
+                      <span>Activity Level</span>
+                      <ColumnInfoTooltip
+                        title="Community Activity Level"
+                        description="Algorithmic vitality index based on weekly new discussions, moderator approvals, and active member replies."
+                        formula="Very Active (≥10 posts/day) | Moderate (2-9 posts/day) | Low (<2/day)"
+                        align="left"
+                      />
+                    </div>
+                  </th>
                   <th
                     onClick={() => toggleSort("price")}
                     className={`py-2 px-3 text-right ${
@@ -451,6 +468,12 @@ export function CommunityTableView({
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Pinned Post Fee</span>
+                      <ColumnInfoTooltip
+                        title="Pinned Post Rate Card"
+                        description="Standard sponsorship cost to pin a branded promotional post or event announcement at the top of the group feed for 7 days."
+                        formula="Quoted rate per 7-day pin (excl. VAT)"
+                        align="right"
+                      />
                       {isAdmin ? (
                         <ArrowUpDown className="w-3 h-3" />
                       ) : (

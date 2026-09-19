@@ -33,6 +33,7 @@ import { getKolAggregates } from "@/lib/sport-hub/kol-channels";
 import { MultiChannelCluster, PlatformIcon } from "../platform-icon";
 import { KolChannelDrawer } from "../kol-channel-drawer";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { ColumnInfoTooltip } from "../column-info-tooltip";
 
 export interface KOL {
   id: string;
@@ -519,6 +520,12 @@ export function KolsTableView({
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Total Followers</span>
+                      <ColumnInfoTooltip
+                        title="Total Followers"
+                        description="Combined verified audience reach aggregated across all active connected social channels."
+                        formula="Sum(Channel Followers)"
+                        align="right"
+                      />
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
@@ -528,6 +535,12 @@ export function KolsTableView({
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Avg Views</span>
+                      <ColumnInfoTooltip
+                        title="Average Views"
+                        description="Blended average video / reel views per publication across active video channels over the last 90 days."
+                        formula="Sum(Avg Views per Active Channel)"
+                        align="right"
+                      />
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
@@ -537,6 +550,12 @@ export function KolsTableView({
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>ER (%)</span>
+                      <ColumnInfoTooltip
+                        title="Engagement Rate (ER %)"
+                        description="Audience-weighted blended interaction rate measuring audience likes, comments, and shares relative to views."
+                        formula="((Likes + Comments + Shares) / Total Views) × 100"
+                        align="right"
+                      />
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
@@ -550,6 +569,12 @@ export function KolsTableView({
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Rate Card</span>
+                      <ColumnInfoTooltip
+                        title="Commercial Rate Card"
+                        description="Baseline sponsorship fee for 1 dedicated reel or sponsored post, calibrated by tier and past performance."
+                        formula="Negotiable / Base Quote (excl. VAT)"
+                        align="right"
+                      />
                       {isAdmin ? (
                         <ArrowUpDown className="w-3 h-3" />
                       ) : (

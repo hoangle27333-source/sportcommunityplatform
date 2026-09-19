@@ -14,6 +14,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { t, formatNumber } from "@/lib/i18n";
+import { ColumnInfoTooltip } from "../column-info-tooltip";
 
 interface Report {
   id: string;
@@ -261,18 +262,60 @@ export function ReportsTableView({
                 >
                   <div className="flex items-center space-x-1">
                     <span>Overall Rating</span>
+                    <ColumnInfoTooltip
+                      title="Overall Performance Score"
+                      description="Comprehensive evaluation score out of 5.0 assessed by the Project Manager across all delivery dimensions."
+                      formula="Weighted average (Content Quality + Attitude + Schedule)"
+                      align="left"
+                    />
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="py-2 px-3">Attitude</th>
-                <th className="py-2 px-3">Schedule (Deadline)</th>
-                <th className="py-2 px-3">KPI Committed / Actual</th>
+                <th className="py-2 px-3">
+                  <div className="flex items-center space-x-1">
+                    <span>Attitude</span>
+                    <ColumnInfoTooltip
+                      title="Collaboration Attitude"
+                      description="Score out of 5 assessing creator responsiveness, feedback receptivity, and professionalism."
+                      formula="Scale 1.0 (Difficult) to 5.0 (Exceptional)"
+                      align="left"
+                    />
+                  </div>
+                </th>
+                <th className="py-2 px-3">
+                  <div className="flex items-center space-x-1">
+                    <span>Schedule (Deadline)</span>
+                    <ColumnInfoTooltip
+                      title="Timeline Compliance"
+                      description="Draft and final delivery punctuality relative to agreed campaign timeline milestones."
+                      formula="Ahead of Schedule | On Time | Delayed"
+                      align="left"
+                    />
+                  </div>
+                </th>
+                <th className="py-2 px-3">
+                  <div className="flex items-center space-x-1">
+                    <span>KPI Committed / Actual</span>
+                    <ColumnInfoTooltip
+                      title="KPI Commitment vs. Delivery"
+                      description="Contractually pledged video views/reach compared against final third-party verified results."
+                      formula="Committed Views / Actual Verified Views"
+                      align="left"
+                    />
+                  </div>
+                </th>
                 <th
                   onClick={() => toggleSort("kpiRate")}
                   className="py-2 px-3 cursor-pointer hover:text-amber-600 transition text-right"
                 >
                   <div className="flex items-center justify-end space-x-1">
                     <span>Fulfillment Rate</span>
+                    <ColumnInfoTooltip
+                      title="KPI Fulfillment Rate"
+                      description="Percentage of promised performance delivered upon campaign conclusion. Scores ≥100% represent target achievement."
+                      formula="(Actual KPI Delivered / Committed KPI) × 100"
+                      align="right"
+                    />
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>

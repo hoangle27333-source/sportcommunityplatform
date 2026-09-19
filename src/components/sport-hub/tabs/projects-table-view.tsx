@@ -25,6 +25,7 @@ import {
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
 import type { Project, ProjectParticipant, Report } from "../types";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { ColumnInfoTooltip } from "../column-info-tooltip";
 
 const SPORT_FILTER_OPTIONS = [
   "Pickleball",
@@ -405,6 +406,12 @@ export function ProjectsTableView({
                 >
                   <div className="flex items-center justify-end space-x-1">
                     <span>Budget & Spend</span>
+                    <ColumnInfoTooltip
+                      title="Budget & Spend (Burn Rate)"
+                      description="Total approved campaign budget compared with allocated commitments to booked creators and sports clubs."
+                      formula="Burn Rate % = (Allocated Spend / Total Budget) × 100"
+                      align="right"
+                    />
                     {isAdmin ? (
                       <ArrowUpDown className="w-3 h-3" />
                     ) : (
@@ -412,7 +419,17 @@ export function ProjectsTableView({
                     )}
                   </div>
                 </th>
-                <th className="py-2 px-3">Booked Roster</th>
+                <th className="py-2 px-3">
+                  <div className="flex items-center space-x-1">
+                    <span>Booked Roster</span>
+                    <ColumnInfoTooltip
+                      title="Booked Roster"
+                      description="Total contracted influencers (KOLs) and community groups actively confirmed for campaign execution."
+                      formula="Count(KOLs) + Count(Clubs)"
+                      align="left"
+                    />
+                  </div>
+                </th>
                 <th className="py-2 px-3">PIC</th>
                 <th className="py-2 px-3">Status</th>
                 <th className="py-2 px-3 text-center">Actions</th>
