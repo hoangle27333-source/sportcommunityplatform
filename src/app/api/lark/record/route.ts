@@ -5,6 +5,7 @@ import {
   deleteRecord,
   LARK_CONFIG,
 } from "@/lib/lark/client";
+import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,7 @@ function normalizeArray(
 
 export async function POST(req: NextRequest) {
   try {
+    const { isAdmin } = await getServerUserRole();
     const body = await req.json();
     const { type, data } = body;
 
@@ -114,26 +116,18 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-
       fields = {
         "Từ khóa tìm kiếm (Keyword)": keyword,
-        "Đối tượng cần Scout": normalizeOption(
-          data.targetType,
-          "KOLs cá nhân"
-        ),
-        "Nền tảng (Platform)": data.platform || "Instagram",
-        "Số lượng cần lấy": Number(data.limit) || 5,
-        "Khu vực mong muốn": normalizeOption(data.geography, "Toàn quốc"),
-        "Trạng thái xử lý": "Chờ xử lý",
+        "Nền tảng": data.platform || "Tất cả (All)",
+        "Bộ môn thể thao": data.sport || "Pickleball",
+        "Số lượng quét tối đa": Number(data.limit) || 20,
+        "Trạng thái": "Chờ xử lý",
+        "Thời gian yêu cầu": new Date().toISOString(),
       };
-
-      if (data.notes) {
-        fields["Kết quả ghi nhận"] = String(data.notes).trim();
-      }
     } else if (type === "report") {
       tableId = LARK_CONFIG.tables.reports;
       const kolName = String(data.kolName || "").trim();
-      const project = String(data.project || "").trim();
+      const project = String(data.project || data.projectName || "").trim();
 
       if (!kolName) {
         return NextResponse.json(
@@ -150,11 +144,10 @@ export async function POST(req: NextRequest) {
 
       const kpiCommit = Number(data.kpiCommit) || 0;
       const kpiActual = Number(data.kpiActual) || 0;
-      let kpiRate = Number(data.kpiRate);
-      if (isNaN(kpiRate) || kpiRate <= 0) {
-        kpiRate =
-          kpiCommit > 0 ? Math.round((kpiActual / kpiCommit) * 100) : 100;
-      }
+      const kpiRate =
+        kpiCommit > 0
+          ? Math.round((kpiActual / kpiCommit) * 100)
+          : Number(data.kpiRate) || 100;
 
       const title =
         String(data.title || "").trim() || `Evaluation: ${kolName} - ${project}`;
@@ -202,7 +195,7 @@ export async function POST(req: NextRequest) {
         Followers: Number(data.followers) || 0,
         "Avg Views": Number(data.avgViews) || 0,
         "Engagement Rate%": Number(data.er) || 0,
-        "Quotation (VND)": Number(data.quotation) || 0,
+        "Quotation (VND)": isAdmin ? (Number(data.quotation) || 0) : 0,
         Status: normalizeOption(data.status, "Đang hợp tác tích cực"),
         Information: String(data.contact || "").trim(),
         "Hashtags & Bio": String(data.bio || "").trim(),
@@ -243,7 +236,7 @@ export async function POST(req: NextRequest) {
         ),
         "Mục đích chính của nhóm": purpose,
         "Admin / Đầu mối liên hệ": String(data.adminContact || "").trim(),
-        "Chi phí ghim bài / tháng (VNĐ)": Number(data.pricePerPin) || 0,
+        "Chi phí ghim bài / tháng (VNĐ)": isAdmin ? (Number(data.pricePerPin) || 0) : 0,
         "Trạng thái hợp tác": normalizeOption(
           data.status,
           "Đang hợp tác tích cực"
@@ -269,11 +262,17 @@ export async function POST(req: NextRequest) {
       fields = {
         "Tên Chiến Dịch": name,
         "Thương hiệu / Nhãn hàng": String(data.brand || "").trim(),
-        "Ngân sách dự kiến (VNĐ)": Number(data.budget) || 0,
+        "Ngân sách dự kiến (VNĐ)": isAdmin ? (Number(data.budget) || 0) : 0,
         "Người phụ trách (PIC)": String(data.pic || "").trim(),
         "Mục tiêu chính": String(data.objective || "").trim(),
         "Trạng thái dự án": normalizeOption(data.status, "Lên kế hoạch"),
       };
+      if (data.sport && Array.isArray(data.sport) && data.sport.length > 0) {
+        fields["Bộ môn thể thao"] = data.sport;
+      }
+      if (data.region) {
+        fields["Khu vực"] = data.region;
+      }
     } else {
       return NextResponse.json(
         { success: false, error: `Invalid form type: ${type}` },
@@ -302,6 +301,7 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const { isAdmin } = await getServerUserRole();
     const body = await req.json();
     const { type, id, data } = body;
 
@@ -336,11 +336,14 @@ export async function PUT(req: NextRequest) {
         Followers: Number(data.followers) || 0,
         "Avg Views": Number(data.avgViews) || 0,
         "Engagement Rate%": Number(data.er) || 0,
-        "Quotation (VND)": Number(data.quotation) || 0,
         Status: normalizeOption(data.status, "Đang hợp tác tích cực"),
         Information: String(data.contact || "").trim(),
         "Hashtags & Bio": String(data.bio || "").trim(),
       };
+
+      if (isAdmin && data.quotation !== undefined) {
+        fields["Quotation (VND)"] = Number(data.quotation) || 0;
+      }
 
       if (data.profileUrl) {
         fields["Link Profile"] = {
@@ -377,12 +380,15 @@ export async function PUT(req: NextRequest) {
         ),
         "Mục đích chính của nhóm": purpose,
         "Admin / Đầu mối liên hệ": String(data.adminContact || "").trim(),
-        "Chi phí ghim bài / tháng (VNĐ)": Number(data.pricePerPin) || 0,
         "Trạng thái hợp tác": normalizeOption(
           data.status,
           "Đang hợp tác tích cực"
         ),
       };
+
+      if (isAdmin && data.pricePerPin !== undefined) {
+        fields["Chi phí ghim bài / tháng (VNĐ)"] = Number(data.pricePerPin) || 0;
+      }
 
       if (data.groupUrl) {
         fields["Link Nhóm (Group URL)"] = {
@@ -403,13 +409,22 @@ export async function PUT(req: NextRequest) {
       fields = {
         "Tên Chiến Dịch": name,
         "Thương hiệu / Nhãn hàng": String(data.brand || (Array.isArray(data.brands) ? data.brands.join(", ") : "")).trim(),
-        "Ngân sách dự kiến (VNĐ)": Number(data.budget) || 0,
         "Người phụ trách (PIC)": String(data.pic || "").trim(),
         "Mục tiêu chính": String(data.objective || "").trim(),
         "Trạng thái dự án": normalizeOption(data.status, "Lên kế hoạch"),
       };
+
+      if (isAdmin && data.budget !== undefined) {
+        fields["Ngân sách dự kiến (VNĐ)"] = Number(data.budget) || 0;
+      }
       if (data.startDate) fields["Thời gian bắt đầu"] = data.startDate;
       if (data.endDate) fields["Thời gian kết thúc"] = data.endDate;
+      if (data.sport && Array.isArray(data.sport) && data.sport.length > 0) {
+        fields["Bộ môn thể thao"] = data.sport;
+      }
+      if (data.region) {
+        fields["Khu vực"] = data.region;
+      }
     } else {
       return NextResponse.json(
         { success: false, error: `Unsupported update type: ${type}` },

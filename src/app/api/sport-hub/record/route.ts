@@ -12,6 +12,7 @@ import {
 } from "@/lib/sport-hub/service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 
 export const dynamic = "force-dynamic";
 
@@ -36,10 +37,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { isAdmin } = await getServerUserRole();
+
     // Attach creator user attribution if logged in
     if (user) {
       data.createdBy = user.id;
       data.lastEditedBy = user.id;
+    }
+
+    // Non-admin users cannot set financial numbers
+    if (!isAdmin) {
+      if (type === "kol") {
+        data.quotation = 0;
+      } else if (type === "community") {
+        data.pricePerPin = 0;
+      } else if (type === "project") {
+        data.budget = 0;
+        data.allocatedBudget = 0;
+      }
     }
 
     let record: any = null;
@@ -171,9 +186,19 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    const { isAdmin } = await getServerUserRole();
+
     // Attach editor user attribution if logged in
     if (user) {
       data.lastEditedBy = user.id;
+    }
+
+    // Non-admin users cannot modify financial numbers
+    if (!isAdmin) {
+      delete data.quotation;
+      delete data.pricePerPin;
+      delete data.budget;
+      delete data.allocatedBudget;
     }
 
     const supabase = createAdminClient();

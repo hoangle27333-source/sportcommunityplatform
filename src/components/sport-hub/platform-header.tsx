@@ -18,6 +18,7 @@ import {
   User,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useCurrentUser } from "@/lib/auth/auth-context";
 
 export interface PlatformHeaderProps {
   onRefresh?: () => void;
@@ -64,37 +65,18 @@ export function PlatformHeader({ onRefresh, loading = false }: PlatformHeaderPro
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    name: string;
-    email: string;
-    role: "admin" | "editor" | "viewer";
-  } | null>(null);
+  const { user, profile, signOut } = useCurrentUser();
+
+  const currentUser = user
+    ? {
+        id: user.id,
+        name: profile?.name || user.user_metadata?.name || user.email?.split("@")[0] || "Member",
+        email: user.email || "",
+        role: (profile?.role as any) || "viewer",
+      }
+    : null;
 
   useEffect(() => {
-    const supabase = createClient();
-    async function loadUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("name, role")
-          .eq("id", user.id)
-          .single();
-
-        const displayName = prof?.name || user.user_metadata?.name || user.email?.split("@")[0] || "Member";
-        setCurrentUser({
-          id: user.id,
-          name: displayName,
-          email: user.email || "",
-          role: (prof?.role as any) || "viewer",
-        });
-      }
-    }
-    loadUser();
-
     // Close dropdown on click outside
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -106,8 +88,7 @@ export function PlatformHeader({ onRefresh, loading = false }: PlatformHeaderPro
   }, []);
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    await signOut();
     router.push("/login");
   };
 

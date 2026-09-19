@@ -44,6 +44,9 @@ export const I18N_MAP: Record<string, string> = {
   "Bóng rổ": "Basketball",
   "Bơi lội": "Swimming",
   "Bóng chuyền": "Volleyball",
+  "Pickleball": "Pickleball",
+  "Tennis": "Tennis",
+  "Quần vợt": "Tennis",
   "Thể thao": "Sports",
 
   // Deadlines & Progress

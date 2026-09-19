@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { processScoutRequest } from "@/lib/apify/scout";
+import {
+  processScoutRequest,
+  previewDiscoveryCandidates,
+  ingestSelectedCandidates,
+} from "@/lib/apify/scout";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +42,58 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const {
+      action, // "preview" | "confirm" | undefined
       keyword,
-      targetType = "KOLs cá nhân",
+      targetType = "Individual KOLs",
       platform = "Instagram",
       limit = 5,
-      geography = "Toàn quốc",
+      geography = "Nationwide",
       notes = "",
+      candidates = [],
       runImmediate = true,
     } = body;
+
+    // ─── STEP 1 ACTION: PREVIEW CANDIDATES (NO DB INSERT) ───
+    if (action === "preview") {
+      const trimmed = String(keyword || "").trim();
+      if (!trimmed) {
+        return NextResponse.json(
+          { success: false, error: "Please enter a search keyword or topic" },
+          { status: 400 }
+        );
+      }
+
+      const previewRes = await previewDiscoveryCandidates({
+        keyword: trimmed,
+        targetType,
+        platform,
+        limit: Number(limit) || 5,
+        geography,
+      });
+
+      return NextResponse.json(previewRes);
+    }
+
+    // ─── STEP 2 ACTION: INGEST USER-SELECTED CANDIDATES ───
+    if (action === "confirm") {
+      if (!Array.isArray(candidates) || candidates.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "Please select at least one candidate to import" },
+          { status: 400 }
+        );
+      }
+
+      const confirmRes = await ingestSelectedCandidates({
+        candidates,
+        targetType,
+        platform,
+        geography,
+        keyword,
+        notes,
+      });
+
+      return NextResponse.json(confirmRes);
+    }
 
     const trimmedKeyword = String(keyword || "").trim();
     if (!trimmedKeyword) {
@@ -112,19 +160,23 @@ export async function POST(req: NextRequest) {
       console.warn("Audit log error on scout:", auditErr);
     }
 
-    // 2. If runImmediate is requested, trigger Apify scraper asynchronously
+    // 2. If runImmediate is requested, process scout request and await completion
+    let scoutResult: any = null;
     if (runImmediate) {
-      processScoutRequest(record.id).catch((err) => {
-        console.error(`Background Apify scout task ${record.id} error:`, err);
-      });
+      scoutResult = await processScoutRequest(record.id);
     }
 
     return NextResponse.json({
       success: true,
       requestId: record.id,
       creatorName,
-      message:
-        "Scout request created! Apify engine is scanning on Cloud and saving directly into Supabase PostgreSQL.",
+      insertedKols: scoutResult?.insertedKols ?? 0,
+      updatedKols: scoutResult?.updatedKols ?? 0,
+      insertedCommunities: scoutResult?.insertedCommunities ?? 0,
+      updatedCommunities: scoutResult?.updatedCommunities ?? 0,
+      insertedPosts: scoutResult?.insertedPosts ?? 0,
+      summary: scoutResult?.summary || "Scout completed successfully!",
+      message: scoutResult?.summary || "Scout completed successfully!",
     });
   } catch (err: any) {
     console.error("API POST /api/sport-hub/scout error:", err);

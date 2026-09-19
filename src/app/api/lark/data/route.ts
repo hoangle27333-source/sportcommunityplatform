@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSportHubDashboardData } from "@/lib/sport-hub/service";
 import { getLarkDashboardData } from "@/lib/lark/client";
+import { getServerUserRole, sanitizeFinancialData } from "@/lib/auth/financial-sanitizer";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const { isAdmin } = await getServerUserRole();
+
     // Primary: Read from Supabase PostgreSQL (ultra-fast)
-    const data = await getSportHubDashboardData();
-    if (data.kols.length > 0 || data.communities.length > 0) {
+    const rawData = await getSportHubDashboardData();
+    if (rawData.kols.length > 0 || rawData.communities.length > 0) {
+      const data = sanitizeFinancialData(rawData as any, isAdmin);
       return NextResponse.json({
         success: true,
         source: "supabase",
@@ -18,7 +22,8 @@ export async function GET() {
     }
 
     // Fallback: Read from Lark Base if Supabase is not yet populated
-    const larkData = await getLarkDashboardData();
+    const rawLarkData = await getLarkDashboardData();
+    const larkData = sanitizeFinancialData(rawLarkData as any, isAdmin);
     return NextResponse.json({
       success: true,
       source: "lark_fallback",
@@ -28,7 +33,9 @@ export async function GET() {
   } catch (err: any) {
     console.error("API /api/lark/data error, attempting Lark fallback:", err);
     try {
-      const larkData = await getLarkDashboardData();
+      const { isAdmin } = await getServerUserRole();
+      const rawLarkData = await getLarkDashboardData();
+      const larkData = sanitizeFinancialData(rawLarkData as any, isAdmin);
       return NextResponse.json({
         success: true,
         source: "lark_fallback",

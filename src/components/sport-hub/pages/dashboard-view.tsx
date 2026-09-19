@@ -27,8 +27,10 @@ import {
   BarChart3,
   Calendar,
   Clock,
+  Lock,
 } from "lucide-react";
 import { PlatformHeader } from "../platform-header";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { Kol360Modal, getKolAvatar } from "../dossier-modals";
 import {
   ReportModal,
@@ -47,6 +49,7 @@ export interface DashboardViewProps {
 }
 
 export function DashboardView({ initialData }: DashboardViewProps) {
+  const { isAdmin } = useCurrentUser();
   const [data, setData] = useState<DashboardData>(initialData);
   const [loading, setLoading] = useState(false);
 
@@ -496,9 +499,16 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             <div className="pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
                 <span>Total Tracked Budget:</span>
-                <span className="font-bold text-emerald-600">
-                  {formatCurrency(totalBudget)}
-                </span>
+                {isAdmin ? (
+                  <span className="font-bold text-emerald-600">
+                    {formatCurrency(totalBudget)}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-semibold text-slate-400">
+                    <Lock className="w-3 h-3 text-slate-400" />
+                    <span>Admin Only</span>
+                  </span>
+                )}
               </div>
             </div>
           </div>

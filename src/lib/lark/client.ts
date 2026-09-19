@@ -6,6 +6,9 @@
 import {
   fetchProjectParticipants,
   DEFAULT_PROJECT_BRANDS,
+  DEFAULT_PROJECT_METADATA,
+  inferSportFromName,
+  inferRegionFromName,
   filterAndApplyProjectOverrides,
 } from "@/lib/sport-hub/project-participants-store";
 
@@ -325,6 +328,30 @@ export async function getLarkDashboardData() {
       const budget = extractNumber(f["Ngân sách dự kiến (VNĐ)"] || f["Budget"]);
       const allocatedBudget = matchedParticipants.reduce((sum, p) => sum + (p.agreedFee || 0), 0);
 
+      const matchedMeta =
+        DEFAULT_PROJECT_METADATA[r.record_id] ||
+        (name.includes("Pickleball") ? DEFAULT_PROJECT_METADATA["c3a08ca8-0823-4302-a28f-b6c49468f30f"] : undefined) ||
+        (name.includes("Marathon") || name.includes("Giày Chạy") ? DEFAULT_PROJECT_METADATA["recvvzfpeuGL65"] : undefined) ||
+        (name.includes("Doanh Nhân Trẻ") ? DEFAULT_PROJECT_METADATA["recvvzfpwR4PfU"] : undefined);
+
+      let sport: string[] = [];
+      const sportField = f["Type Of Sport"] || f["Bộ môn thể thao"] || f["Sport"] || f["Bộ môn thể thao (Sport)"];
+      if (Array.isArray(sportField)) {
+        sport = sportField.map((s: any) => (typeof s === "string" ? s : s.name || ""));
+      } else if (sportField) {
+        sport = [extractText(sportField)];
+      } else if (matchedMeta?.sport) {
+        sport = matchedMeta.sport;
+      } else {
+        sport = inferSportFromName(name);
+      }
+
+      const region =
+        extractText(f["Geography"] || f["Khu vực"] || f["Region"] || f["Khu vực (Geography)"]) ||
+        matchedMeta?.region ||
+        inferRegionFromName(name) ||
+        "Nationwide";
+
       return {
         id: r.record_id,
         name,
@@ -338,6 +365,8 @@ export async function getLarkDashboardData() {
         pic: extractText(f["Người phụ trách (PIC)"] || f["PIC"]),
         objective: extractText(f["Mục tiêu chính"] || f["Objective"]),
         status: extractText(f["Trạng thái dự án"] || f["Status"] || "Planning"),
+        sport,
+        region,
         participants: matchedParticipants,
       };
     })

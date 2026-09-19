@@ -1,3 +1,16 @@
+export interface KOLChannel {
+  id?: string;
+  platform: "TikTok" | "Instagram" | "Facebook" | "YouTube" | "Threads" | string;
+  handle: string;
+  url: string;
+  followers: number;
+  avgViews: number;
+  er: number;
+  isPrimary?: boolean;
+  status?: string;
+  lastScoutedAt?: string;
+}
+
 export interface KOL {
   id: string;
   name: string;
@@ -14,11 +27,24 @@ export interface KOL {
   profileUrl: string;
   bio?: string;
   avatarUrl?: string;
+  channels?: KOLChannel[];
   userLockedFields?: string[];
   pendingScoutDiff?: {
     scoutedAt: string;
     changes: Record<string, { current: any; scouted: any }>;
   } | null;
+  lastScoutedAt?: string;
+}
+
+export interface CommunityChannel {
+  id?: string;
+  platform: "Facebook Group" | "Facebook Fanpage" | "Strava Club" | "Zalo Group" | "Telegram" | string;
+  name?: string;
+  url: string;
+  members: number;
+  activityLevel?: string;
+  isPrimary?: boolean;
+  status?: string;
   lastScoutedAt?: string;
 }
 
@@ -34,6 +60,9 @@ export interface Community {
   adminContact: string;
   pricePerPin: number;
   status: string;
+  channels?: CommunityChannel[];
+  privacy?: string;
+  purpose?: string[];
 }
 
 export interface Post {
@@ -113,6 +142,8 @@ export interface Project {
   pic: string;
   objective: string;
   status: string;
+  sport?: string[];
+  region?: string;
   participants?: ProjectParticipant[];
 }
 

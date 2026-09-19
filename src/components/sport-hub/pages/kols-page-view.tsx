@@ -17,6 +17,7 @@ import { ExcelUploadModal } from "../excel-upload-modal";
 import { KolPostScoutModal } from "../kol-post-scout-modal";
 import { BatchActionBar } from "../batch-action-bar";
 import { DiscoveryScoutModal } from "../discovery-scout-modal";
+import { AddChannelModal, MergeEntityModal } from "../channel-modals";
 import type { DashboardData, KOL } from "../types";
 
 export interface KolsPageViewProps {
@@ -39,12 +40,29 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportTargetKol, setReportTargetKol] = useState<any>(null);
+  const [channelTargetKol, setChannelTargetKol] = useState<KOL | null>(null);
+  const [mergeTargetKols, setMergeTargetKols] = useState<KOL[]>([]);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
 
   // Batch Selection & Discovery Scout State
   const [selectedKolIds, setSelectedKolIds] = useState<string[]>([]);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [isBatchRescouting, setIsBatchRescouting] = useState(false);
   const [isDiscoveryScoutOpen, setIsDiscoveryScoutOpen] = useState(false);
+
+  const handleOpenAddChannel = (kol: KOL) => {
+    setChannelTargetKol(kol);
+  };
+
+  const handleOpenMerge = (initialKols?: KOL[]) => {
+    if (initialKols && initialKols.length > 0) {
+      setMergeTargetKols(initialKols);
+    } else {
+      const selected = data.kols.filter((k) => selectedKolIds.includes(k.id));
+      setMergeTargetKols(selected);
+    }
+    setIsMergeModalOpen(true);
+  };
 
   const handleToggleSelectKol = (id: string) => {
     setSelectedKolIds((prev) =>
@@ -283,6 +301,8 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
           onOpenDiff={(kol) => setDiffKol(kol)}
           onOpenGrowth={(kol) => setGrowthKol(kol)}
           onScoutKol={(kol) => setScoutTargetKol(kol)}
+          onAddChannel={handleOpenAddChannel}
+          onMergeKol={(kol) => handleOpenMerge([kol])}
         />
       </main>
 
@@ -303,6 +323,8 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
           onScoutKolPosts={(kol) => setScoutTargetKol(kol)}
           onOpenGrowth={(kol) => setGrowthKol(kol)}
           onOpenDiff={(kol) => setDiffKol(kol)}
+          onAddChannel={handleOpenAddChannel}
+          onUpdateKol={handleUpdateKol}
         />
       )}
 
@@ -382,6 +404,8 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
         onClearSelection={handleClearSelection}
         onBatchRescout={handleBatchRescout}
         onBatchDelete={handleConfirmBatchDelete}
+        onBatchMerge={() => handleOpenMerge()}
+        mergeButtonLabel="Merge Profiles"
         loadingRescout={isBatchRescouting}
         loadingDelete={isBatchDeleting}
         rescoutButtonLabel="Sync Live Data"
@@ -394,6 +418,35 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
         defaultTargetType="Sports KOLs & Influencers"
         onScoutSuccess={handleRefresh}
       />
+
+      {/* 5. Add Social Channel Modal */}
+      {channelTargetKol && (
+        <AddChannelModal
+          isOpen={!!channelTargetKol}
+          onClose={() => setChannelTargetKol(null)}
+          entityType="kol"
+          entity={channelTargetKol}
+          onSuccess={handleRefresh}
+        />
+      )}
+
+      {/* 6. Merge Duplicate Profiles Modal */}
+      {isMergeModalOpen && (
+        <MergeEntityModal
+          isOpen={isMergeModalOpen}
+          onClose={() => {
+            setIsMergeModalOpen(false);
+            setMergeTargetKols([]);
+          }}
+          entityType="kol"
+          initialSelectedEntities={mergeTargetKols}
+          allEntities={data.kols}
+          onSuccess={() => {
+            handleRefresh();
+            setSelectedKolIds([]);
+          }}
+        />
+      )}
     </div>
   );
 }

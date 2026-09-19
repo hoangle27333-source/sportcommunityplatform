@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, UserPlus, Users, Sparkles } from "lucide-react";
+import { X, UserPlus, Users, Sparkles, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { formatNumber, formatCurrency } from "@/lib/i18n";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 import type { KOL, Community, Project } from "./types";
 
 interface BookParticipantModalProps {
@@ -23,6 +24,7 @@ export function BookParticipantModal({
   onClose,
   onSuccess,
 }: BookParticipantModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [entityType, setEntityType] = useState<"kol" | "community">("kol");
   const [selectedEntityId, setSelectedEntityId] = useState("");
   const [deliverableScope, setDeliverableScope] = useState("");
@@ -38,7 +40,11 @@ export function BookParticipantModal({
     if (entityType === "kol") {
       const found = kols.find((k) => k.id === id);
       if (found) {
-        setAgreedFee(found.quotation || 20000000);
+        if (isAdmin) {
+          setAgreedFee(found.quotation || 20000000);
+        } else {
+          setAgreedFee(0);
+        }
         setTargetViews(found.avgViews || 30000);
         setTargetReach(found.followers || 50000);
         setDeliverableScope("1 Dedicated Reel Video + 2 Stories check-in");
@@ -46,7 +52,11 @@ export function BookParticipantModal({
     } else {
       const found = communities.find((c) => c.id === id);
       if (found) {
-        setAgreedFee(found.pricePerPin || 8000000);
+        if (isAdmin) {
+          setAgreedFee(found.pricePerPin || 8000000);
+        } else {
+          setAgreedFee(0);
+        }
         setTargetReach(found.members || 30000);
         setTargetViews(Math.round((found.members || 30000) * 0.4));
         setDeliverableScope("Pin campaign announcement for 30 days + 2 cross-shares");
@@ -96,7 +106,7 @@ export function BookParticipantModal({
         sport,
         tierOrPlatform,
         deliverableScope: deliverableScope || (entityType === "kol" ? "1 Reel Video" : "30-Day Pinned Post"),
-        agreedFee: Number(agreedFee) || 0,
+        agreedFee: isAdmin ? (Number(agreedFee) || 0) : 0,
         targetViews: Number(targetViews) || 0,
         targetReach: Number(targetReach) || 0,
         status: "Confirmed",
@@ -207,12 +217,12 @@ export function BookParticipantModal({
               {entityType === "kol"
                 ? kols.map((k) => (
                     <option key={k.id} value={k.id}>
-                      {k.name} ({k.tier} · {formatNumber(k.followers)} followers · Ref: {formatCurrency(k.quotation)})
+                      {k.name} ({k.tier} · {formatNumber(k.followers)} followers{isAdmin ? ` · Ref: ${formatCurrency(k.quotation)}` : " · 🔒 Admin Only"})
                     </option>
                   ))
                 : communities.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} ({formatNumber(c.members)} members · Pin: {formatCurrency(c.pricePerPin)}/mo)
+                      {c.name} ({formatNumber(c.members)} members{isAdmin ? ` · Pin: ${formatCurrency(c.pricePerPin)}/mo` : " · 🔒 Admin Only"})
                     </option>
                   ))}
             </select>
@@ -240,18 +250,30 @@ export function BookParticipantModal({
           {/* Commercial Fee & Targets */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Agreed Fee (VND) *
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                <span>Agreed Fee (VND) {isAdmin && "*"}</span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded normal-case tracking-normal">
+                    <Lock className="w-2.5 h-2.5" /> Admin Only
+                  </span>
+                )}
               </label>
-              <input
-                type="number"
-                required
-                min={0}
-                placeholder="25000000"
-                value={agreedFee}
-                onChange={(e) => setAgreedFee(e.target.value ? Number(e.target.value) : "")}
-                className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
-              />
+              {isAdmin ? (
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  placeholder="25000000"
+                  value={agreedFee}
+                  onChange={(e) => setAgreedFee(e.target.value ? Number(e.target.value) : "")}
+                  className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
+                />
+              ) : (
+                <div className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Configured by administrators only</span>
+                </div>
+              )}
             </div>
 
             <div>

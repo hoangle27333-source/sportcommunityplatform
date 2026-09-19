@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bulkInsertKOLs, bulkInsertCommunities } from "@/lib/sport-hub/service";
+import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 
 export const dynamic = "force-dynamic";
 
@@ -188,20 +189,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { isAdmin } = await getServerUserRole();
     let createdCount = 0;
 
     if (type === "kol") {
-      const mapped = records.map(mapKOLRecord).filter(Boolean);
+      let mapped = records.map(mapKOLRecord).filter(Boolean);
       if (mapped.length === 0) {
         return NextResponse.json(
           { success: false, error: "No valid KOL records found in uploaded data" },
           { status: 400 }
         );
       }
+      if (!isAdmin) {
+        mapped = mapped.map((k: any) => ({ ...k, quotation: 0 }));
+      }
       const res = await bulkInsertKOLs(mapped);
       createdCount = res?.length || 0;
     } else if (type === "community") {
-      const mapped = records.map(mapCommunityRecord).filter(Boolean);
+      let mapped = records.map(mapCommunityRecord).filter(Boolean);
       if (mapped.length === 0) {
         return NextResponse.json(
           {
@@ -210,6 +215,9 @@ export async function POST(req: NextRequest) {
           },
           { status: 400 }
         );
+      }
+      if (!isAdmin) {
+        mapped = mapped.map((c: any) => ({ ...c, pricePerPin: 0 }));
       }
       const res = await bulkInsertCommunities(mapped);
       createdCount = res?.length || 0;

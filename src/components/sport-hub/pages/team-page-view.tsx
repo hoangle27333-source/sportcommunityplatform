@@ -310,11 +310,11 @@ export function TeamPageView() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-4">Member Name</th>
-                    <th className="py-3 px-4">Role & Access</th>
-                    <th className="py-3 px-4 text-center">PIC Projects</th>
-                    <th className="py-3 px-4 text-center">Evaluations</th>
-                    <th className="py-3 px-4">Joined Date</th>
+                    <th className="py-2 px-4">Member Name</th>
+                    <th className="py-2 px-4">Role & Access</th>
+                    <th className="py-2 px-4 text-center">PIC Projects</th>
+                    <th className="py-2 px-4 text-center">Evaluations</th>
+                    <th className="py-2 px-4">Joined Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -326,26 +326,25 @@ export function TeamPageView() {
                     </tr>
                   ) : (
                     filteredMembers.map((member) => (
-                      <tr key={member.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0">
+                      <tr key={member.id} className="hover:bg-slate-50/70 transition h-11">
+                        <td className="py-2 px-4 whitespace-nowrap">
+                          <div className="flex items-center gap-2 max-w-[280px]" title={`${member.name} (${member.email})`}>
+                            <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0">
                               {member.name.charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                              <p className="font-bold text-slate-900">{member.name}</p>
-                              <p className="text-[11px] text-slate-400 mt-0.5">{member.email}</p>
-                            </div>
+                            <span className="font-bold text-slate-900 truncate text-xs">{member.name}</span>
+                            <span className="text-slate-300 shrink-0">·</span>
+                            <span className="text-[11px] text-slate-400 truncate">{member.email}</span>
                           </div>
                         </td>
 
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-4 whitespace-nowrap">
                           {currentRole === "admin" ? (
                             <select
                               value={member.role}
                               disabled={updatingUserId === member.id}
                               onChange={(e) => handleRoleChange(member.id, e.target.value)}
-                              className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition focus:outline-none ${getRoleBadge(
+                              className={`px-2 py-0.5 rounded-lg border text-xs font-bold transition focus:outline-none ${getRoleBadge(
                                 member.role
                               )}`}
                             >
@@ -364,9 +363,9 @@ export function TeamPageView() {
                           )}
                         </td>
 
-                        <td className="py-3 px-4 text-center font-bold text-slate-700">
+                        <td className="py-2 px-4 text-center font-bold text-slate-700 whitespace-nowrap">
                           {member.picProjectsCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
                               <Briefcase className="w-3 h-3" />
                               <span>{member.picProjectsCount}</span>
                             </span>
@@ -375,9 +374,9 @@ export function TeamPageView() {
                           )}
                         </td>
 
-                        <td className="py-3 px-4 text-center font-bold text-slate-700">
+                        <td className="py-2 px-4 text-center font-bold text-slate-700 whitespace-nowrap">
                           {member.reportsCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px]">
                               <Award className="w-3 h-3" />
                               <span>{member.reportsCount}</span>
                             </span>
@@ -386,7 +385,7 @@ export function TeamPageView() {
                           )}
                         </td>
 
-                        <td className="py-3 px-4 text-slate-500 font-medium">
+                        <td className="py-2 px-4 text-slate-500 font-medium whitespace-nowrap text-xs">
                           {new Date(member.createdAt).toLocaleDateString("en-US", {
                             year: "numeric",
                             month: "short",

@@ -1,6 +1,7 @@
 import { getSportHubDashboardData } from "@/lib/sport-hub/service";
 import { getLarkDashboardData } from "@/lib/lark/client";
 import { DashboardView } from "@/components/sport-hub/pages/dashboard-view";
+import { getServerUserRole, sanitizeFinancialData } from "@/lib/auth/financial-sanitizer";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ const EMPTY_FALLBACK: any = {
 
 export default async function HomePage() {
   let initialData: any = EMPTY_FALLBACK;
+  const { isAdmin } = await getServerUserRole();
 
   try {
     // Primary: Load directly from Lark Base (Single Source of Truth)
@@ -45,5 +47,7 @@ export default async function HomePage() {
     }
   }
 
-  return <DashboardView initialData={initialData} />;
+  const securedData = sanitizeFinancialData(initialData, isAdmin);
+
+  return <DashboardView initialData={securedData} />;
 }

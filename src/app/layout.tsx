@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro, Fira_Code } from "next/font/google";
 import { Toaster } from "sonner";
+import { AuthProvider } from "@/lib/auth/auth-context";
 import "./globals.css";
 
 /**
@@ -49,7 +50,9 @@ export default function RootLayout({
         suppressHydrationWarning
         className={`${beVietnamPro.variable} ${firaCode.variable} min-h-screen bg-background font-sans text-foreground antialiased`}
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
         <Toaster
           position="bottom-right"
           toastOptions={{

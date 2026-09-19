@@ -18,9 +18,19 @@ import {
   Trash2,
   Globe,
   RefreshCw,
+  Lock,
+  ChevronDown,
+  ChevronRight,
+  GitMerge,
+  Plus,
+  Layers,
 } from "lucide-react";
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
 import type { Community } from "../types";
+import { CommunityChannelDrawer } from "../community-channel-drawer";
+import { getCommunityAggregates } from "@/lib/sport-hub/kol-channels";
+import { MultiChannelCluster } from "../platform-icon";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 
 export interface CommunityTableViewProps {
   communities: Community[];
@@ -38,6 +48,8 @@ export interface CommunityTableViewProps {
   onOpenReport?: (community: Community) => void;
   onScoutCommunity?: () => void;
   onScoutCommunityPosts?: (community: Community) => void;
+  onAddChannel?: (community: Community) => void;
+  onMergeCommunity?: (community: Community) => void;
 }
 
 export function CommunityTableView({
@@ -56,8 +68,18 @@ export function CommunityTableView({
   onOpenReport,
   onScoutCommunity,
   onScoutCommunityPosts,
+  onAddChannel,
+  onMergeCommunity,
 }: CommunityTableViewProps) {
+  const { isAdmin } = useCurrentUser();
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
+  const [expandedCommunityIds, setExpandedCommunityIds] = useState<string[]>([]);
+
+  const toggleExpandCommunity = (id: string) => {
+    setExpandedCommunityIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
   const [search, setSearch] = useState("");
   const [sportFilter, setSportFilter] = useState("all");
   const [platformFilter, setPlatformFilter] = useState("all");
@@ -141,6 +163,7 @@ export function CommunityTableView({
   );
 
   const toggleSort = (field: "members" | "price" | "name") => {
+    if (field === "price" && !isAdmin) return;
     if (sortBy === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     } else {
@@ -380,7 +403,7 @@ export function CommunityTableView({
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                 <tr>
                   <th
-                    className="py-2.5 px-2 text-center w-[36px] cursor-pointer select-none"
+                    className="py-2 px-2 text-center w-[36px] cursor-pointer select-none"
                     onClick={handleToggleSelectAll}
                     title={isAllSelected ? "Deselect all visible clubs" : "Select all visible clubs"}
                   >
@@ -396,147 +419,186 @@ export function CommunityTableView({
                       />
                     )}
                   </th>
-                  <th className="py-2.5 px-3 text-center">#</th>
+                  <th className="py-2 px-3 text-center">#</th>
                   <th
                     onClick={() => toggleSort("name")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-purple-700 transition"
+                    className="py-2 px-3 cursor-pointer hover:text-purple-700 transition"
                   >
                     <div className="flex items-center space-x-1">
                       <span>Group / Club Name</span>
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
-                  <th className="py-2.5 px-3">Sports</th>
-                  <th className="py-2.5 px-3">Platform</th>
+                  <th className="py-2 px-3">Sports</th>
+                  <th className="py-2 px-3">Platform</th>
                   <th
                     onClick={() => toggleSort("members")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-purple-700 transition text-right"
+                    className="py-2 px-3 cursor-pointer hover:text-purple-700 transition text-right"
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Members</span>
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
-                  <th className="py-2.5 px-3">Activity Level</th>
+                  <th className="py-2 px-3">Activity Level</th>
                   <th
                     onClick={() => toggleSort("price")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-purple-700 transition text-right"
+                    className={`py-2 px-3 text-right ${
+                      isAdmin
+                        ? "cursor-pointer hover:text-purple-700 transition"
+                        : "text-slate-400 cursor-default"
+                    }`}
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Pinned Post Fee</span>
-                      <ArrowUpDown className="w-3 h-3" />
+                      {isAdmin ? (
+                        <ArrowUpDown className="w-3 h-3" />
+                      ) : (
+                        <Lock className="w-3 h-3 text-slate-400" />
+                      )}
                     </div>
                   </th>
-                  <th className="py-2.5 px-3">Region</th>
-                  <th className="py-2.5 px-3">Admin / Contact</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-center">Actions</th>
+                  <th className="py-2 px-3">Region</th>
+                  <th className="py-2 px-3">Admin / Contact</th>
+                  <th className="py-2 px-3">Status</th>
+                  <th className="py-2 px-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sorted.length > 0 ? (
                   sorted.map((comm, idx) => {
+                    const aggregates = getCommunityAggregates(comm);
+                    const isExpanded = expandedCommunityIds.includes(comm.id);
+
                     return (
-                      <tr
-                        key={comm.id}
-                        className={`transition group h-[52px] ${
-                          selectedCommunityIds.includes(comm.id)
-                            ? "bg-purple-50/80 hover:bg-purple-100/80"
-                            : "hover:bg-purple-50/30"
-                        }`}
-                      >
-                        <td
-                          className="py-2.5 px-2 text-center cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onToggleSelectCommunity) onToggleSelectCommunity(comm.id);
-                          }}
+                      <React.Fragment key={comm.id}>
+                        <tr
+                          className={`transition group h-11 ${
+                            selectedCommunityIds.includes(comm.id)
+                              ? "bg-purple-50/80 hover:bg-purple-100/80"
+                              : isExpanded
+                              ? "bg-purple-50/40"
+                              : "hover:bg-purple-50/30"
+                          }`}
                         >
-                          {onToggleSelectCommunity && (
-                            <input
-                              type="checkbox"
-                              checked={selectedCommunityIds.includes(comm.id)}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                onToggleSelectCommunity(comm.id);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4"
-                              title="Select this community"
-                            />
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-medium text-slate-400">
-                          {idx + 1}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <div className="flex items-center space-x-2.5">
+                          <td
+                            className="py-2 px-2 text-center cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onToggleSelectCommunity) onToggleSelectCommunity(comm.id);
+                            }}
+                          >
+                            {onToggleSelectCommunity && (
+                              <input
+                                type="checkbox"
+                                checked={selectedCommunityIds.includes(comm.id)}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  onToggleSelectCommunity(comm.id);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer w-4 h-4"
+                                title="Select this community"
+                              />
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center space-x-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleExpandCommunity(comm.id);
+                                }}
+                                className={`p-1 rounded-md transition cursor-pointer ${
+                                  isExpanded
+                                    ? "bg-purple-600 text-white shadow-2xs"
+                                    : "text-slate-400 hover:text-purple-600 hover:bg-slate-100"
+                                }`}
+                                title={isExpanded ? "Collapse channels" : "Expand channel breakdown"}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                ) : (
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <span className="font-medium text-slate-400 text-[11px]">{idx + 1}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 whitespace-nowrap">
                             <div
                               onClick={() => onSelectCommunity && onSelectCommunity(comm)}
-                              className="w-7 h-7 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0 cursor-pointer hover:scale-105 transition"
-                              title="Click to view 360° Community Dossier"
+                              className="flex items-center space-x-2 cursor-pointer max-w-[240px]"
+                              title={`${comm.name} — ${t(comm.geography || "Nationwide")}`}
                             >
-                              👥
-                            </div>
-                            <div className="min-w-0 flex-1">
                               <div
-                                onClick={() => onSelectCommunity && onSelectCommunity(comm)}
-                                className="font-bold text-slate-900 hover:text-purple-700 transition cursor-pointer hover:underline flex items-center space-x-1.5 truncate max-w-[170px]"
+                                className="w-6 h-6 rounded-md bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0 hover:scale-105 transition"
                                 title="Click to view 360° Community Dossier"
                               >
-                                <span className="truncate">{comm.name}</span>
+                                👥
                               </div>
-                              <span className="text-[10px] text-slate-400 truncate block">
-                                {t(comm.geography || "Nationwide")}
+                              <span className="font-bold text-slate-900 hover:text-purple-700 transition hover:underline truncate text-xs">
+                                {comm.name}
                               </span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <div className="flex items-center space-x-1">
-                            {comm.sport.slice(0, 2).map((sp) => (
-                              <span
-                                key={sp}
-                                className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium"
-                              >
-                                {t(sp)}
-                              </span>
-                            ))}
-                            {comm.sport.length > 2 && (
-                              <span
-                                className="text-[10px] bg-slate-200/80 text-slate-600 px-1.5 py-0.5 rounded font-bold cursor-help"
-                                title={comm.sport.slice(2).map((s) => t(s)).join(", ")}
-                              >
-                                +{comm.sport.length - 2}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
-                            {comm.platform}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-900 whitespace-nowrap">
-                          {formatNumber(comm.members)}
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          </td>
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <div className="flex items-center space-x-1">
+                              {comm.sport.slice(0, 2).map((sp) => (
+                                <span
+                                  key={sp}
+                                  className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium"
+                                >
+                                  {t(sp)}
+                                </span>
+                              ))}
+                              {comm.sport.length > 2 && (
+                                <span
+                                  className="text-[10px] bg-slate-200/80 text-slate-600 px-1.5 py-0.5 rounded font-bold cursor-help"
+                                  title={comm.sport.slice(2).map((s) => t(s)).join(", ")}
+                                >
+                                  +{comm.sport.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
+                              {aggregates.hasMultipleChannels ? "Multi-channel" : comm.platform}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold text-slate-900 whitespace-nowrap text-xs">
+                            <span title={aggregates.hasMultipleChannels ? `Total across ${aggregates.channelCount} channels` : undefined}>
+                              {formatNumber(aggregates.totalMembers)}
+                            </span>
+                          </td>
+                        <td className="py-2 px-3 whitespace-nowrap">
                           <span className="inline-flex items-center text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
                             {t(comm.activityLevel)}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-800 whitespace-nowrap">
-                          {formatCurrency(comm.pricePerPin)}
+                        <td className="py-2 px-3 text-right whitespace-nowrap">
+                          {isAdmin ? (
+                            <span className="font-bold text-slate-800 text-xs">
+                              {formatCurrency(comm.pricePerPin)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-100/80 px-2 py-0.5 rounded">
+                              <Lock className="w-2.5 h-2.5 text-slate-400" />
+                              <span>Admin Only</span>
+                            </span>
+                          )}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap">
                           <span className="text-[11px]">{t(comm.geography)}</span>
                         </td>
-                        <td className="py-2.5 px-3 text-slate-600 text-[11px] whitespace-nowrap">
+                        <td className="py-2 px-3 text-slate-600 text-[11px] whitespace-nowrap">
                           <div className="truncate max-w-[115px]" title={comm.adminContact || "—"}>
                             {comm.adminContact || "—"}
                           </div>
                         </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
+                        <td className="py-2 px-3 whitespace-nowrap">
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                               comm.status.includes("tích cực") || comm.status.includes("Active")
@@ -547,7 +609,7 @@ export function CommunityTableView({
                             {t(comm.status)}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center space-x-1">
                             {/* View 360 */}
                             {onSelectCommunity && (
@@ -582,6 +644,30 @@ export function CommunityTableView({
                                 title="Evaluate Campaign Performance"
                               >
                                 <Star className="w-3.5 h-3.5 text-amber-600" />
+                              </button>
+                            )}
+
+                            {/* Add Channel Action */}
+                            {onAddChannel && (
+                              <button
+                                type="button"
+                                onClick={() => onAddChannel(comm)}
+                                className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                title="Add Social Channel"
+                              >
+                                <Plus className="w-3.5 h-3.5 text-purple-600" />
+                              </button>
+                            )}
+
+                            {/* Merge with... Action */}
+                            {onMergeCommunity && (
+                              <button
+                                type="button"
+                                onClick={() => onMergeCommunity(comm)}
+                                className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                title="Merge duplicate community"
+                              >
+                                <GitMerge className="w-3.5 h-3.5 text-indigo-600" />
                               </button>
                             )}
 
@@ -626,8 +712,27 @@ export function CommunityTableView({
                           </div>
                         </td>
                       </tr>
-                    );
-                  })
+
+                      {/* ─── INLINE EXPANDABLE CHANNEL BREAKDOWN DRAWER ─── */}
+                      {isExpanded && (
+                        <tr className="bg-slate-50/70">
+                          <td colSpan={12} className="p-0">
+                            <CommunityChannelDrawer
+                              community={{
+                                ...comm,
+                                channels: aggregates.channels,
+                                members: aggregates.totalMembers,
+                              }}
+                              onView360={onSelectCommunity ? () => onSelectCommunity(comm) : undefined}
+                              onAddChannel={onAddChannel ? () => onAddChannel(comm) : undefined}
+                              onClose={() => toggleExpandCommunity(comm.id)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
                 ) : (
                   <tr>
                     <td colSpan={12} className="py-12 text-center text-slate-400">
@@ -644,6 +749,7 @@ export function CommunityTableView({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {sorted.length > 0 ? (
             sorted.map((comm) => {
+              const aggregates = getCommunityAggregates(comm);
               const isSelected = selectedCommunityIds.includes(comm.id);
               return (
                 <div
@@ -686,7 +792,9 @@ export function CommunityTableView({
                             <span className="truncate">{comm.name}</span>
                           </h4>
                           <div className="flex items-center space-x-1.5 text-[11px] text-slate-500 mt-0.5 truncate">
-                            <span className="font-semibold text-purple-600">{comm.platform}</span>
+                            <span className="font-semibold text-purple-600">
+                              {aggregates.hasMultipleChannels ? "Multi-channel" : comm.platform}
+                            </span>
                             <span>•</span>
                             <span>{t(comm.geography)}</span>
                           </div>
@@ -695,6 +803,26 @@ export function CommunityTableView({
 
                       {/* Quick Icons */}
                       <div className="flex items-center space-x-1">
+                        {onAddChannel && (
+                          <button
+                            type="button"
+                            onClick={() => onAddChannel(comm)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition cursor-pointer"
+                            title="Add social channel"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {onMergeCommunity && (
+                          <button
+                            type="button"
+                            onClick={() => onMergeCommunity(comm)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                            title="Merge duplicate community"
+                          >
+                            <GitMerge className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {onEditCommunity && (
                           <button
                             type="button"
@@ -718,6 +846,31 @@ export function CommunityTableView({
                       </div>
                     </div>
 
+                    {/* Connected Channels Icons Bar */}
+                    <div className="flex items-center justify-between mb-2.5 px-0.5">
+                      <MultiChannelCluster
+                        channels={aggregates.channels.map((ch) => ({
+                          platform: ch.platform,
+                          handle: ch.name || comm.name,
+                          url: ch.url,
+                          followers: ch.members,
+                          avgViews: 0,
+                          er: 0,
+                          isPrimary: ch.isPrimary,
+                        }))}
+                        onSelectChannel={() => onSelectCommunity && onSelectCommunity(comm)}
+                      />
+                      {aggregates.hasMultipleChannels && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectCommunity && onSelectCommunity(comm)}
+                          className="text-[10px] text-purple-600 font-semibold hover:underline cursor-pointer"
+                        >
+                          View 360 &rarr;
+                        </button>
+                      )}
+                    </div>
+
                     {/* Sports Tags */}
                     <div className="flex flex-wrap gap-1 mb-3">
                       {comm.sport.map((sp) => (
@@ -735,7 +888,7 @@ export function CommunityTableView({
                       <div>
                         <div className="text-[10px] text-slate-500 font-medium">Total Members</div>
                         <div className="text-xs font-bold text-slate-900 mt-0.5">
-                          {formatNumber(comm.members)}
+                          {formatNumber(aggregates.totalMembers)}
                         </div>
                       </div>
                       <div>
@@ -750,9 +903,16 @@ export function CommunityTableView({
                     <div className="flex items-center justify-between text-xs mb-3">
                       <div>
                         <span className="text-[10px] text-slate-400 block">Pinned Post Fee</span>
-                        <span className="font-bold text-slate-900">
-                          {formatCurrency(comm.pricePerPin)}
-                        </span>
+                        {isAdmin ? (
+                          <span className="font-bold text-slate-900">
+                            {formatCurrency(comm.pricePerPin)}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                            <Lock className="w-2.5 h-2.5 text-slate-400" />
+                            <span>Admin Only</span>
+                          </span>
+                        )}
                       </div>
                       <div className="text-right">
                         <span

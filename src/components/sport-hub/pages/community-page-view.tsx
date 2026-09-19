@@ -16,6 +16,7 @@ import {
 import { ExcelUploadModal } from "../excel-upload-modal";
 import { BatchActionBar } from "../batch-action-bar";
 import { DiscoveryScoutModal } from "../discovery-scout-modal";
+import { AddChannelModal, MergeEntityModal } from "../channel-modals";
 import { formatNumber } from "@/lib/i18n";
 import type { DashboardData, Community } from "../types";
 
@@ -38,12 +39,29 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportTargetCommunity, setReportTargetCommunity] = useState<Community | null>(null);
+  const [channelTargetCommunity, setChannelTargetCommunity] = useState<Community | null>(null);
+  const [mergeTargetCommunities, setMergeTargetCommunities] = useState<Community[]>([]);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
 
   // Batch Selection & Discovery Scout State
   const [selectedCommunityIds, setSelectedCommunityIds] = useState<string[]>([]);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [isBatchRescouting, setIsBatchRescouting] = useState(false);
   const [isDiscoveryScoutOpen, setIsDiscoveryScoutOpen] = useState(false);
+
+  const handleOpenAddChannel = (comm: Community) => {
+    setChannelTargetCommunity(comm);
+  };
+
+  const handleOpenMerge = (initialComms?: Community[]) => {
+    if (initialComms && initialComms.length > 0) {
+      setMergeTargetCommunities(initialComms);
+    } else {
+      const selected = data.communities.filter((c) => selectedCommunityIds.includes(c.id));
+      setMergeTargetCommunities(selected);
+    }
+    setIsMergeModalOpen(true);
+  };
 
   const handleToggleSelectCommunity = (id: string) => {
     setSelectedCommunityIds((prev) =>
@@ -224,6 +242,8 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
           }}
           onScoutCommunity={() => setIsDiscoveryScoutOpen(true)}
           onScoutCommunityPosts={(comm) => setScoutTargetCommunity(comm)}
+          onAddChannel={handleOpenAddChannel}
+          onMergeCommunity={(comm) => handleOpenMerge([comm])}
         />
       </main>
 
@@ -243,6 +263,7 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
           onEditCommunity={(comm) => setEditingCommunity(comm)}
           onScoutCommunityPosts={(comm) => setScoutTargetCommunity(comm)}
           onDeleteCommunity={(comm) => setDeletingCommunity(comm)}
+          onAddChannel={handleOpenAddChannel}
         />
       )}
 
@@ -312,6 +333,8 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
         onClearSelection={handleClearSelection}
         onBatchRescout={handleBatchRescout}
         onBatchDelete={handleConfirmBatchDelete}
+        onBatchMerge={() => handleOpenMerge()}
+        mergeButtonLabel="Merge Communities"
         loadingRescout={isBatchRescouting}
         loadingDelete={isBatchDeleting}
         rescoutButtonLabel="Sync Live Data"
@@ -324,6 +347,35 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
         defaultTargetType="Communities & Clubs"
         onScoutSuccess={handleRefresh}
       />
+
+      {/* 5. Add Social Channel Modal */}
+      {channelTargetCommunity && (
+        <AddChannelModal
+          isOpen={!!channelTargetCommunity}
+          onClose={() => setChannelTargetCommunity(null)}
+          entityType="community"
+          entity={channelTargetCommunity}
+          onSuccess={handleRefresh}
+        />
+      )}
+
+      {/* 6. Merge Duplicate Communities Modal */}
+      {isMergeModalOpen && (
+        <MergeEntityModal
+          isOpen={isMergeModalOpen}
+          onClose={() => {
+            setIsMergeModalOpen(false);
+            setMergeTargetCommunities([]);
+          }}
+          entityType="community"
+          initialSelectedEntities={mergeTargetCommunities}
+          allEntities={data.communities}
+          onSuccess={() => {
+            handleRefresh();
+            setSelectedCommunityIds([]);
+          }}
+        />
+      )}
     </div>
   );
 }

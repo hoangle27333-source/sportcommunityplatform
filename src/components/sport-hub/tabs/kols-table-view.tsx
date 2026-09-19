@@ -20,8 +20,19 @@ import {
   RotateCcw,
   Sparkles,
   RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  GitMerge,
+  Plus,
+  Lock,
 } from "lucide-react";
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
+import type { KOLChannel } from "../types";
+import { getKolAggregates } from "@/lib/sport-hub/kol-channels";
+import { MultiChannelCluster, PlatformIcon } from "../platform-icon";
+import { KolChannelDrawer } from "../kol-channel-drawer";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 
 export interface KOL {
   id: string;
@@ -41,6 +52,7 @@ export interface KOL {
   tags?: string[];
   phone?: string;
   email?: string;
+  channels?: KOLChannel[];
   userLockedFields?: string[];
   pendingScoutDiff?: {
     scoutedAt: string;
@@ -68,6 +80,8 @@ export interface KolsTableViewProps {
   onOpenDiff?: (kol: KOL) => void;
   onOpenGrowth?: (kol: KOL) => void;
   onScoutKol?: (kol: KOL) => void;
+  onAddChannel?: (kol: KOL) => void;
+  onMergeKol?: (kol: KOL) => void;
 }
 
 export function KolsTableView({
@@ -89,7 +103,10 @@ export function KolsTableView({
   onOpenDiff,
   onOpenGrowth,
   onScoutKol,
+  onAddChannel,
+  onMergeKol,
 }: KolsTableViewProps) {
+  const { isAdmin } = useCurrentUser();
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [search, setSearch] = useState("");
   const [sportFilter, setSportFilter] = useState("all");
@@ -99,6 +116,13 @@ export function KolsTableView({
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState<"followers" | "views" | "er" | "price" | "name">("followers");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [expandedKolIds, setExpandedKolIds] = useState<string[]>([]);
+
+  const toggleExpandKol = (kolId: string) => {
+    setExpandedKolIds((prev) =>
+      prev.includes(kolId) ? prev.filter((id) => id !== kolId) : [...prev, kolId]
+    );
+  };
 
   const hasActiveFilters =
     search.trim() !== "" ||
@@ -117,6 +141,7 @@ export function KolsTableView({
     setStatusFilter("all");
     setSortBy("followers");
     setSortOrder("desc");
+    setExpandedKolIds([]);
   };
 
   // Filtering
@@ -129,7 +154,10 @@ export function KolsTableView({
         const matchSport = k.sport.some((s) => s.toLowerCase().includes(q));
         const matchGeo = (k.geography || "").toLowerCase().includes(q);
         const matchPlatform = (k.platform || "").toLowerCase().includes(q);
-        if (!matchName && !matchInfo && !matchSport && !matchGeo && !matchPlatform) return false;
+        const matchChannelHandle = k.channels?.some(
+          (ch) => (ch.handle || "").toLowerCase().includes(q) || (ch.platform || "").toLowerCase().includes(q)
+        );
+        if (!matchName && !matchInfo && !matchSport && !matchGeo && !matchPlatform && !matchChannelHandle) return false;
       }
 
       if (sportFilter !== "all" && !k.sport.some((s) => s.toLowerCase() === sportFilter.toLowerCase())) {
@@ -140,8 +168,11 @@ export function KolsTableView({
         return false;
       }
 
-      if (platformFilter !== "all" && !k.platform.toLowerCase().includes(platformFilter.toLowerCase())) {
-        return false;
+      if (platformFilter !== "all") {
+        const pTarget = platformFilter.toLowerCase();
+        const matchBase = (k.platform || "").toLowerCase().includes(pTarget);
+        const matchChannels = k.channels?.some((ch) => (ch.platform || "").toLowerCase().includes(pTarget));
+        if (!matchBase && !matchChannels) return false;
       }
 
       if (geoFilter !== "all" && !k.geography.toLowerCase().includes(geoFilter.toLowerCase())) {
@@ -192,6 +223,7 @@ export function KolsTableView({
   }, [sortedKols]);
 
   const toggleSort = (field: "followers" | "views" | "er" | "price" | "name") => {
+    if (field === "price" && !isAdmin) return;
     if (sortBy === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     } else {
@@ -438,22 +470,22 @@ export function KolsTableView({
             <table className="w-full min-w-[1150px] text-left text-xs border-collapse">
               <colgroup>
                 <col className="w-[36px]" />
-                <col className="w-[44px]" />
+                <col className="w-[52px]" />
                 <col className="w-[230px]" />
-                <col className="w-[150px]" />
-                <col className="w-[100px]" />
+                <col className="w-[130px]" />
+                <col className="w-[135px]" />
+                <col className="w-[115px]" />
                 <col className="w-[95px]" />
-                <col className="w-[90px]" />
-                <col className="w-[75px]" />
-                <col className="w-[120px]" />
+                <col className="w-[85px]" />
+                <col className="w-[115px]" />
+                <col className="w-[100px]" />
                 <col className="w-[105px]" />
                 <col className="w-[110px]" />
-                <col className="w-[140px]" />
               </colgroup>
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                 <tr>
                   <th
-                    className="py-2.5 px-2 text-center w-[36px] cursor-pointer select-none"
+                    className="py-2 px-2 text-center w-[36px] cursor-pointer select-none"
                     onClick={handleToggleSelectAll}
                     title={isAllSelected ? "Deselect all visible creators" : "Select all visible creators"}
                   >
@@ -469,30 +501,30 @@ export function KolsTableView({
                       />
                     )}
                   </th>
-                  <th className="py-2.5 px-3 text-center">#</th>
+                  <th className="py-2 px-2 text-center">#</th>
                   <th
                     onClick={() => toggleSort("name")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-indigo-600 transition"
+                    className="py-2 px-3 cursor-pointer hover:text-indigo-600 transition"
                   >
                     <div className="flex items-center space-x-1">
                       <span>KOL / Creator Channel</span>
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
-                  <th className="py-2.5 px-3">Sports</th>
-                  <th className="py-2.5 px-3">Platform</th>
+                  <th className="py-2 px-3">Sports</th>
+                  <th className="py-2 px-3">Channels</th>
                   <th
                     onClick={() => toggleSort("followers")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-indigo-600 transition text-right"
+                    className="py-2 px-3 cursor-pointer hover:text-indigo-600 transition text-right"
                   >
                     <div className="flex items-center justify-end space-x-1">
-                      <span>Followers</span>
+                      <span>Total Followers</span>
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
                   <th
                     onClick={() => toggleSort("views")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-indigo-600 transition text-right"
+                    className="py-2 px-3 cursor-pointer hover:text-indigo-600 transition text-right"
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Avg Views</span>
@@ -501,7 +533,7 @@ export function KolsTableView({
                   </th>
                   <th
                     onClick={() => toggleSort("er")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-indigo-600 transition text-right"
+                    className="py-2 px-3 cursor-pointer hover:text-indigo-600 transition text-right"
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>ER (%)</span>
@@ -510,203 +542,315 @@ export function KolsTableView({
                   </th>
                   <th
                     onClick={() => toggleSort("price")}
-                    className="py-2.5 px-3 cursor-pointer hover:text-indigo-600 transition text-right"
+                    className={`py-2 px-3 text-right ${
+                      isAdmin
+                        ? "cursor-pointer hover:text-indigo-600 transition"
+                        : "text-slate-400 cursor-default"
+                    }`}
                   >
                     <div className="flex items-center justify-end space-x-1">
                       <span>Rate Card</span>
-                      <ArrowUpDown className="w-3 h-3" />
+                      {isAdmin ? (
+                        <ArrowUpDown className="w-3 h-3" />
+                      ) : (
+                        <Lock className="w-3 h-3 text-slate-400" />
+                      )}
                     </div>
                   </th>
-                  <th className="py-2.5 px-3">Region</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-center">Actions</th>
+                  <th className="py-2 px-3">Region</th>
+                  <th className="py-2 px-3">Status</th>
+                  <th className="py-2 px-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sortedKols.length > 0 ? (
                   sortedKols.map((kol, idx) => {
+                    const aggregates = getKolAggregates(kol);
+                    const isExpanded = expandedKolIds.includes(kol.id);
                     const isTopTier = kol.tier.includes("Mega") || kol.tier.includes("Macro");
+
                     return (
-                      <tr
-                        key={kol.id}
-                        className={`transition group h-[52px] ${
-                          selectedKolIds.includes(kol.id)
-                            ? "bg-indigo-50/80 hover:bg-indigo-100/80"
-                            : "hover:bg-indigo-50/30"
-                        }`}
-                      >
-                        <td
-                          className="py-2.5 px-2 text-center cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onToggleSelectKol) onToggleSelectKol(kol.id);
-                          }}
+                      <React.Fragment key={kol.id}>
+                        <tr
+                          className={`transition group h-11 ${
+                            selectedKolIds.includes(kol.id)
+                              ? "bg-indigo-50/80 hover:bg-indigo-100/80"
+                              : isExpanded
+                              ? "bg-indigo-50/40"
+                              : "hover:bg-indigo-50/30"
+                          }`}
                         >
-                          {onToggleSelectKol && (
-                            <input
-                              type="checkbox"
-                              checked={selectedKolIds.includes(kol.id)}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                onToggleSelectKol(kol.id);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4"
-                              title="Select this creator"
-                            />
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-medium text-slate-400">
-                          {idx + 1}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <div className="flex items-center space-x-2.5">
-                            <div
-                              onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
-                              className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0 cursor-pointer hover:scale-105 transition"
-                              title="Click to view 360° Panoramic Dossier"
-                            >
-                              {kol.name.slice(0, 1).toUpperCase()}
+                          {/* Selection Checkbox */}
+                          <td
+                            className="py-2 px-2 text-center cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onToggleSelectKol) onToggleSelectKol(kol.id);
+                            }}
+                          >
+                            {onToggleSelectKol && (
+                              <input
+                                type="checkbox"
+                                checked={selectedKolIds.includes(kol.id)}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  onToggleSelectKol(kol.id);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4"
+                                title="Select this creator"
+                              />
+                            )}
+                          </td>
+
+                          {/* Index & Expand Chevron */}
+                          <td className="py-2 px-2 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center space-x-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleExpandKol(kol.id);
+                                }}
+                                className={`p-1 rounded-md transition cursor-pointer ${
+                                  isExpanded
+                                    ? "bg-indigo-600 text-white shadow-2xs"
+                                    : "text-slate-400 hover:text-indigo-600 hover:bg-slate-100"
+                                }`}
+                                title={isExpanded ? "Collapse channels" : "Expand channel breakdown"}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                ) : (
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <span className="font-medium text-slate-400 text-[11px]">{idx + 1}</span>
                             </div>
-                            <div className="min-w-0 flex-1">
+                          </td>
+
+                          {/* Creator Identity */}
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <div className="flex items-center space-x-2 max-w-[240px]">
                               <div
                                 onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
-                                className="font-bold text-slate-900 hover:text-indigo-600 transition flex items-center space-x-1.5 cursor-pointer hover:underline truncate max-w-[160px]"
+                                className="w-6 h-6 rounded-md bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0 cursor-pointer hover:scale-105 transition"
                                 title="Click to view 360° Panoramic Dossier"
                               >
-                                <span className="truncate">{kol.name}</span>
+                                {kol.name.slice(0, 1).toUpperCase()}
+                              </div>
+                              <div
+                                onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
+                                className="font-bold text-slate-900 hover:text-indigo-600 transition flex items-center space-x-1.5 cursor-pointer hover:underline truncate"
+                                title={`${kol.name} (${kol.tier}${aggregates.hasMultipleChannels ? ` · ${aggregates.channelCount} Channels` : ""})`}
+                              >
+                                <span className="truncate text-xs">{kol.name}</span>
                                 {isTopTier && (
                                   <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1 rounded shrink-0">
                                     HOT
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-slate-400 font-medium truncate block">
+                              <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-medium border border-slate-200 shrink-0">
                                 {kol.tier}
                               </span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <div className="flex items-center space-x-1">
-                            {kol.sport.slice(0, 2).map((sp) => (
-                              <span
-                                key={sp}
-                                className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium"
-                              >
-                                {t(sp)}
+                          </td>
+
+                          {/* Sports */}
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <div className="flex items-center space-x-1">
+                              {kol.sport.slice(0, 2).map((sp) => (
+                                <span
+                                  key={sp}
+                                  className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium"
+                                >
+                                  {t(sp)}
+                                </span>
+                              ))}
+                              {kol.sport.length > 2 && (
+                                <span
+                                  className="text-[10px] bg-slate-200/80 text-slate-600 px-1.5 py-0.5 rounded font-bold cursor-help"
+                                  title={kol.sport.slice(2).map((s) => t(s)).join(", ")}
+                                >
+                                  +{kol.sport.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Platform & Connected Channels */}
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <MultiChannelCluster
+                              channels={aggregates.channels}
+                              onSelectChannel={() => toggleExpandKol(kol.id)}
+                            />
+                          </td>
+
+                          {/* Total Followers */}
+                          <td className="py-2 px-3 text-right whitespace-nowrap">
+                            <span
+                              className="font-bold text-slate-900 text-xs"
+                              title={aggregates.hasMultipleChannels ? `Total reach across ${aggregates.channelCount} channels` : undefined}
+                            >
+                              {formatNumber(aggregates.totalFollowers)}
+                            </span>
+                          </td>
+
+                          {/* Avg Views */}
+                          <td className="py-2 px-3 text-right text-slate-600 font-medium whitespace-nowrap">
+                            <span
+                              className="font-semibold text-slate-800 text-xs"
+                              title={aggregates.hasMultipleChannels && aggregates.totalAvgViews > 0 ? `Combined across ${aggregates.channelCount} channels` : undefined}
+                            >
+                              {aggregates.totalAvgViews > 0 ? formatNumber(aggregates.totalAvgViews) : "—"}
+                            </span>
+                          </td>
+
+                          {/* ER */}
+                          <td className="py-2 px-3 text-right whitespace-nowrap">
+                            <span
+                              className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full text-[10px] border border-emerald-200"
+                              title={aggregates.hasMultipleChannels ? "Audience-weighted blended engagement rate" : undefined}
+                            >
+                              {aggregates.blendedEr}%
+                            </span>
+                          </td>
+
+                          {/* Rate Card */}
+                          <td className="py-2 px-3 text-right whitespace-nowrap">
+                            {isAdmin ? (
+                              <span className="font-bold text-slate-800 text-xs">
+                                {formatCurrency(kol.quotation)}
                               </span>
-                            ))}
-                            {kol.sport.length > 2 && (
-                              <span
-                                className="text-[10px] bg-slate-200/80 text-slate-600 px-1.5 py-0.5 rounded font-bold cursor-help"
-                                title={kol.sport.slice(2).map((s) => t(s)).join(", ")}
-                              >
-                                +{kol.sport.length - 2}
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-100/80 px-2 py-0.5 rounded">
+                                <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                <span>Admin Only</span>
                               </span>
                             )}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <div className="flex items-center space-x-1.5">
-                            <span className="font-medium text-slate-700 text-xs">{kol.platform}</span>
-                            {kol.profileUrl && kol.profileUrl !== "#" && (
-                              <a
-                                href={kol.profileUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-blue-500 hover:text-blue-700"
-                                title="Open creator profile"
+                          </td>
+
+                          {/* Region */}
+                          <td className="py-2 px-3 text-slate-600 whitespace-nowrap">
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
+                              {t(kol.geography || "Nationwide")}
+                            </span>
+                          </td>
+
+                          {/* Status */}
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                kol.status.includes("tích cực") || kol.status.includes("Active")
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : kol.status.includes("Tiềm năng") || kol.status.includes("Potential")
+                                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}
+                            >
+                              {t(kol.status)}
+                            </span>
+                          </td>
+
+                          {/* Action Buttons */}
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center space-x-1">
+                              {/* Scout Diff Action */}
+                              {kol.pendingScoutDiff &&
+                                Object.keys(kol.pendingScoutDiff.changes || {}).length > 0 &&
+                                onOpenDiff && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenDiff(kol)}
+                                    className="w-7 h-7 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition flex items-center justify-center shadow-2xs animate-pulse cursor-pointer"
+                                    title="Review Scout Data Changes (Diff)"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                              {/* View 360 */}
+                              <button
+                                type="button"
+                                onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
+                                className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200/60 cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
+                                title="View 360° Profile Dossier"
                               >
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-900 whitespace-nowrap">
-                          {formatNumber(kol.followers)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-slate-600 font-medium whitespace-nowrap">
-                          {kol.avgViews > 0 ? formatNumber(kol.avgViews) : "—"}
-                        </td>
-                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                          <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full text-[10px]">
-                            {kol.er}%
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-800 whitespace-nowrap">
-                          {formatCurrency(kol.quotation)}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                          <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
-                            {t(kol.geography || "Nationwide")}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              kol.status.includes("tích cực") || kol.status.includes("Active")
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : kol.status.includes("Tiềm năng") || kol.status.includes("Potential")
-                                ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {t(kol.status)}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center space-x-1">
-                            {/* Scout Diff Action */}
-                            {kol.pendingScoutDiff &&
-                              Object.keys(kol.pendingScoutDiff.changes || {}).length > 0 &&
-                              onOpenDiff && (
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Add Channel Action */}
+                              {onAddChannel && (
                                 <button
                                   type="button"
-                                  onClick={() => onOpenDiff(kol)}
-                                  className="w-7 h-7 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition flex items-center justify-center shadow-2xs animate-pulse cursor-pointer"
-                                  title="Review Scout Data Changes (Diff)"
+                                  onClick={() => onAddChannel(kol)}
+                                  className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Add Social Channel"
                                 >
-                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <Plus className="w-3.5 h-3.5 text-purple-600" />
                                 </button>
                               )}
 
-                            {/* View 360 */}
-                            <button
-                              type="button"
-                              onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
-                              className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200/60 cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
-                              title="View 360° Profile Dossier"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </button>
+                              {/* Merge with... Action */}
+                              {onMergeKol && (
+                                <button
+                                  type="button"
+                                  onClick={() => onMergeKol(kol)}
+                                  className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Merge duplicate profile"
+                                >
+                                  <GitMerge className="w-3.5 h-3.5 text-indigo-600" />
+                                </button>
+                              )}
 
-                            {/* Edit Action */}
-                            {onEditKol && (
-                              <button
-                                type="button"
-                                onClick={() => onEditKol(kol)}
-                                className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition flex items-center justify-center border border-amber-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Edit KOL Profile"
-                              >
-                                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
-                              </button>
-                            )}
+                              {/* Edit Action */}
+                              {onEditKol && (
+                                <button
+                                  type="button"
+                                  onClick={() => onEditKol(kol)}
+                                  className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition flex items-center justify-center border border-amber-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Edit KOL Profile"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                </button>
+                              )}
 
-                            {/* Delete Action */}
-                            {onDeleteKol && (
-                              <button
-                                type="button"
-                                onClick={() => onDeleteKol(kol)}
-                                className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Delete KOL from Database"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                              {/* Delete Action */}
+                              {onDeleteKol && (
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteKol(kol)}
+                                  className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Delete KOL"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* ─── INLINE EXPANDABLE CHANNEL BREAKDOWN DRAWER ─── */}
+                        {isExpanded && (
+                          <tr className="bg-slate-50/70">
+                            <td colSpan={12} className="p-0">
+                              <KolChannelDrawer
+                                kol={{
+                                  ...kol,
+                                  channels: aggregates.channels,
+                                  followers: aggregates.totalFollowers,
+                                  avgViews: aggregates.totalAvgViews,
+                                  er: aggregates.blendedEr,
+                                }}
+                                onView360={onView360 ? () => onView360(kol) : () => onSelectKol(kol.id)}
+                                onAddChannel={onAddChannel ? () => onAddChannel(kol) : undefined}
+                                onClose={() => toggleExpandKol(kol.id)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 ) : (
@@ -725,6 +869,7 @@ export function KolsTableView({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {sortedKols.length > 0 ? (
             sortedKols.map((kol) => {
+              const aggregates = getKolAggregates(kol);
               const isTopTier = kol.tier.includes("Mega") || kol.tier.includes("Macro");
               const isSelected = selectedKolIds.includes(kol.id);
               return (
@@ -738,7 +883,7 @@ export function KolsTableView({
                 >
                   <div>
                     {/* Card Header */}
-                    <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start justify-between mb-2.5">
                       <div className="flex items-center space-x-3">
                         {onToggleSelectKol && (
                           <input
@@ -772,10 +917,16 @@ export function KolsTableView({
                               </span>
                             )}
                           </h4>
-                          <div className="flex items-center space-x-2 text-[11px] text-slate-500 mt-0.5">
+                          <div className="flex items-center space-x-1.5 text-[11px] text-slate-500 mt-0.5">
                             <span className="font-semibold text-indigo-600">{kol.tier}</span>
                             <span>•</span>
-                            <span>{kol.platform}</span>
+                            {aggregates.hasMultipleChannels ? (
+                              <span className="font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded text-[10px]">
+                                {aggregates.channelCount} Channels
+                              </span>
+                            ) : (
+                              <span>{kol.platform}</span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -805,6 +956,23 @@ export function KolsTableView({
                       </div>
                     </div>
 
+                    {/* Connected Channels Icons Bar */}
+                    <div className="flex items-center justify-between mb-2.5 px-0.5">
+                      <MultiChannelCluster
+                        channels={aggregates.channels}
+                        onSelectChannel={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
+                      />
+                      {aggregates.hasMultipleChannels && (
+                        <button
+                          type="button"
+                          onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
+                          className="text-[10px] text-indigo-600 font-semibold hover:underline cursor-pointer"
+                        >
+                          View 360 &rarr;
+                        </button>
+                      )}
+                    </div>
+
                     {/* Sports Tags */}
                     <div className="flex flex-wrap gap-1 mb-3">
                       {kol.sport.map((sp) => (
@@ -820,21 +988,27 @@ export function KolsTableView({
                     {/* Metrics Grid */}
                     <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl text-center mb-3">
                       <div>
-                        <div className="text-[10px] text-slate-500 font-medium">Followers</div>
+                        <div className="text-[10px] text-slate-500 font-medium">
+                          {aggregates.hasMultipleChannels ? "Total Reach" : "Followers"}
+                        </div>
                         <div className="text-xs font-bold text-slate-900 mt-0.5">
-                          {formatNumber(kol.followers)}
+                          {formatNumber(aggregates.totalFollowers)}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-slate-500 font-medium">Avg Views</div>
+                        <div className="text-[10px] text-slate-500 font-medium">
+                          {aggregates.hasMultipleChannels ? "Comb. Views" : "Avg Views"}
+                        </div>
                         <div className="text-xs font-bold text-slate-900 mt-0.5">
-                          {kol.avgViews > 0 ? formatNumber(kol.avgViews) : "—"}
+                          {aggregates.totalAvgViews > 0 ? formatNumber(aggregates.totalAvgViews) : "—"}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-slate-500 font-medium">ER (%)</div>
+                        <div className="text-[10px] text-slate-500 font-medium">
+                          {aggregates.hasMultipleChannels ? "Blended ER" : "ER (%)"}
+                        </div>
                         <div className="text-xs font-bold text-emerald-600 mt-0.5">
-                          {kol.er}%
+                          {aggregates.blendedEr}%
                         </div>
                       </div>
                     </div>
@@ -843,9 +1017,16 @@ export function KolsTableView({
                     <div className="flex items-center justify-between text-xs mb-3">
                       <div>
                         <span className="text-[10px] text-slate-400 block">Rate Card</span>
-                        <span className="font-bold text-slate-900">
-                          {formatCurrency(kol.quotation)}
-                        </span>
+                        {isAdmin ? (
+                          <span className="font-bold text-slate-900">
+                            {formatCurrency(kol.quotation)}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                            <Lock className="w-2.5 h-2.5 text-slate-400" />
+                            <span>Admin Only</span>
+                          </span>
+                        )}
                       </div>
                       <div className="text-right">
                         <span

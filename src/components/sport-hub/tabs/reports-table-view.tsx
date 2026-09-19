@@ -252,32 +252,32 @@ export function ReportsTableView({
             </colgroup>
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
               <tr>
-                <th className="py-2.5 px-3 text-center">#</th>
-                <th className="py-2.5 px-3">Title & Project</th>
-                <th className="py-2.5 px-3">KOL / Partner</th>
+                <th className="py-2 px-3 text-center">#</th>
+                <th className="py-2 px-3">Title & Project</th>
+                <th className="py-2 px-3">KOL / Partner</th>
                 <th
                   onClick={() => toggleSort("score")}
-                  className="py-2.5 px-3 cursor-pointer hover:text-amber-600 transition"
+                  className="py-2 px-3 cursor-pointer hover:text-amber-600 transition"
                 >
                   <div className="flex items-center space-x-1">
                     <span>Overall Rating</span>
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="py-2.5 px-3">Attitude</th>
-                <th className="py-2.5 px-3">Schedule (Deadline)</th>
-                <th className="py-2.5 px-3">KPI Committed / Actual</th>
+                <th className="py-2 px-3">Attitude</th>
+                <th className="py-2 px-3">Schedule (Deadline)</th>
+                <th className="py-2 px-3">KPI Committed / Actual</th>
                 <th
                   onClick={() => toggleSort("kpiRate")}
-                  className="py-2.5 px-3 cursor-pointer hover:text-amber-600 transition text-right"
+                  className="py-2 px-3 cursor-pointer hover:text-amber-600 transition text-right"
                 >
                   <div className="flex items-center justify-end space-x-1">
                     <span>Fulfillment Rate</span>
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="py-2.5 px-3">PM Notes & Feedback</th>
-                <th className="py-2.5 px-3">Reviewer</th>
+                <th className="py-2 px-3">PM Notes & Feedback</th>
+                <th className="py-2 px-3">Reviewer</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -293,40 +293,43 @@ export function ReportsTableView({
                   return (
                     <tr
                       key={r.id}
-                      className="hover:bg-amber-50/30 transition group h-[52px]"
+                      className="hover:bg-amber-50/30 transition group h-11"
                     >
-                      <td className="py-2.5 px-3 text-center font-medium text-slate-400">
+                      <td className="py-2 px-3 text-center font-medium text-slate-400">
                         {idx + 1}
                       </td>
-                      <td className="py-2.5 px-3">
-                        <div className="font-bold text-slate-900 group-hover:text-amber-700 transition truncate max-w-[200px]" title={r.title}>
-                          {r.title}
+                      <td className="py-2 px-3 whitespace-nowrap">
+                        <div className="flex items-center space-x-1.5 max-w-[240px] truncate" title={`${r.title} — ${r.project}`}>
+                          <span className="font-bold text-slate-900 group-hover:text-amber-700 transition truncate text-xs">
+                            {r.title}
+                          </span>
+                          <span className="text-slate-300 shrink-0">·</span>
+                          <span className="text-[10px] text-slate-500 font-medium truncate shrink-0 max-w-[100px]">
+                            {r.project}
+                          </span>
                         </div>
-                        <span className="text-[10px] text-slate-500 font-medium truncate block max-w-[200px]" title={r.project}>
-                          {r.project}
-                        </span>
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <button
                           onClick={() => onSelectKol?.(r.kolName)}
-                          className="font-bold text-slate-900 hover:text-amber-600 text-left transition truncate max-w-[130px] block cursor-pointer"
+                          className="font-bold text-slate-900 hover:text-amber-600 text-left transition truncate max-w-[130px] block cursor-pointer text-xs"
                           title={r.kolName}
                         >
                           {r.kolName}
                         </button>
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <span className="inline-flex items-center bg-amber-50 text-amber-800 font-bold px-1.5 py-0.5 rounded text-[10px] space-x-1 border border-amber-200">
                           <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
                           <span>{r.score} / 5</span>
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <span className="text-slate-700 font-semibold text-xs">
                           {r.attitude} / 5
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                             isGoodSchedule
@@ -337,10 +340,10 @@ export function ReportsTableView({
                           {t(r.deadline)}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-700 font-medium whitespace-nowrap text-xs">
+                      <td className="py-2 px-3 text-slate-700 font-medium whitespace-nowrap text-xs">
                         {r.kpiCommit > 0 ? `${formatNumber(r.kpiCommit)} / ${formatNumber(r.kpiActual)}` : "—"}
                       </td>
-                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                      <td className="py-2 px-3 text-right whitespace-nowrap">
                         <span
                           className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
                             r.kpiRate >= 100
@@ -351,12 +354,12 @@ export function ReportsTableView({
                           {r.kpiRate}%
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-600 text-[11px] whitespace-nowrap">
+                      <td className="py-2 px-3 text-slate-600 text-[11px] whitespace-nowrap">
                         <div className="truncate max-w-[190px] italic" title={r.notes || "No notes"}>
                           "{r.notes || "No notes"}"
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-700 font-medium whitespace-nowrap text-xs">
+                      <td className="py-2 px-3 text-slate-700 font-medium whitespace-nowrap text-xs">
                         {r.evaluator || "PM"}
                       </td>
                     </tr>

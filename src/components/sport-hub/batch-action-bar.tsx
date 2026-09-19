@@ -11,6 +11,7 @@ import {
   Coins,
   Zap,
   Info,
+  GitMerge,
 } from "lucide-react";
 
 export interface BatchActionBarProps {
@@ -22,6 +23,8 @@ export interface BatchActionBarProps {
   onSelectAll?: () => void;
   onBatchRescout?: () => Promise<void> | void;
   onBatchDelete?: () => Promise<void> | void;
+  onBatchMerge?: () => void;
+  mergeButtonLabel?: string;
   loadingRescout?: boolean;
   loadingDelete?: boolean;
 }
@@ -35,6 +38,8 @@ export function BatchActionBar({
   onSelectAll,
   onBatchRescout,
   onBatchDelete,
+  onBatchMerge,
+  mergeButtonLabel = "Merge Profiles",
   loadingRescout = false,
   loadingDelete = false,
 }: BatchActionBarProps) {
@@ -107,6 +112,20 @@ export function BatchActionBar({
                 {loadingRescout ? "Syncing..." : rescoutButtonLabel}
               </span>
               <span className="sm:hidden">Sync</span>
+            </button>
+          )}
+
+          {/* Merge Profiles (when 2+ selected) */}
+          {onBatchMerge && selectedCount >= 2 && (
+            <button
+              type="button"
+              disabled={loadingRescout || loadingDelete}
+              onClick={onBatchMerge}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              title={`Consolidate ${selectedCount} profiles into a single multi-channel record`}
+            >
+              <GitMerge className="w-3.5 h-3.5 text-purple-200" />
+              <span>{mergeButtonLabel}</span>
             </button>
           )}
 

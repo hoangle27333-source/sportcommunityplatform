@@ -2,6 +2,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   fetchProjectParticipants,
   DEFAULT_PROJECT_BRANDS,
+  DEFAULT_PROJECT_METADATA,
+  inferSportFromName,
+  inferRegionFromName,
   addParticipantToProject,
   logParticipantPerformance,
   evaluateParticipant,
@@ -9,8 +12,15 @@ import {
   filterAndApplyProjectOverrides,
   updateProjectOverride,
   markProjectDeleted,
+  relinkParticipantsForMergedEntity,
 } from "./project-participants-store";
-import type { ProjectParticipant, ProjectBrand } from "@/components/sport-hub/types";
+import type { ProjectParticipant, ProjectBrand, KOLChannel, CommunityChannel } from "@/components/sport-hub/types";
+import { getKolAggregates, getCommunityAggregates } from "./kol-channels";
+import {
+  getStoredEntityChannels,
+  saveStoredEntityChannels,
+  deleteStoredEntityChannels,
+} from "./channel-store";
 
 export interface SportHubKPIs {
   totalKols: number;
@@ -37,6 +47,7 @@ export interface KOLItem {
   profileUrl: string;
   avatarUrl?: string;
   bio?: string;
+  channels?: KOLChannel[];
   userLockedFields?: string[];
   pendingScoutDiff?: {
     scoutedAt: string;
@@ -59,6 +70,7 @@ export interface CommunityItem {
   status: string;
   privacy?: string;
   purpose?: string[];
+  channels?: CommunityChannel[];
 }
 
 export interface ProjectItem {
@@ -74,6 +86,8 @@ export interface ProjectItem {
   pic: string;
   objective: string;
   status: string;
+  sport?: string[];
+  region?: string;
   participants?: ProjectParticipant[];
 }
 
@@ -150,44 +164,75 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
   const rawRep = repRes.data || [];
   const rawPost = postRes.data || [];
 
-  // Map KOLs
-  const kols: KOLItem[] = rawKols.map((r: any) => ({
-    id: r.id,
-    name: r.name || "",
-    sport: Array.isArray(r.sports) ? r.sports : [],
-    tier: r.tier || "Micro (10k - 50k)",
-    platform: r.platform || "Facebook",
-    geography: r.geography || "Toàn quốc",
-    followers: Number(r.followers) || 0,
-    avgViews: Number(r.avg_views) || 0,
-    er: Number(r.er) || 0,
-    quotation: Number(r.quotation) || 0,
-    status: r.status || "Đang hợp tác tích cực",
-    info: r.contact_info || "",
-    bio: r.bio || "",
-    profileUrl: r.profile_url || "#",
-    avatarUrl: r.avatar_url || "",
-    userLockedFields: Array.isArray(r.user_locked_fields) ? r.user_locked_fields : [],
-    pendingScoutDiff: r.pending_scout_diff || null,
-    lastScoutedAt: r.last_scouted_at || undefined,
-  }));
+  // Map KOLs with Multi-Channel Data and Cross-Platform Aggregation
+  const kols: KOLItem[] = rawKols.map((r: any) => {
+    const baseKol: KOLItem = {
+      id: r.id,
+      name: r.name || "",
+      sport: Array.isArray(r.sports) ? r.sports : [],
+      tier: r.tier || "Micro (10k - 50k)",
+      platform: r.platform || "Facebook",
+      geography: r.geography || "Toàn quốc",
+      followers: Number(r.followers) || 0,
+      avgViews: Number(r.avg_views) || 0,
+      er: Number(r.er) || 0,
+      quotation: Number(r.quotation) || 0,
+      status: r.status || "Đang hợp tác tích cực",
+      info: r.contact_info || "",
+      bio: r.bio || "",
+      profileUrl: r.profile_url || "#",
+      avatarUrl: r.avatar_url || "",
+      channels:
+        getStoredEntityChannels("kol", r.id, r.name) ||
+        (r.channels && Array.isArray(r.channels) && r.channels.length > 0 ? r.channels : undefined),
+      userLockedFields: Array.isArray(r.user_locked_fields) ? r.user_locked_fields : [],
+      pendingScoutDiff: r.pending_scout_diff || null,
+      lastScoutedAt: r.last_scouted_at || undefined,
+    };
 
-  // Map Communities
-  const communities: CommunityItem[] = rawComm.map((r: any) => ({
-    id: r.id,
-    name: r.name || "",
-    sport: Array.isArray(r.sports) ? r.sports : [],
-    geography: r.geography || "Toàn quốc",
-    members: Number(r.members_count) || 0,
-    platform: r.platform || "Facebook Group",
-    groupUrl: r.group_url || "#",
-    activityLevel: r.activity_level || "Rất sôi động (> 20 bài/ngày)",
-    adminContact: r.admin_contact || "",
-    pricePerPin: Number(r.price_per_pin) || 0,
-    status: r.status || "Đang hợp tác tích cực",
-    privacy: r.privacy || "Công khai (Public)",
-    purpose: Array.isArray(r.purposes) ? r.purposes : [],
-  }));
+    const aggregates = getKolAggregates(baseKol as any);
+
+    return {
+      ...baseKol,
+      platform: aggregates.hasMultipleChannels ? "Omni-channel" : baseKol.platform,
+      followers: aggregates.totalFollowers,
+      avgViews: aggregates.totalAvgViews,
+      er: aggregates.blendedEr,
+      channels: aggregates.channels,
+    };
+  });
+
+  // Map Communities with Multi-Channel Data and Aggregation
+  const communities: CommunityItem[] = rawComm.map((r: any) => {
+    const storedChannels = getStoredEntityChannels("community", r.id, r.name);
+    const baseComm: CommunityItem = {
+      id: r.id,
+      name: r.name || "",
+      sport: Array.isArray(r.sports) ? r.sports : [],
+      geography: r.geography || "Toàn quốc",
+      members: Number(r.members_count) || 0,
+      platform: r.platform || "Facebook Group",
+      groupUrl: r.group_url || "#",
+      activityLevel: r.activity_level || "Rất sôi động (> 20 bài/ngày)",
+      adminContact: r.admin_contact || "",
+      pricePerPin: Number(r.price_per_pin) || 0,
+      status: r.status || "Đang hợp tác tích cực",
+      privacy: r.privacy || "Công khai (Public)",
+      purpose: Array.isArray(r.purposes) ? r.purposes : [],
+      channels:
+        storedChannels ||
+        (r.channels && Array.isArray(r.channels) && r.channels.length > 0 ? r.channels : undefined),
+    };
+
+    const aggregates = getCommunityAggregates(baseComm as any);
+
+    return {
+      ...baseComm,
+      platform: aggregates.hasMultipleChannels ? "Multi-channel" : baseComm.platform,
+      members: aggregates.totalMembers,
+      channels: aggregates.channels,
+    };
+  });
 
   // Map Projects with multi-brand and participant roster
   const projects: ProjectItem[] = rawProj.map((r: any) => {
@@ -196,6 +241,12 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
       (r.name?.includes("Pickleball") ? DEFAULT_PROJECT_BRANDS["c3a08ca8-0823-4302-a28f-b6c49468f30f"] : undefined) ||
       (r.name?.includes("Marathon") || r.name?.includes("Giày Chạy") ? DEFAULT_PROJECT_BRANDS["recvvzfpeuGL65"] : undefined) ||
       (r.name?.includes("Doanh Nhân Trẻ") ? DEFAULT_PROJECT_BRANDS["recvvzfpwR4PfU"] : undefined);
+
+    const matchedMeta =
+      DEFAULT_PROJECT_METADATA[r.id] ||
+      (r.name?.includes("Pickleball") ? DEFAULT_PROJECT_METADATA["c3a08ca8-0823-4302-a28f-b6c49468f30f"] : undefined) ||
+      (r.name?.includes("Marathon") || r.name?.includes("Giày Chạy") ? DEFAULT_PROJECT_METADATA["recvvzfpeuGL65"] : undefined) ||
+      (r.name?.includes("Doanh Nhân Trẻ") ? DEFAULT_PROJECT_METADATA["recvvzfpwR4PfU"] : undefined);
 
     let brands: string[] = [];
     if (Array.isArray(r.brands) && r.brands.length > 0) {
@@ -221,6 +272,15 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
 
     const allocatedBudget = matchedParticipants.reduce((sum, p) => sum + (p.agreedFee || 0), 0);
 
+    const sport =
+      Array.isArray(r.sports) && r.sports.length > 0
+        ? r.sports
+        : Array.isArray(r.sport) && r.sport.length > 0
+        ? r.sport
+        : matchedMeta?.sport || inferSportFromName(r.name);
+
+    const region = r.region || r.geography || matchedMeta?.region || inferRegionFromName(r.name) || "Toàn quốc";
+
     return {
       id: r.id,
       name: r.name || "",
@@ -234,6 +294,8 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
       pic: r.pic || "PM",
       objective: r.objective || "",
       status: r.status || "Planning",
+      sport,
+      region,
       participants: matchedParticipants,
     };
   });
@@ -407,6 +469,10 @@ export async function updateKOL(id: string, data: Partial<KOLItem>) {
   // Update locked fields array
   updatePayload.user_locked_fields = Array.from(lockedSet);
 
+  if (Array.isArray((data as any).channels)) {
+    await saveStoredEntityChannels("kol", id, (data as any).channels, data.name);
+  }
+
   const { data: record, error } = await supabase
     .from("kols")
     .update(updatePayload)
@@ -505,12 +571,34 @@ export async function recordMetricSnapshot(
 /**
  * Get historical metric snapshots for a specific KOL
  */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getKolMetricHistory(kolId: string) {
+  if (!kolId) return [];
+
   const supabase = createAdminClient();
+  let targetId = kolId;
+
+  if (!UUID_REGEX.test(targetId)) {
+    // If kolId is a Lark record ID or name, try to resolve to actual Supabase UUID
+    const { data: matched } = await supabase
+      .from("kols")
+      .select("id")
+      .or(`name.ilike.%${kolId}%,profile_url.ilike.%${kolId}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (matched && UUID_REGEX.test(matched.id)) {
+      targetId = matched.id;
+    } else {
+      return [];
+    }
+  }
+
   const { data, error } = await supabase
     .from("kol_metric_snapshots")
     .select("*")
-    .eq("kol_id", kolId)
+    .eq("kol_id", targetId)
     .order("recorded_at", { ascending: true });
 
   if (error) {
@@ -554,23 +642,46 @@ export async function createCommunity(data: Partial<CommunityItem>) {
 
 export async function createProject(data: Partial<ProjectItem>) {
   const supabase = createAdminClient();
-  const { data: record, error } = await supabase
-    .from("sport_projects")
-    .insert({
-      name: data.name,
-      brand: data.brand || "",
-      budget: data.budget || 0,
-      start_date: data.startDate || null,
-      end_date: data.endDate || null,
-      pic: data.pic || "PM",
-      objective: data.objective || "",
-      status: data.status || "Planning",
-    })
-    .select()
-    .single();
+  const insertPayload: Record<string, any> = {
+    name: data.name,
+    brand: data.brand || "",
+    budget: data.budget || 0,
+    start_date: data.startDate || null,
+    end_date: data.endDate || null,
+    pic: data.pic || "PM",
+    objective: data.objective || "",
+    status: data.status || "Planning",
+    sports: data.sport || [],
+    region: data.region || "Toàn quốc",
+  };
 
-  if (error) throw error;
-  return record;
+  try {
+    const { data: record, error } = await supabase
+      .from("sport_projects")
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (!error && record) return record;
+  } catch {
+    // Fallback if sports/region column not yet migrated in current DB
+    const { data: record, error } = await supabase
+      .from("sport_projects")
+      .insert({
+        name: data.name,
+        brand: data.brand || "",
+        budget: data.budget || 0,
+        start_date: data.startDate || null,
+        end_date: data.endDate || null,
+        pic: data.pic || "PM",
+        objective: data.objective || "",
+        status: data.status || "Planning",
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return record;
+  }
 }
 
 export async function updateProject(id: string, data: Partial<ProjectItem>) {
@@ -589,6 +700,8 @@ export async function updateProject(id: string, data: Partial<ProjectItem>) {
     if (data.pic !== undefined) payload.pic = data.pic;
     if (data.objective !== undefined) payload.objective = data.objective;
     if (data.status !== undefined) payload.status = data.status;
+    if (data.sport !== undefined) payload.sports = data.sport;
+    if (data.region !== undefined) payload.region = data.region;
 
     const { data: record, error } = await supabase
       .from("sport_projects")
@@ -750,3 +863,183 @@ export {
   evaluateParticipant,
   deleteProjectParticipant,
 };
+
+export interface MergeEntitiesPayload {
+  type: "kol" | "community";
+  primaryId: string;
+  secondaryIds: string[];
+  mergedFields: {
+    name?: string;
+    sports?: string[];
+    geography?: string;
+    tier?: string;
+    status?: string;
+    quotation?: number;
+    bio?: string;
+    info?: string;
+    adminContact?: string;
+    pricePerPin?: number;
+    privacy?: string;
+  };
+  consolidatedChannels: any[];
+}
+
+export async function mergeEntities(payload: MergeEntitiesPayload) {
+  const supabase = createAdminClient();
+  const { type, primaryId, secondaryIds, mergedFields, consolidatedChannels } = payload;
+
+  if (!primaryId || !secondaryIds || secondaryIds.length === 0) {
+    throw new Error("Primary ID and at least one secondary ID are required for merge");
+  }
+
+  const table = type === "kol" ? "kols" : "communities";
+  const { data: primaryRecord, error: primaryErr } = await supabase
+    .from(table)
+    .select("*")
+    .eq("id", primaryId)
+    .single();
+
+  if (primaryErr || !primaryRecord) {
+    throw new Error(`Master ${type} record not found`);
+  }
+
+  const { data: secondaryRecords } = await supabase
+    .from(table)
+    .select("*")
+    .in("id", secondaryIds);
+
+  const secondaryNames = (secondaryRecords || []).map((r: any) => r.name).filter(Boolean);
+  const masterName = (mergedFields.name || primaryRecord.name).trim();
+
+  let updatePayload: Record<string, any> = {};
+
+  if (type === "kol") {
+    const totalFollowers = consolidatedChannels.reduce((sum, ch) => sum + (Number(ch.followers) || 0), 0);
+    const totalAvgViews = consolidatedChannels.reduce((sum, ch) => sum + (Number(ch.avgViews) || 0), 0);
+    let blendedEr = 0;
+    if (totalFollowers > 0) {
+      const weightedSum = consolidatedChannels.reduce(
+        (sum, ch) => sum + (Number(ch.er) || 0) * (Number(ch.followers) || 0),
+        0
+      );
+      blendedEr = +(weightedSum / totalFollowers).toFixed(1);
+    }
+
+    const primaryChannel = consolidatedChannels.find((ch) => ch.isPrimary) || consolidatedChannels[0];
+
+    updatePayload = {
+      name: masterName,
+      sports: mergedFields.sports !== undefined ? mergedFields.sports : primaryRecord.sports,
+      geography: mergedFields.geography || primaryRecord.geography,
+      tier: mergedFields.tier || primaryRecord.tier,
+      status: mergedFields.status || primaryRecord.status,
+      quotation: mergedFields.quotation !== undefined ? mergedFields.quotation : primaryRecord.quotation,
+      contact_info: mergedFields.info !== undefined ? mergedFields.info : primaryRecord.contact_info,
+      bio: mergedFields.bio !== undefined ? mergedFields.bio : primaryRecord.bio,
+      platform: consolidatedChannels.length > 1 ? "Omni-channel" : primaryChannel?.platform || primaryRecord.platform,
+      followers: totalFollowers > 0 ? totalFollowers : primaryRecord.followers,
+      avg_views: totalAvgViews > 0 ? totalAvgViews : primaryRecord.avg_views,
+      er: blendedEr > 0 ? blendedEr : primaryRecord.er,
+      profile_url: primaryChannel?.url || primaryRecord.profile_url,
+      updated_at: new Date().toISOString(),
+    };
+  } else {
+    // Community
+    const totalMembers = consolidatedChannels.reduce((sum, ch) => sum + (Number(ch.members) || 0), 0);
+    const primaryChannel = consolidatedChannels.find((ch) => ch.isPrimary) || consolidatedChannels[0];
+
+    updatePayload = {
+      name: masterName,
+      sports: mergedFields.sports !== undefined ? mergedFields.sports : primaryRecord.sports,
+      geography: mergedFields.geography || primaryRecord.geography,
+      status: mergedFields.status || primaryRecord.status,
+      admin_contact: mergedFields.adminContact !== undefined ? mergedFields.adminContact : primaryRecord.admin_contact,
+      price_per_pin: mergedFields.pricePerPin !== undefined ? mergedFields.pricePerPin : primaryRecord.price_per_pin,
+      privacy: mergedFields.privacy || primaryRecord.privacy,
+      platform: consolidatedChannels.length > 1 ? "Multi-channel" : primaryChannel?.platform || primaryRecord.platform,
+      members_count: totalMembers > 0 ? totalMembers : primaryRecord.members_count,
+      group_url: primaryChannel?.url || primaryRecord.group_url,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  // Update master record in Supabase
+  const { data: updatedMaster, error: updateErr } = await supabase
+    .from(table)
+    .update(updatePayload)
+    .eq("id", primaryId)
+    .select()
+    .single();
+
+  if (updateErr) throw updateErr;
+
+  // Persist consolidated channels to the dedicated channel store
+  await saveStoredEntityChannels(type, primaryId, consolidatedChannels, masterName);
+
+  // Re-link foreign references
+  if (type === "kol") {
+    try {
+      for (const secName of secondaryNames) {
+        await supabase
+          .from("scouted_posts")
+          .update({ author: masterName, kol_id: primaryId })
+          .ilike("author", secName);
+      }
+      await supabase
+        .from("scouted_posts")
+        .update({ kol_id: primaryId, author: masterName })
+        .in("kol_id", secondaryIds);
+    } catch (e) {
+      console.warn("Notice: Re-linking scouted_posts:", e);
+    }
+
+    try {
+      for (const secName of secondaryNames) {
+        await supabase
+          .from("kol_reports")
+          .update({ kol_name: masterName, kol_id: primaryId })
+          .ilike("kol_name", secName);
+      }
+      await supabase
+        .from("kol_reports")
+        .update({ kol_id: primaryId, kol_name: masterName })
+        .in("kol_id", secondaryIds);
+    } catch (e) {
+      console.warn("Notice: Re-linking kol_reports:", e);
+    }
+  }
+
+  // Re-link project participants
+  relinkParticipantsForMergedEntity(type, primaryId, masterName, secondaryIds);
+
+  // Delete secondary duplicates
+  for (const secId of secondaryIds) {
+    await supabase.from(table).delete().eq("id", secId);
+    await deleteStoredEntityChannels(type, secId);
+  }
+
+  // Log audit trail
+  try {
+    await supabase.from("audit_log").insert({
+      action: "entity_merge",
+      entity: type,
+      entity_id: primaryId,
+      detail: {
+        masterId: primaryId,
+        masterName,
+        secondaryIds,
+        secondaryNames,
+        channelsConsolidated: consolidatedChannels.length,
+      },
+    });
+  } catch {
+    // Non-blocking
+  }
+
+  return {
+    success: true,
+    message: `Successfully merged profiles into ${masterName}!`,
+    master: updatedMaster,
+  };
+}
+

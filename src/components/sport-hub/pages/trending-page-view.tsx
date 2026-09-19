@@ -417,12 +417,12 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                     <tr>
-                      <th className="py-3 px-2 w-10 text-center">#</th>
+                      <th className="py-2 px-2 text-center w-[40px]">#</th>
                       <th
                         onClick={() => toggleSort("title")}
-                        className="py-3 px-3 min-w-[240px] cursor-pointer hover:text-blue-600 transition select-none"
+                        className="py-2 px-3 min-w-[240px] cursor-pointer hover:text-blue-600 transition select-none"
                       >
                         <div className="flex items-center space-x-1">
                           <span>Post / Reel Title & Content Hook</span>
@@ -439,7 +439,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       </th>
                       <th
                         onClick={() => toggleSort("author")}
-                        className="py-3 px-3 min-w-[150px] cursor-pointer hover:text-blue-600 transition select-none"
+                        className="py-2 px-3 min-w-[150px] cursor-pointer hover:text-blue-600 transition select-none"
                       >
                         <div className="flex items-center space-x-1">
                           <span>Author / Creator</span>
@@ -454,10 +454,10 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                           )}
                         </div>
                       </th>
-                      <th className="py-3 px-2 text-center min-w-[95px]">Platform</th>
+                      <th className="py-2 px-2 text-center min-w-[95px]">Platform</th>
                       <th
                         onClick={() => toggleSort("views")}
-                        className="py-3 px-2 text-right min-w-[90px] cursor-pointer hover:text-blue-600 transition select-none"
+                        className="py-2 px-2 text-right min-w-[90px] cursor-pointer hover:text-blue-600 transition select-none"
                       >
                         <div className="flex items-center justify-end space-x-1">
                           <span>Views</span>
@@ -474,7 +474,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       </th>
                       <th
                         onClick={() => toggleSort("likes")}
-                        className="py-3 px-2 text-right min-w-[80px] cursor-pointer hover:text-blue-600 transition select-none"
+                        className="py-2 px-2 text-right min-w-[80px] cursor-pointer hover:text-blue-600 transition select-none"
                       >
                         <div className="flex items-center justify-end space-x-1">
                           <span>Likes</span>
@@ -491,7 +491,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       </th>
                       <th
                         onClick={() => toggleSort("comments")}
-                        className="py-3 px-2 text-right min-w-[80px] cursor-pointer hover:text-blue-600 transition select-none"
+                        className="py-2 px-2 text-right min-w-[80px] cursor-pointer hover:text-blue-600 transition select-none"
                       >
                         <div className="flex items-center justify-end space-x-1">
                           <span>Comments</span>
@@ -508,7 +508,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       </th>
                       <th
                         onClick={() => toggleSort("er")}
-                        className="py-3 px-2 text-center min-w-[70px] cursor-pointer hover:text-blue-600 transition select-none"
+                        className="py-2 px-2 text-center min-w-[70px] cursor-pointer hover:text-blue-600 transition select-none"
                       >
                         <div className="flex items-center justify-center space-x-1">
                           <span>ER %</span>
@@ -523,8 +523,8 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                           )}
                         </div>
                       </th>
-                      <th className="py-3 px-2 text-center min-w-[125px]">Viral Grade</th>
-                      <th className="py-3 px-3 text-center min-w-[85px]">Actions</th>
+                      <th className="py-2 px-2 text-center min-w-[125px]">Viral Grade</th>
+                      <th className="py-2 px-3 text-center min-w-[85px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -535,87 +535,83 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                       return (
                         <tr
                           key={p.id}
-                          className="hover:bg-blue-50/30 transition group"
+                          className="hover:bg-blue-50/30 transition group h-11"
                         >
-                          <td className="py-3 px-2 text-center font-medium text-slate-400">
+                          <td className="py-2 px-2 text-center font-medium text-slate-400">
                             {idx + 1}
                           </td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-start space-x-2.5">
-                              <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-blue-50 group-hover:text-blue-600 transition">
-                                <Film className="w-3.5 h-3.5" />
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <div className="flex items-center space-x-2 max-w-[280px]">
+                              <div className="w-6 h-6 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 group-hover:bg-blue-50 group-hover:text-blue-600 transition">
+                                <Film className="w-3 h-3" />
                               </div>
-                              <div className="space-y-0.5">
-                                <p className="font-bold text-slate-900 leading-snug line-clamp-2 group-hover:text-blue-600 transition">
-                                  {p.title}
-                                </p>
-                                {p.postUrl && p.postUrl !== "#" ? (
-                                  <a
-                                    href={p.postUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[10px] text-slate-400 hover:text-blue-600 inline-flex items-center space-x-1 transition"
-                                  >
-                                    <span>Watch source</span>
-                                    <ExternalLink className="w-2.5 h-2.5" />
-                                  </a>
-                                ) : null}
-                              </div>
+                              <span
+                                className="font-bold text-slate-900 group-hover:text-blue-600 transition truncate text-xs"
+                                title={p.title}
+                              >
+                                {p.title}
+                              </span>
+                              {p.postUrl && p.postUrl !== "#" ? (
+                                <a
+                                  href={p.postUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-slate-400 hover:text-blue-600 shrink-0 transition"
+                                  title="Watch original source"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              ) : null}
                             </div>
                           </td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center space-x-2">
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <div className="flex items-center space-x-2 max-w-[170px]">
                               <div
                                 onClick={() => handleOpen360ForAuthor(p.author, p.kolRecordIds)}
-                                className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0 cursor-pointer hover:scale-105 transition"
+                                className="w-6 h-6 rounded-md bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0 cursor-pointer hover:scale-105 transition"
                                 title="Open 360° Profile Dossier"
                               >
                                 {(p.author || "?").slice(0, 1).toUpperCase()}
                               </div>
-                              <div className="min-w-0">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpen360ForAuthor(p.author, p.kolRecordIds)}
-                                  className="font-bold text-slate-900 hover:text-blue-600 transition text-xs block text-left cursor-pointer hover:underline truncate max-w-[130px]"
-                                  title="Open 360° Profile Dossier"
-                                >
-                                  {p.author}
-                                </button>
-                                <span className="text-[10px] text-slate-400 block truncate">
-                                  Creator / Influencer
-                                </span>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpen360ForAuthor(p.author, p.kolRecordIds)}
+                                className="font-bold text-slate-900 hover:text-blue-600 transition text-xs block text-left cursor-pointer hover:underline truncate"
+                                title={`${p.author} (Open 360° Dossier)`}
+                              >
+                                {p.author}
+                              </button>
                             </div>
                           </td>
-                          <td className="py-3 px-2 text-center">
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 whitespace-nowrap">
+                          <td className="py-2 px-2 text-center whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                               {p.platform}
                             </span>
                           </td>
-                          <td className="py-3 px-2 text-right whitespace-nowrap">
-                            <span className="inline-flex items-center space-x-1 font-extrabold text-slate-900">
+                          <td className="py-2 px-2 text-right whitespace-nowrap">
+                            <span className="inline-flex items-center space-x-1 font-extrabold text-slate-900 text-xs">
                               <Eye className="w-3 h-3 text-slate-400" />
                               <span>{formatNumber(p.views || 0)}</span>
                             </span>
                           </td>
-                          <td className="py-3 px-2 text-right whitespace-nowrap">
-                            <span className="inline-flex items-center space-x-1 font-semibold text-slate-700">
+                          <td className="py-2 px-2 text-right whitespace-nowrap">
+                            <span className="inline-flex items-center space-x-1 font-semibold text-slate-700 text-xs">
                               <Heart className="w-3 h-3 text-rose-400" />
                               <span>{formatNumber(p.likes || 0)}</span>
                             </span>
                           </td>
-                          <td className="py-3 px-2 text-right whitespace-nowrap">
-                            <span className="inline-flex items-center space-x-1 font-semibold text-slate-700">
+                          <td className="py-2 px-2 text-right whitespace-nowrap">
+                            <span className="inline-flex items-center space-x-1 font-semibold text-slate-700 text-xs">
                               <MessageCircle className="w-3 h-3 text-slate-400" />
                               <span>{formatNumber(p.comments || 0)}</span>
                             </span>
                           </td>
-                          <td className="py-3 px-2 text-center whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <td className="py-2 px-2 text-center whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
                               {p.er}%
                             </span>
                           </td>
-                          <td className="py-3 px-2 text-center whitespace-nowrap">
+                          <td className="py-2 px-2 text-center whitespace-nowrap">
                             <span
                               className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center space-x-1 whitespace-nowrap ${
                                 isSuperViral
@@ -627,7 +623,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                               <span>{t(p.viralGrade)}</span>
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center space-x-1">
                               {/* 360 Dossier Action (Icon-only) */}
                               <button

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   X,
@@ -29,8 +29,24 @@ import {
   Video,
   BarChart3,
   Search,
+  Layers,
+  Lock,
+  Trash2,
+  SlidersHorizontal,
+  Save,
+  Link2,
+  Check,
 } from "lucide-react";
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
+import {
+  getKolAggregates,
+  getCommunityAggregates,
+  getPlatformConfig,
+  getKolChannels,
+} from "@/lib/sport-hub/kol-channels";
+import { PlatformIcon, getPlatformBadgeStyle } from "./platform-icon";
+import { KOLChannel, CommunityChannel } from "./types";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 
 // Shared avatar dictionary for Vietnamese sports KOLs
 export const KOL_AVATARS: Record<string, string> = {
@@ -76,6 +92,7 @@ export interface KOL {
   status: string;
   info: string;
   profileUrl: string;
+  channels?: KOLChannel[];
   pendingScoutDiff?: {
     scoutedAt: string;
     changes: Record<string, { current: any; scouted: any }>;
@@ -141,6 +158,8 @@ export interface Kol360ModalProps {
   onScoutKolPosts?: (kol: KOL) => void;
   onOpenGrowth?: (kol: KOL) => void;
   onOpenDiff?: (kol: KOL) => void;
+  onAddChannel?: (kol: KOL) => void;
+  onUpdateKol?: (updatedKol: any) => void;
 }
 
 export function Kol360Modal({
@@ -154,36 +173,335 @@ export function Kol360Modal({
   onScoutKolPosts,
   onOpenGrowth,
   onOpenDiff,
+  onAddChannel,
+  onUpdateKol,
 }: Kol360ModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [postSearch, setPostSearch] = useState("");
+  const [selectedChannelPlatform, setSelectedChannelPlatform] = useState<string>("all");
 
-  if (!isOpen || !kol) return null;
+  // Local synced copy of KOL for instant in-dossier updates
+  const [currentKol, setCurrentKol] = useState<KOL | null>(kol);
+  useEffect(() => {
+    if (kol) setCurrentKol(kol);
+  }, [kol]);
 
-  const avatar = getKolAvatar(kol.name);
+  // In-Dossier Channel & Specs Studio Editing State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editChannels, setEditChannels] = useState<KOLChannel[]>([]);
+  const [editSpecs, setEditSpecs] = useState<{
+    name: string;
+    tier: string;
+    geography: string;
+    status: string;
+    quotation: number;
+    sport: string[];
+    info: string;
+    bio: string;
+  }>({
+    name: "",
+    tier: "Micro (10k - 50k)",
+    geography: "Nationwide",
+    status: "Active Partnership",
+    quotation: 0,
+    sport: ["Pickleball"],
+    info: "",
+    bio: "",
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [scoutUrlInput, setScoutUrlInput] = useState("");
+  const [isInspecting, setIsInspecting] = useState(false);
+
+  const startEditing = () => {
+    if (!currentKol) return;
+    const chs = getKolChannels(currentKol);
+    setEditChannels(chs.map((c) => ({ ...c })));
+    setEditSpecs({
+      name: currentKol.name || "",
+      tier: currentKol.tier || "Micro (10k - 50k)",
+      geography: currentKol.geography || "Nationwide",
+      status: currentKol.status || "Active Partnership",
+      quotation: currentKol.quotation || 0,
+      sport:
+        currentKol.sport && currentKol.sport.length > 0
+          ? [...currentKol.sport]
+          : ["Pickleball"],
+      info: currentKol.info || "",
+      bio: (currentKol as any).bio || "",
+    });
+    setScoutUrlInput("");
+    setIsEditing(true);
+  };
+
+  const liveAggregates = useMemo(() => {
+    const totalFollowers = editChannels.reduce(
+      (sum, ch) => sum + (Number(ch.followers) || 0),
+      0
+    );
+    const totalAvgViews = editChannels.reduce(
+      (sum, ch) => sum + (Number(ch.avgViews) || 0),
+      0
+    );
+    let blendedEr = 0;
+    if (totalFollowers > 0) {
+      const weightedSum = editChannels.reduce(
+        (sum, ch) => sum + (Number(ch.er) || 0) * (Number(ch.followers) || 0),
+        0
+      );
+      blendedEr = +(weightedSum / totalFollowers).toFixed(1);
+    }
+    return {
+      totalFollowers,
+      totalAvgViews,
+      blendedEr,
+      channelCount: editChannels.length,
+    };
+  }, [editChannels]);
+
+  const handleAddChannelRow = () => {
+    const newChan: KOLChannel = {
+      platform: "TikTok",
+      handle: "",
+      url: "",
+      followers: 0,
+      avgViews: 0,
+      er: 0,
+      isPrimary: editChannels.length === 0,
+    };
+    setEditChannels((prev) => [...prev, newChan]);
+  };
+
+  const handleDeleteChannelRow = (index: number) => {
+    if (editChannels.length <= 1) {
+      toast.error("At least one social channel must remain for this creator.");
+      return;
+    }
+    setEditChannels((prev) => {
+      const wasPrimary = prev[index]?.isPrimary;
+      const next = prev.filter((_, idx) => idx !== index);
+      if (wasPrimary && next.length > 0) {
+        next[0].isPrimary = true;
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateChannelField = (
+    index: number,
+    field: keyof KOLChannel,
+    value: any
+  ) => {
+    setEditChannels((prev) =>
+      prev.map((ch, idx) => {
+        if (idx !== index) return ch;
+        return {
+          ...ch,
+          [field]:
+            field === "followers" || field === "avgViews" || field === "er"
+              ? value === ""
+                ? ""
+                : Number(value)
+              : value,
+        };
+      })
+    );
+  };
+
+  const handleSetPrimaryChannel = (index: number) => {
+    setEditChannels((prev) =>
+      prev.map((ch, idx) => ({
+        ...ch,
+        isPrimary: idx === index,
+      }))
+    );
+  };
+
+  const handleAutoInspectUrl = async () => {
+    const trimmed = scoutUrlInput.trim();
+    if (!trimmed) {
+      toast.error("Please enter a valid social profile URL to inspect");
+      return;
+    }
+
+    setIsInspecting(true);
+    try {
+      const res = await fetch("/api/sport-hub/scout/inspect-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed, type: "kol" }),
+      });
+      const data = await res.json();
+      if (data.success && data.scouted) {
+        const s = data.scouted;
+        const newCh: KOLChannel = {
+          platform: s.platform || "TikTok",
+          handle: s.handle || s.name || "",
+          url: trimmed,
+          followers: Number(s.followers) || 0,
+          avgViews: Number(s.avgViews) || 0,
+          er: Number(s.er) || 0,
+          isPrimary: editChannels.length === 0,
+        };
+
+        const exists = editChannels.findIndex(
+          (c) => c.platform.toLowerCase() === newCh.platform.toLowerCase()
+        );
+        if (exists >= 0) {
+          setEditChannels((prev) => {
+            const next = [...prev];
+            next[exists] = { ...next[exists], ...newCh };
+            return next;
+          });
+          toast.success(`Updated existing ${newCh.platform} channel from URL!`);
+        } else {
+          setEditChannels((prev) => [...prev, newCh]);
+          toast.success(`Auto-detected and added ${newCh.platform} channel!`);
+        }
+        setScoutUrlInput("");
+      } else {
+        toast.error(
+          data.error || "Unable to inspect URL automatically. Adding blank row."
+        );
+        setEditChannels((prev) => [
+          ...prev,
+          {
+            platform: "TikTok",
+            handle: "",
+            url: trimmed,
+            followers: 0,
+            avgViews: 0,
+            er: 0,
+            isPrimary: prev.length === 0,
+          },
+        ]);
+        setScoutUrlInput("");
+      }
+    } catch {
+      toast.error("Network error during inspection. Added URL to a new channel row.");
+      setEditChannels((prev) => [
+        ...prev,
+        {
+          platform: "TikTok",
+          handle: "",
+          url: trimmed,
+          followers: 0,
+          avgViews: 0,
+          er: 0,
+          isPrimary: prev.length === 0,
+        },
+      ]);
+      setScoutUrlInput("");
+    } finally {
+      setIsInspecting(false);
+    }
+  };
+
+  const handleSaveAll = async () => {
+    if (!currentKol) return;
+    if (!editSpecs.name.trim()) {
+      toast.error("Creator name cannot be empty");
+      return;
+    }
+    if (editChannels.length === 0) {
+      toast.error("At least one channel is required");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/sport-hub/channels", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entityType: "kol",
+          entityId: currentKol.id,
+          entityName: currentKol.name,
+          channels: editChannels,
+          specs: {
+            name: editSpecs.name.trim(),
+            tier: editSpecs.tier,
+            geography: editSpecs.geography,
+            status: editSpecs.status,
+            quotation: editSpecs.quotation,
+            sport: editSpecs.sport,
+            info: editSpecs.info,
+            bio: editSpecs.bio,
+          },
+        }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        toast.success(`Updated channels and specs for ${editSpecs.name.trim()}!`);
+        const primaryChan =
+          editChannels.find((c) => c.isPrimary) || editChannels[0];
+        const updatedKolData: KOL = {
+          ...currentKol,
+          name: editSpecs.name.trim(),
+          tier: editSpecs.tier,
+          geography: editSpecs.geography,
+          status: editSpecs.status,
+          quotation: Number(editSpecs.quotation) || 0,
+          sport: editSpecs.sport,
+          info: editSpecs.info,
+          channels: editChannels,
+          followers: liveAggregates.totalFollowers,
+          avgViews: liveAggregates.totalAvgViews,
+          er: liveAggregates.blendedEr,
+          platform:
+            editChannels.length > 1
+              ? "Omni-channel"
+              : primaryChan?.platform || currentKol.platform,
+          profileUrl: primaryChan?.url || currentKol.profileUrl,
+        };
+
+        setCurrentKol(updatedKolData);
+        onUpdateKol?.(updatedKolData);
+        setIsEditing(false);
+      } else {
+        toast.error(result.error || "Failed to update channels");
+      }
+    } catch {
+      toast.error("Network error while saving changes");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!isOpen || !currentKol) return null;
+
+  const avatar = getKolAvatar(currentKol.name);
+  const aggregates = useMemo(() => getKolAggregates(currentKol), [currentKol]);
 
   // Filter viral posts scouted for this KOL
   const kolPosts = useMemo(() => {
     return posts.filter((p) => {
-      const matchId = p.kolRecordIds && p.kolRecordIds.includes(kol.id);
+      const matchId = p.kolRecordIds && p.kolRecordIds.includes(currentKol.id);
       const matchAuthor =
         p.author &&
-        (p.author.toLowerCase().includes(kol.name.toLowerCase()) ||
-          kol.name.toLowerCase().includes(p.author.toLowerCase()));
+        (p.author.toLowerCase().includes(currentKol.name.toLowerCase()) ||
+          currentKol.name.toLowerCase().includes(p.author.toLowerCase()));
       return matchId || matchAuthor;
     });
-  }, [posts, kol]);
+  }, [posts, currentKol]);
 
   // Filtered posts by search keyword inside modal table
   const displayedPosts = useMemo(() => {
-    if (!postSearch.trim()) return kolPosts;
+    let list = kolPosts;
+    if (selectedChannelPlatform !== "all") {
+      list = list.filter((p) =>
+        p.platform.toLowerCase().includes(selectedChannelPlatform.toLowerCase())
+      );
+    }
+    if (!postSearch.trim()) return list;
     const q = postSearch.trim().toLowerCase();
-    return kolPosts.filter(
+    return list.filter(
       (p) =>
         p.title.toLowerCase().includes(q) ||
         p.platform.toLowerCase().includes(q) ||
         (p.viralGrade && p.viralGrade.toLowerCase().includes(q))
     );
-  }, [kolPosts, postSearch]);
+  }, [kolPosts, selectedChannelPlatform, postSearch]);
 
   // Aggregated Media Metrics for this KOL
   const totalPostViews = useMemo(
@@ -207,14 +525,14 @@ export function Kol360Modal({
   // Filter evaluation reports for this KOL
   const kolReports = useMemo(() => {
     return reports.filter((r) => {
-      const matchId = r.kolRecordIds && r.kolRecordIds.includes(kol.id);
+      const matchId = r.kolRecordIds && r.kolRecordIds.includes(currentKol.id);
       const matchName =
         r.kolName &&
-        (r.kolName.toLowerCase().includes(kol.name.toLowerCase()) ||
-          kol.name.toLowerCase().includes(r.kolName.toLowerCase()));
+        (r.kolName.toLowerCase().includes(currentKol.name.toLowerCase()) ||
+          currentKol.name.toLowerCase().includes(r.kolName.toLowerCase()));
       return matchId || matchName;
     });
-  }, [reports, kol]);
+  }, [reports, currentKol]);
 
   // Calculate average evaluation score
   const avgScore =
@@ -240,12 +558,12 @@ export function Kol360Modal({
                 {avatar ? (
                   <img
                     src={avatar}
-                    alt={kol.name}
+                    alt={currentKol.name}
                     className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-400/50 shadow-md"
                   />
                 ) : (
                   <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-2xl border-2 border-white/20 shadow-md">
-                    {kol.name.slice(0, 1).toUpperCase()}
+                    {currentKol.name.slice(0, 1).toUpperCase()}
                   </div>
                 )}
                 <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-slate-900 rounded-full" />
@@ -257,20 +575,23 @@ export function Kol360Modal({
                     360° Panoramic Dossier
                   </span>
                   <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-400/30">
-                    {t(kol.status)}
+                    {t(currentKol.status)}
                   </span>
+                  {isEditing && (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 font-bold border border-purple-400/40 animate-pulse">
+                      Studio Edit Mode
+                    </span>
+                  )}
                 </div>
                 <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white mt-1">
-                  {kol.name}
+                  {currentKol.name}
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300 mt-1">
-                  <span className="font-semibold text-indigo-300">{kol.tier}</span>
-                  <span>•</span>
-                  <span>{kol.platform}</span>
+                  <span className="font-semibold text-indigo-300">{currentKol.tier}</span>
                   <span>•</span>
                   <span className="flex items-center space-x-1">
                     <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{t(kol.geography)}</span>
+                    <span>{t(currentKol.geography)}</span>
                   </span>
                   <span>•</span>
                   <span className="text-amber-300 font-bold flex items-center space-x-1">
@@ -278,17 +599,44 @@ export function Kol360Modal({
                     <span>{avgScore}/5.0 Score ({kolReports.length} reviews)</span>
                   </span>
                 </div>
+
+                {/* Connected Channel Handles / Chips */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[11px] font-semibold text-slate-400 mr-1">Channels:</span>
+                  {aggregates.channels.map((ch, idx) => (
+                    <a
+                      key={idx}
+                      href={ch.url || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/15 transition group shadow-2xs"
+                      title={`Open ${ch.platform} channel (${formatNumber(ch.followers)} followers)`}
+                    >
+                      <PlatformIcon platform={ch.platform} size="xs" />
+                      <span>{ch.platform}</span>
+                      <span className="text-[10px] text-slate-300 font-mono">
+                        ({formatNumber(ch.followers)})
+                      </span>
+                      {ch.url && ch.url !== "#" && (
+                        <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
+                      )}
+                    </a>
+                  ))}
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-200 text-[10px] font-bold border border-indigo-400/30 ml-0.5">
+                    {aggregates.channelCount} {aggregates.channelCount === 1 ? "Channel" : "Channels"}
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* Quick Action Buttons in Modal Header */}
             <div className="flex items-center space-x-2">
-              {kol.pendingScoutDiff &&
-                Object.keys(kol.pendingScoutDiff.changes || {}).length > 0 &&
+              {currentKol.pendingScoutDiff &&
+                Object.keys(currentKol.pendingScoutDiff.changes || {}).length > 0 &&
                 onOpenDiff && (
                   <button
                     type="button"
-                    onClick={() => onOpenDiff(kol)}
+                    onClick={() => onOpenDiff(currentKol)}
                     className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition flex items-center space-x-1.5 shadow-md active:scale-95 cursor-pointer animate-pulse"
                     title="Review Scout Data Changes (Diff)"
                   >
@@ -300,7 +648,7 @@ export function Kol360Modal({
               {onScoutKolPosts && (
                 <button
                   type="button"
-                  onClick={() => onScoutKolPosts(kol)}
+                  onClick={() => onScoutKolPosts(currentKol)}
                   className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-md active:scale-95 cursor-pointer border border-purple-400/30"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
@@ -311,7 +659,7 @@ export function Kol360Modal({
               {onOpenGrowth && (
                 <button
                   type="button"
-                  onClick={() => onOpenGrowth(kol)}
+                  onClick={() => onOpenGrowth(currentKol)}
                   className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition flex items-center space-x-1.5 border border-white/10 cursor-pointer active:scale-95"
                   title="View Historical Metric Snapshots"
                 >
@@ -322,7 +670,7 @@ export function Kol360Modal({
 
               {onOpenReport && (
                 <button
-                  onClick={() => onOpenReport(kol)}
+                  onClick={() => onOpenReport(currentKol)}
                   className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition flex items-center space-x-1.5 shadow-md active:scale-95 cursor-pointer"
                 >
                   <Star className="w-3.5 h-3.5 fill-slate-950" />
@@ -330,27 +678,20 @@ export function Kol360Modal({
                 </button>
               )}
 
-              {onEditKol && (
-                <button
-                  onClick={() => onEditKol(kol)}
-                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition flex items-center space-x-1.5 border border-white/10 cursor-pointer"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit</span>
-                </button>
-              )}
-
-              {kol.profileUrl && kol.profileUrl !== "#" && (
-                <a
-                  href={kol.profileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm"
-                >
-                  <span>Channel</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
+              {/* In-Dossier Channels & Specs Studio Toggle */}
+              <button
+                type="button"
+                onClick={startEditing}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-md active:scale-95 cursor-pointer ${
+                  isEditing
+                    ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white ring-2 ring-purple-400"
+                    : "bg-white/10 hover:bg-white/20 text-white border border-white/10"
+                }`}
+                title="Edit Channel Links, Audience Numbers & Commercial Specs"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-300" />
+                <span>{isEditing ? "Editing Studio" : "Edit Channels & Specs"}</span>
+              </button>
 
               <button
                 onClick={onClose}
@@ -385,6 +726,768 @@ export function Kol360Modal({
 
         {/* ─── MODAL SCROLLABLE BODY ─── */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
+          {isEditing ? (
+            /* ─── IN-DOSSIER CHANNELS & SPECS EDITING STUDIO ─── */
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Editor Header Banner */}
+              <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 rounded-2xl p-5 text-white shadow-md flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-white border border-white/20 shadow-inner">
+                    <SlidersHorizontal className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-indigo-100">
+                        In-Dossier Studio Editor
+                      </span>
+                      <span className="text-xs text-indigo-200 font-medium">
+                        Live metric recalculation & direct sync to Supabase
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-black text-white mt-0.5">
+                      Manage Channels & Commercial Profile for {currentKol.name}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={handleSaveAll}
+                    className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition flex items-center space-x-1.5 shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSaving ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Changes</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Cross-Platform Impact Summary Strip */}
+              <div className="bg-slate-900 rounded-2xl p-4 text-white border border-indigo-900/50 flex flex-wrap items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                      Live Recomputed Portfolio
+                    </span>
+                    <span className="text-xs font-extrabold text-white">
+                      {liveAggregates.channelCount} {liveAggregates.channelCount === 1 ? "Channel" : "Connected Channels"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-4 bg-white/10 px-4 py-2 rounded-xl border border-white/10 text-xs">
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">Total Combined Reach</span>
+                    <span className="font-extrabold text-white text-sm">{formatNumber(liveAggregates.totalFollowers)}</span>
+                  </div>
+                  <div className="w-px h-6 bg-white/10" />
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">Combined Avg Views</span>
+                    <span className="font-extrabold text-indigo-200 text-sm">
+                      {liveAggregates.totalAvgViews > 0 ? formatNumber(liveAggregates.totalAvgViews) : "—"}
+                    </span>
+                  </div>
+                  <div className="w-px h-6 bg-white/10" />
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">Blended ER</span>
+                    <span className="font-extrabold text-emerald-300 text-sm">
+                      {liveAggregates.blendedEr > 0 ? `${liveAggregates.blendedEr}%` : "—"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 1: Connected Social Channels (Table / Cards) */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
+                      <span>Connected Social Media Channels</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 normal-case">
+                        {editChannels.length} platforms
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Edit channel links, handles, follower counts, avg views, and engagement rates for each platform.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddChannelRow}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-xs cursor-pointer active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Channel Row</span>
+                  </button>
+                </div>
+
+                {/* Auto-Scout Channel Link Helper */}
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-indigo-100 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center space-x-2">
+                    <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                    <span className="text-xs font-bold text-slate-800">Quick Auto-Fill from Channel Link:</span>
+                  </div>
+                  <div className="flex items-center space-x-2 flex-1 max-w-xl">
+                    <div className="relative flex-1">
+                      <Link2 className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                      <input
+                        type="url"
+                        value={scoutUrlInput}
+                        onChange={(e) => setScoutUrlInput(e.target.value)}
+                        placeholder="Paste TikTok, YouTube, Facebook, or Instagram profile link..."
+                        className="w-full pl-8 pr-3 py-1.5 bg-white rounded-lg border border-indigo-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isInspecting}
+                      onClick={handleAutoInspectUrl}
+                      className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-xs transition flex items-center space-x-1 shadow-xs disabled:opacity-50 cursor-pointer shrink-0"
+                    >
+                      {isInspecting ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Inspecting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3 text-amber-300" />
+                          <span>Inspect Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Channel Rows */}
+                <div className="space-y-3">
+                  {editChannels.map((ch, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-4 rounded-xl border transition space-y-3 ${
+                        ch.isPrimary
+                          ? "bg-indigo-50/40 border-indigo-300 shadow-xs"
+                          : "bg-slate-50/70 border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center space-x-2">
+                          <PlatformIcon platform={ch.platform} size="sm" />
+                          <span className="text-xs font-extrabold text-slate-900">
+                            Channel #{idx + 1}: {ch.platform}
+                          </span>
+                          {ch.isPrimary ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center space-x-1">
+                              <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                              <span>Primary Flagship</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSetPrimaryChannel(idx)}
+                              className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white text-slate-600 hover:bg-amber-50 hover:text-amber-800 border border-slate-200 hover:border-amber-300 transition cursor-pointer"
+                            >
+                              Set as Primary
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          {ch.url && ch.url !== "#" && (
+                            <a
+                              href={ch.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 rounded-lg bg-white hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 border border-slate-200 transition"
+                              title="Open link in new tab"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteChannelRow(idx)}
+                            className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition cursor-pointer"
+                            title="Delete this channel"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+                        {/* Platform Selector */}
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                            Platform
+                          </label>
+                          <select
+                            value={ch.platform}
+                            onChange={(e) => handleUpdateChannelField(idx, "platform", e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-slate-300 text-slate-800 font-medium focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="TikTok">TikTok</option>
+                            <option value="YouTube">YouTube</option>
+                            <option value="Facebook">Facebook (Profile/Page)</option>
+                            <option value="Facebook Group">Facebook Group</option>
+                            <option value="Instagram">Instagram</option>
+                            <option value="Threads">Threads</option>
+                            <option value="Strava Club">Strava Club</option>
+                            <option value="Zalo Group">Zalo Group</option>
+                            <option value="Telegram">Telegram</option>
+                            <option value="Website">Website / Blog</option>
+                          </select>
+                        </div>
+
+                        {/* Handle */}
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                            Handle / Username
+                          </label>
+                          <input
+                            type="text"
+                            value={ch.handle}
+                            onChange={(e) => handleUpdateChannelField(idx, "handle", e.target.value)}
+                            placeholder="@handle"
+                            className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-slate-300 text-slate-800 font-mono text-xs focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        {/* Channel URL */}
+                        <div className="lg:col-span-2">
+                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                            Channel URL Link
+                          </label>
+                          <input
+                            type="url"
+                            value={ch.url}
+                            onChange={(e) => handleUpdateChannelField(idx, "url", e.target.value)}
+                            placeholder="https://..."
+                            className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-slate-300 text-slate-800 text-xs focus:ring-2 focus:ring-indigo-500 font-mono truncate"
+                          />
+                        </div>
+
+                        {/* Followers */}
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                            Followers
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={ch.followers}
+                            onChange={(e) => handleUpdateChannelField(idx, "followers", e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-slate-300 text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        {/* Avg Views & ER Row */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                              Avg Views
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={ch.avgViews}
+                              onChange={(e) => handleUpdateChannelField(idx, "avgViews", e.target.value)}
+                              className="w-full px-2 py-1.5 bg-white rounded-lg border border-slate-300 text-slate-800 font-semibold focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                              ER (%)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min={0}
+                              max={100}
+                              value={ch.er}
+                              onChange={(e) => handleUpdateChannelField(idx, "er", e.target.value)}
+                              className="w-full px-2 py-1.5 bg-white rounded-lg border border-slate-300 text-emerald-700 font-bold focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 2: Creator Specs & Commercial Details */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                <div className="pb-3 border-b border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
+                    <Briefcase className="w-4 h-4 text-indigo-600" />
+                    <span>Creator Specs & Commercial Profile</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    General categorization, market coverage, and commercial booking rate card.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                  {/* Creator Name */}
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      KOL / Creator Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editSpecs.name}
+                      onChange={(e) => setEditSpecs({ ...editSpecs, name: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 rounded-lg border border-slate-300 font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Tier */}
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      Creator Tier
+                    </label>
+                    <select
+                      value={editSpecs.tier}
+                      onChange={(e) => setEditSpecs({ ...editSpecs, tier: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 rounded-lg border border-slate-300 text-slate-900 font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Mega (> 200k)">Mega (&gt; 200k)</option>
+                      <option value="Macro (100k - 200k)">Macro (100k - 200k)</option>
+                      <option value="Mid-tier (50k - 100k)">Mid-tier (50k - 100k)</option>
+                      <option value="Micro (10k - 50k)">Micro (10k - 50k)</option>
+                      <option value="Nano (< 10k)">Nano (&lt; 10k)</option>
+                    </select>
+                  </div>
+
+                  {/* Geography */}
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      Geographic Region
+                    </label>
+                    <select
+                      value={editSpecs.geography}
+                      onChange={(e) => setEditSpecs({ ...editSpecs, geography: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 rounded-lg border border-slate-300 text-slate-900 font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Nationwide">Nationwide (Toàn quốc)</option>
+                      <option value="Hanoi">Hanoi (Hà Nội)</option>
+                      <option value="Ho Chi Minh City">Ho Chi Minh City (TP.HCM)</option>
+                      <option value="Da Nang">Da Nang (Đà Nẵng)</option>
+                      <option value="Northern Vietnam">Northern Vietnam (Miền Bắc)</option>
+                      <option value="Southern Vietnam">Southern Vietnam (Miền Nam)</option>
+                    </select>
+                  </div>
+
+                  {/* Status */}
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      Partnership Status
+                    </label>
+                    <select
+                      value={editSpecs.status}
+                      onChange={(e) => setEditSpecs({ ...editSpecs, status: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 rounded-lg border border-slate-300 text-slate-900 font-semibold focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Active Partnership">Active Partnership</option>
+                      <option value="Potential">Potential</option>
+                      <option value="New Scout (Unverified)">New Scout (Unverified)</option>
+                      <option value="In Negotiation">In Negotiation</option>
+                      <option value="Paused">Paused</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Commercial Rate Card */}
+                <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider flex items-center space-x-1.5">
+                      <DollarSign className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Commercial Booking Fee (Quotation)</span>
+                    </span>
+                    {isAdmin ? (
+                      <span className="text-[10px] font-bold bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded">
+                        Administrator Editable
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded flex items-center space-x-1">
+                        <Lock className="w-3 h-3" />
+                        <span>Admin Locked</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {isAdmin ? (
+                    <div className="space-y-1">
+                      <div className="relative max-w-sm">
+                        <input
+                          type="number"
+                          min={0}
+                          step={500000}
+                          value={editSpecs.quotation}
+                          onChange={(e) =>
+                            setEditSpecs({
+                              ...editSpecs,
+                              quotation: Number(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-3 py-2 bg-white rounded-lg border border-amber-300 text-amber-950 font-black text-base focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <span className="text-[10px] text-amber-800 block">
+                        Current display value: {formatCurrency(editSpecs.quotation)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-bold text-amber-950">
+                      {formatCurrency(editSpecs.quotation)} (Restricted to Administrators)
+                    </div>
+                  )}
+                </div>
+
+                {/* Sports Disciplines */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1.5">
+                    Sports Disciplines (Click to toggle)
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "Football",
+                      "Pickleball",
+                      "Running",
+                      "Badminton",
+                      "Cycling",
+                      "Basketball",
+                      "Tennis",
+                      "Fitness",
+                    ].map((sportName) => {
+                      const isSelected = editSpecs.sport.includes(sportName);
+                      return (
+                        <button
+                          key={sportName}
+                          type="button"
+                          onClick={() => {
+                            setEditSpecs({
+                              ...editSpecs,
+                              sport: isSelected
+                                ? editSpecs.sport.filter((s: string) => s !== sportName)
+                                : [...editSpecs.sport, sportName],
+                            });
+                          }}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                            isSelected
+                              ? "bg-indigo-600 text-white shadow-xs"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          <span>🏅 {sportName}</span>
+                          {isSelected && <Check className="w-3 h-3 text-white" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Bio / Description */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                    Creator Bio & Notes
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editSpecs.info}
+                    onChange={(e) => setEditSpecs({ ...editSpecs, info: e.target.value })}
+                    placeholder="Brief intro, playing style, campaign highlights, agency contact..."
+                    className="w-full px-3 py-2 bg-slate-50 rounded-lg border border-slate-300 text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Bottom Sticky Action Controls */}
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-200 shadow-xl flex items-center justify-between gap-4">
+                <div className="text-xs text-slate-500">
+                  Saving updates all connected channels, recalculates audience aggregates, and syncs to Supabase.
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={handleSaveAll}
+                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSaving ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Changes</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* ─── OMNI-CHANNEL FOOTPRINT & CHANNEL BREAKDOWN MATRIX ─── */}
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-5 text-white shadow-md border border-indigo-900/50 space-y-4">
+            {/* Section Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-white flex items-center space-x-2">
+                    <span>Omni-Channel Footprint & Channel Matrix</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 normal-case">
+                      {aggregates.channelCount} {aggregates.channelCount === 1 ? "channel" : "connected channels"}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Individual platform metrics vs. cross-channel aggregated totals
+                  </p>
+                </div>
+              </div>
+
+              {/* Aggregated Cross-Platform Totals Pill */}
+              <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm px-3.5 py-1.5 rounded-xl border border-white/10 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[10px] block">Total Reach</span>
+                  <span className="font-extrabold text-white">{formatNumber(aggregates.totalFollowers)}</span>
+                </div>
+                <div className="w-px h-6 bg-white/10" />
+                <div>
+                  <span className="text-slate-400 text-[10px] block">Combined Views</span>
+                  <span className="font-extrabold text-indigo-200">
+                    {aggregates.totalAvgViews > 0 ? formatNumber(aggregates.totalAvgViews) : "—"}
+                  </span>
+                </div>
+                <div className="w-px h-6 bg-white/10" />
+                <div>
+                  <span className="text-slate-400 text-[10px] block">Blended ER</span>
+                  <span className="font-extrabold text-emerald-300">
+                    {aggregates.blendedEr > 0 ? `${aggregates.blendedEr}%` : "—"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm active:scale-95 cursor-pointer"
+                  title="Manage and edit connected channels & metrics"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Edit Channels & Metrics</span>
+                </button>
+                {onAddChannel && (
+                  <button
+                    type="button"
+                    onClick={() => onAddChannel(currentKol)}
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition flex items-center space-x-1 cursor-pointer"
+                    title="Quick attach channel"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Quick Add</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Audience Share Stacked Distribution Bar */}
+            {aggregates.channels.length > 1 && (
+              <div className="space-y-2 bg-white/5 p-3.5 rounded-xl border border-white/10">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-300 text-[11px]">
+                    Cross-Platform Audience Share Distribution:
+                  </span>
+                  <span className="text-slate-400 text-[10px]">
+                    100% = {formatNumber(aggregates.totalFollowers)} Combined Audience
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
+                  {aggregates.channels.map((ch, idx) => {
+                    const cfg = getPlatformConfig(ch.platform);
+                    const pct = aggregates.totalFollowers > 0
+                      ? Math.round((ch.followers / aggregates.totalFollowers) * 100)
+                      : 0;
+                    return (
+                      <div
+                        key={idx}
+                        style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: cfg.brandColor }}
+                        className="h-full transition-all relative group"
+                        title={`${ch.platform}: ${formatNumber(ch.followers)} (${pct}%)`}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Legend items */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-xs">
+                  {aggregates.channels.map((ch, idx) => {
+                    const cfg = getPlatformConfig(ch.platform);
+                    const pct = aggregates.totalFollowers > 0
+                      ? ((ch.followers / aggregates.totalFollowers) * 100).toFixed(1)
+                      : "0";
+                    return (
+                      <div key={idx} className="flex items-center space-x-1.5">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: cfg.brandColor }}
+                        />
+                        <span className="font-medium text-slate-300">{ch.platform}:</span>
+                        <span className="font-bold text-white">{formatNumber(ch.followers)}</span>
+                        <span className="text-[10px] text-slate-400">({pct}%)</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Individual Channel Comparison Cards Grid */}
+            <div
+              className={`grid grid-cols-1 sm:grid-cols-2 ${
+                aggregates.channels.length >= 4
+                  ? "lg:grid-cols-4"
+                  : aggregates.channels.length === 3
+                  ? "lg:grid-cols-3"
+                  : "lg:grid-cols-2"
+              } gap-3`}
+            >
+              {aggregates.channels.map((ch, idx) => {
+                const sharePct = aggregates.totalFollowers > 0
+                  ? ((ch.followers / aggregates.totalFollowers) * 100).toFixed(1)
+                  : "0";
+                const isSelected =
+                  selectedChannelPlatform.toLowerCase() === ch.platform.toLowerCase();
+
+                return (
+                  <div
+                    key={idx}
+                    className={`bg-white rounded-xl p-3.5 text-slate-900 border transition shadow-sm flex flex-col justify-between ${
+                      isSelected
+                        ? "ring-2 ring-purple-500 border-purple-500"
+                        : "border-slate-200 hover:border-indigo-300"
+                    }`}
+                  >
+                    <div>
+                      {/* Card Header */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <PlatformIcon platform={ch.platform} size="sm" />
+                          <span className="font-black text-sm text-slate-900">{ch.platform}</span>
+                          {ch.isPrimary && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">
+                              Primary
+                            </span>
+                          )}
+                        </div>
+                        {ch.url && ch.url !== "#" && (
+                          <a
+                            href={ch.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-indigo-600 transition"
+                            title={`Visit ${ch.platform} Profile`}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Handle */}
+                      <p className="text-xs text-slate-500 truncate font-mono mt-1.5" title={ch.handle}>
+                        {ch.handle.startsWith("@") ? ch.handle : `@${ch.handle}`}
+                      </p>
+
+                      {/* Metric Triplet */}
+                      <div className="mt-3 space-y-2 pt-2.5 border-t border-slate-100 text-xs">
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[11px] text-slate-400 font-medium">Followers</span>
+                          <div className="text-right">
+                            <span className="text-sm font-black text-slate-900">
+                              {formatNumber(ch.followers)}
+                            </span>
+                            <span className="text-[10px] text-indigo-600 font-semibold block">
+                              {sharePct}% share
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[11px] text-slate-400 font-medium">Avg Views</span>
+                          <span className="text-xs font-bold text-slate-800">
+                            {ch.avgViews > 0 ? formatNumber(ch.avgViews) : "—"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-[11px] text-slate-400 font-medium">Audience ER</span>
+                          <span className="text-xs font-black text-emerald-600">
+                            {ch.er > 0 ? `${ch.er}%` : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Filter Posts Trigger Button */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedChannelPlatform(
+                          isSelected ? "all" : ch.platform.toLowerCase()
+                        )
+                      }
+                      className={`mt-3 w-full py-1.5 px-2 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1 cursor-pointer ${
+                        isSelected
+                          ? "bg-purple-600 text-white shadow-2xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-purple-50 hover:text-purple-700"
+                      }`}
+                    >
+                      <span>{isSelected ? `Showing ${ch.platform} Posts` : `View ${ch.platform} Posts`}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* UPPER SECTION: 2-COLUMN GRID (SPECS & RATE CARD + PM REVIEWS) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             {/* PANEL 1: CREATOR SPECS & COMMERCIAL RATE CARD */}
@@ -395,7 +1498,7 @@ export function Kol360Modal({
                   <span>CREATOR SPECS & COMMERCIAL RATE CARD</span>
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
-                  {kol.platform}
+                  {currentKol.tier}
                 </span>
               </div>
 
@@ -405,7 +1508,7 @@ export function Kol360Modal({
                   Sports Disciplines:
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {kol.sport.map((s, i) => (
+                  {currentKol.sport.map((s, i) => (
                     <span
                       key={i}
                       className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-100"
@@ -416,31 +1519,52 @@ export function Kol360Modal({
                 </div>
               </div>
 
-              {/* 4-Box Metrics Grid */}
+              {/* 4-Box Creator Specs & Classification Grid (Non-redundant) */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-xs">
-                  <span className="text-[10px] text-slate-400 block font-medium">Followers</span>
-                  <span className="font-extrabold text-sm text-slate-900 mt-0.5 block">
-                    {formatNumber(kol.followers)}
+                  <span className="text-[10px] text-slate-400 block font-medium">
+                    Creator Tier
                   </span>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-xs">
-                  <span className="text-[10px] text-slate-400 block font-medium">Avg Views</span>
-                  <span className="font-extrabold text-sm text-slate-900 mt-0.5 block">
-                    {kol.avgViews > 0 ? formatNumber(kol.avgViews) : "—"}
-                  </span>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-xs">
-                  <span className="text-[10px] text-slate-400 block font-medium">Audience ER</span>
-                  <span className="font-extrabold text-sm text-emerald-600 mt-0.5 block">
-                    {kol.er > 0 ? `${kol.er}%` : "—"}
-                  </span>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-xs">
-                  <span className="text-[10px] text-slate-400 block font-medium">Tier</span>
                   <span className="font-extrabold text-sm text-indigo-600 mt-0.5 block">
-                    {kol.tier}
+                    {currentKol.tier}
                   </span>
+                  <span className="text-[9px] text-slate-400 font-medium block">Classification</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-xs">
+                  <span className="text-[10px] text-slate-400 block font-medium">
+                    Primary Flagship
+                  </span>
+                  <span className="font-extrabold text-sm text-slate-900 mt-0.5 flex items-center justify-center space-x-1">
+                    <PlatformIcon
+                      platform={aggregates.primaryChannel?.platform || currentKol.platform}
+                      size="xs"
+                    />
+                    <span>{aggregates.primaryChannel?.platform || currentKol.platform}</span>
+                  </span>
+                  <span
+                    className="text-[9px] text-indigo-600 font-mono truncate block max-w-[110px] mx-auto mt-0.5"
+                    title={aggregates.primaryChannel?.handle}
+                  >
+                    {aggregates.primaryChannel?.handle || "Flagship Channel"}
+                  </span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-xs">
+                  <span className="text-[10px] text-slate-400 block font-medium">
+                    Geographic Region
+                  </span>
+                  <span className="font-extrabold text-sm text-slate-900 mt-0.5 block">
+                    {t(currentKol.geography)}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-medium block">Target Market</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-xs">
+                  <span className="text-[10px] text-slate-400 block font-medium">
+                    Partnership Status
+                  </span>
+                  <span className="font-extrabold text-xs text-emerald-600 mt-0.5 block truncate">
+                    {t(currentKol.status)}
+                  </span>
+                  <span className="text-[9px] text-emerald-500 font-medium block">CRM Pipeline</span>
                 </div>
               </div>
 
@@ -448,7 +1572,7 @@ export function Kol360Modal({
               {onOpenGrowth && (
                 <button
                   type="button"
-                  onClick={() => onOpenGrowth(kol)}
+                  onClick={() => onOpenGrowth(currentKol)}
                   className="w-full py-2 px-3 rounded-xl bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold flex items-center justify-center space-x-1.5 transition border border-indigo-200/60 cursor-pointer active:scale-[0.99]"
                 >
                   <TrendingUp className="w-3.5 h-3.5 text-indigo-600" />
@@ -461,37 +1585,38 @@ export function Kol360Modal({
                 <span className="text-[11px] font-semibold text-amber-900 uppercase block tracking-wider">
                   Reference Rate Card (Commercial Booking Rates)
                 </span>
-                <div className="text-xl font-black text-amber-950 mt-1">
-                  {kol.quotation > 0
-                    ? formatCurrency(kol.quotation)
-                    : "Negotiable upon campaign scope"}
-                </div>
-                <span className="text-[10px] text-amber-700 mt-1 block">
-                  Commercial fee for dedicated brand video, review reel, or event attendance.
-                </span>
+                {isAdmin ? (
+                  <>
+                    <div className="text-xl font-black text-amber-950 mt-1">
+                      {currentKol.quotation > 0
+                        ? formatCurrency(currentKol.quotation)
+                        : "Negotiable upon campaign scope"}
+                    </div>
+                    <span className="text-[10px] text-amber-700 mt-1 block">
+                      Commercial fee for dedicated brand video, review reel, or event attendance.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-bold text-amber-900/80 mt-1.5 flex items-center gap-1.5">
+                      <Lock className="w-4 h-4 text-amber-700" />
+                      <span>Restricted to Administrators</span>
+                    </div>
+                    <span className="text-[10px] text-amber-700 mt-1 block">
+                      Quotation rate cards and commercial fees are visible only to platform administrators.
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* Bio & Intro */}
-              {kol.info && (
+              {currentKol.info && (
                 <div className="space-y-1">
                   <span className="text-xs font-semibold text-slate-600">Bio & Introduction:</span>
                   <p className="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-xl border border-slate-200">
-                    {kol.info}
+                    {currentKol.info}
                   </p>
                 </div>
-              )}
-
-              {/* Channel Link */}
-              {kol.profileUrl && kol.profileUrl !== "#" && (
-                <a
-                  href={kol.profileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center space-x-2 transition shadow-sm"
-                >
-                  <span>Visit Creator Profile</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
               )}
             </div>
 
@@ -510,7 +1635,7 @@ export function Kol360Modal({
                   </span>
                   {onOpenReport && (
                     <button
-                      onClick={() => onOpenReport(kol)}
+                      onClick={() => onOpenReport(currentKol)}
                       className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition flex items-center space-x-1 cursor-pointer"
                     >
                       <Plus className="w-3 h-3" />
@@ -585,7 +1710,7 @@ export function Kol360Modal({
                   </p>
                   {onOpenReport && (
                     <button
-                      onClick={() => onOpenReport(kol)}
+                      onClick={() => onOpenReport(currentKol)}
                       className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 text-xs font-bold hover:bg-amber-400 transition shadow-xs cursor-pointer mt-1"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -600,50 +1725,97 @@ export function Kol360Modal({
           {/* ─── BOTTOM SECTION: COMPREHENSIVE SCOUTED POSTS SUMMARY TABLE ─── */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
             {/* Table Header & Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                  <Flame className="w-4 h-4 text-purple-600" />
+            <div className="space-y-3 pb-3 border-b border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                    <Flame className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
+                      <span>Scouted Viral Posts & Reels Database</span>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 normal-case">
+                        {selectedChannelPlatform !== "all"
+                          ? `${displayedPosts.length} of ${kolPosts.length} posts`
+                          : `${kolPosts.length} posts`}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Aggregated repository of scouted posts, TikTok videos, and Reels for <strong>{currentKol.name}</strong> with real-time performance metrics
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
-                    <span>Scouted Viral Posts & Reels Database</span>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 normal-case">
-                      {kolPosts.length} posts
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Aggregated repository of scouted posts, TikTok videos, and Reels for <strong>{kol.name}</strong> with real-time performance metrics
-                  </p>
+
+                <div className="flex items-center space-x-2.5">
+                  {onScoutKolPosts && (
+                    <button
+                      type="button"
+                      onClick={() => onScoutKolPosts(currentKol)}
+                      className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 hover:text-purple-800 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 border border-purple-200 cursor-pointer active:scale-95 shadow-2xs"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Scout KOL Posts</span>
+                    </button>
+                  )}
+
+                  {/* Quick Search in Posts */}
+                  {kolPosts.length > 0 && (
+                    <div className="relative w-full sm:w-64">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        placeholder="Search posts, platforms..."
+                        value={postSearch}
+                        onChange={(e) => setPostSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2.5">
-                {onScoutKolPosts && (
+              {/* Channel Filter Tabs */}
+              {aggregates.channels.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] font-semibold text-slate-400 mr-1">Filter by Channel:</span>
                   <button
                     type="button"
-                    onClick={() => onScoutKolPosts(kol)}
-                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 hover:text-purple-800 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 border border-purple-200 cursor-pointer active:scale-95 shadow-2xs"
+                    onClick={() => setSelectedChannelPlatform("all")}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      selectedChannelPlatform === "all"
+                        ? "bg-purple-600 text-white shadow-2xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                    <span>Scout KOL Posts</span>
+                    All Channels ({kolPosts.length})
                   </button>
-                )}
-
-                {/* Quick Search in Posts */}
-                {kolPosts.length > 0 && (
-                  <div className="relative w-full sm:w-64">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      placeholder="Search posts, platforms..."
-                      value={postSearch}
-                      onChange={(e) => setPostSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                    />
-                  </div>
-                )}
-              </div>
+                  {aggregates.channels.map((ch) => {
+                    const count = kolPosts.filter((p) =>
+                      p.platform.toLowerCase().includes(ch.platform.toLowerCase())
+                    ).length;
+                    const isSelected =
+                      selectedChannelPlatform.toLowerCase() === ch.platform.toLowerCase();
+                    return (
+                      <button
+                        key={ch.platform}
+                        type="button"
+                        onClick={() =>
+                          setSelectedChannelPlatform(isSelected ? "all" : ch.platform.toLowerCase())
+                        }
+                        className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          isSelected
+                            ? "bg-purple-600 text-white shadow-2xs"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        <PlatformIcon platform={ch.platform} size="xs" />
+                        <span>{ch.platform}</span>
+                        <span className="text-[10px] opacity-75">({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Posts Data Table */}
@@ -679,7 +1851,7 @@ export function Kol360Modal({
                                 {post.title}
                               </p>
                               <span className="text-[10px] text-slate-400">
-                                Author: {post.author || kol.name}
+                                Author: {post.author || currentKol.name}
                               </span>
                             </div>
                           </div>
@@ -754,7 +1926,7 @@ export function Kol360Modal({
               <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-8 text-center space-y-2">
                 <Flame className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-xs font-medium text-slate-600">
-                  No scouted posts found for {kol.name}.
+                  No scouted posts found for {currentKol.name}.
                 </p>
                 <p className="text-[11px] text-slate-400">
                   Use automated crawling to scout the latest viral TikTok videos, Reels, and social media posts.
@@ -763,17 +1935,19 @@ export function Kol360Modal({
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() => onScoutKolPosts(kol)}
+                      onClick={() => onScoutKolPosts(currentKol)}
                       className="inline-flex items-center space-x-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Scout Posts for {kol.name}</span>
+                      <span>Scout Posts for {currentKol.name}</span>
                     </button>
                   </div>
                 )}
               </div>
             )}
           </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -795,6 +1969,7 @@ export interface Community360ModalProps {
   onEditCommunity?: (community: Community) => void;
   onScoutCommunityPosts?: (community: Community) => void;
   onDeleteCommunity?: (community: Community) => void;
+  onAddChannel?: (community: Community) => void;
 }
 
 export function Community360Modal({
@@ -807,7 +1982,9 @@ export function Community360Modal({
   onEditCommunity,
   onScoutCommunityPosts,
   onDeleteCommunity,
+  onAddChannel,
 }: Community360ModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [postSearch, setPostSearch] = useState("");
 
   // Filter evaluation reports for this community
@@ -834,6 +2011,8 @@ export function Community360Modal({
   }, [communityReports]);
 
   if (!isOpen || !community) return null;
+
+  const commAggregates = useMemo(() => getCommunityAggregates(community), [community]);
 
   // Filter posts related to this community's sports or author
   const relatedPosts = useMemo(() => {
@@ -1025,6 +2204,98 @@ export function Community360Modal({
 
         {/* ─── MODAL SCROLLABLE BODY ─── */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
+          {/* ─── MULTI-CHANNEL SOCIAL FOOTPRINT & PLATFORM HUBS ─── */}
+          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-5 text-white shadow-xl border border-indigo-500/20 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-white flex items-center space-x-2">
+                    <span>Multi-Channel Social Footprint</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/30 text-purple-200 border border-purple-400/30 normal-case">
+                      {commAggregates.channelCount} {commAggregates.channelCount === 1 ? "channel" : "connected channels"}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Official sports community platforms across Facebook, Strava, and Zalo
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm px-3.5 py-1.5 rounded-xl border border-white/10 text-xs">
+                  <span className="text-slate-400 text-[10px] block">Total Combined Reach</span>
+                  <span className="font-extrabold text-white">{formatNumber(commAggregates.totalMembers)} members</span>
+                </div>
+
+                {onAddChannel && (
+                  <button
+                    type="button"
+                    onClick={() => onAddChannel(community)}
+                    className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm active:scale-95 cursor-pointer"
+                    title="Attach another platform channel to this community"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Channel</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Channels Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {commAggregates.channels.map((ch, idx) => {
+                const style = getPlatformBadgeStyle(ch.platform);
+                return (
+                  <div
+                    key={idx}
+                    className="p-3 bg-white/5 rounded-xl border border-white/10 hover:border-purple-400/40 transition flex items-center justify-between gap-2"
+                  >
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      <div className={`w-7 h-7 rounded-lg ${style.bg} text-white flex items-center justify-center shrink-0`}>
+                        <PlatformIcon platform={ch.platform} className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-bold text-xs text-white">{ch.platform}</span>
+                          {ch.isPrimary && (
+                            <span className="px-1 py-0.2 rounded text-[8px] font-extrabold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                              Primary
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 truncate block max-w-[130px]">
+                          {ch.name || community.name}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="font-extrabold text-xs text-white block">
+                        {formatNumber(ch.members)}
+                      </span>
+                      {ch.url && ch.url !== "#" ? (
+                        <a
+                          href={ch.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-purple-300 hover:text-white flex items-center justify-end space-x-0.5 hover:underline"
+                        >
+                          <span>Link</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-500">—</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* UPPER SECTION: 2-COLUMN GRID (COMMUNITY SPECS + ADMINISTRATION & TERMS) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             {/* PANEL 1: COMMUNITY SPECS & COMMERCIAL PRICING */}
@@ -1081,14 +2352,28 @@ export function Community360Modal({
                 <span className="text-[11px] font-semibold text-purple-900 uppercase block tracking-wider">
                   Pinned Post Fee / Month (Commercial Pin Rate)
                 </span>
-                <div className="text-xl font-black text-purple-950 mt-1">
-                  {community.pricePerPin > 0
-                    ? formatCurrency(community.pricePerPin)
-                    : "Negotiable / Free Partnership"}
-                </div>
-                <span className="text-[10px] text-purple-700 mt-1 block">
-                  Secures top announcement slot with high organic visibility for tournament & brand notices.
-                </span>
+                {isAdmin ? (
+                  <>
+                    <div className="text-xl font-black text-purple-950 mt-1">
+                      {community.pricePerPin > 0
+                        ? formatCurrency(community.pricePerPin)
+                        : "Negotiable / Free Partnership"}
+                    </div>
+                    <span className="text-[10px] text-purple-700 mt-1 block">
+                      Secures top announcement slot with high organic visibility for tournament & brand notices.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-bold text-purple-900/80 mt-1.5 flex items-center gap-1.5">
+                      <Lock className="w-4 h-4 text-purple-700" />
+                      <span>Restricted to Administrators</span>
+                    </div>
+                    <span className="text-[10px] text-purple-700 mt-1 block">
+                      Community booking and pin fee terms are visible only to platform administrators.
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* Operating Activities */}

@@ -20,9 +20,31 @@ import {
   Edit3,
   Trash2,
   RefreshCw,
+  Lock,
 } from "lucide-react";
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
 import type { Project, ProjectParticipant, Report } from "../types";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
+
+const SPORT_FILTER_OPTIONS = [
+  "Pickleball",
+  "Running / Marathon",
+  "Football",
+  "Badminton",
+  "Tennis",
+  "Basketball",
+  "Cycling",
+  "Swimming",
+];
+
+const REGION_FILTER_OPTIONS = [
+  "Nationwide",
+  "Hanoi",
+  "Ho Chi Minh City",
+  "Da Nang",
+  "Northern Region",
+  "Southern Region",
+];
 
 interface ProjectsTableViewProps {
   projects: Project[];
@@ -59,10 +81,13 @@ export function ProjectsTableView({
   onSelectAllProjects,
   onClearSelection,
 }: ProjectsTableViewProps) {
+  const { isAdmin } = useCurrentUser();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState<"budget" | "name">("budget");
+  const [sportFilter, setSportFilter] = useState("all");
+  const [regionFilter, setRegionFilter] = useState("all");
+  const [sortBy, setSortBy] = useState<"budget" | "name">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // Filter
@@ -74,7 +99,14 @@ export function ProjectsTableView({
         const matchBrand = (p.brand || "").toLowerCase().includes(q);
         const matchPic = (p.pic || "").toLowerCase().includes(q);
         const matchObj = (p.objective || "").toLowerCase().includes(q);
-        if (!matchName && !matchBrand && !matchPic && !matchObj) return false;
+        const matchSport = (p.sport || []).some(
+          (s) => s.toLowerCase().includes(q) || t(s).toLowerCase().includes(q)
+        );
+        const matchRegion =
+          (p.region || "").toLowerCase().includes(q) ||
+          t(p.region || "").toLowerCase().includes(q);
+        if (!matchName && !matchBrand && !matchPic && !matchObj && !matchSport && !matchRegion)
+          return false;
       }
 
       if (statusFilter !== "all") {
@@ -84,9 +116,24 @@ export function ProjectsTableView({
         if (statusFilter === "planning" && !(s.includes("kế hoạch") || s.includes("planning"))) return false;
       }
 
+      if (sportFilter !== "all") {
+        const sFilter = sportFilter.toLowerCase();
+        const hasSport = (p.sport || []).some(
+          (s) => s.toLowerCase().includes(sFilter) || t(s).toLowerCase().includes(sFilter)
+        );
+        if (!hasSport) return false;
+      }
+
+      if (regionFilter !== "all") {
+        const reg = (p.region || "").toLowerCase();
+        const regTrans = t(p.region || "").toLowerCase();
+        const rFilter = regionFilter.toLowerCase();
+        if (!reg.includes(rFilter) && !regTrans.includes(rFilter)) return false;
+      }
+
       return true;
     });
-  }, [projects, search, statusFilter]);
+  }, [projects, search, statusFilter, sportFilter, regionFilter]);
 
   // Sort
   const sorted = useMemo(() => {
@@ -116,6 +163,7 @@ export function ProjectsTableView({
   );
 
   const toggleSort = (field: "budget" | "name") => {
+    if (field === "budget" && !isAdmin) return;
     if (sortBy === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     } else {
@@ -202,7 +250,14 @@ export function ProjectsTableView({
           <div>
             <p className="text-xs font-medium text-slate-500">Total Project Budget</p>
             <h3 className="text-2xl font-black text-slate-900 mt-0.5">
-              {formatCurrency(totalBudget)}
+              {isAdmin ? (
+                formatCurrency(totalBudget)
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-base font-bold text-slate-400">
+                  <Lock className="w-4 h-4 text-slate-400" />
+                  <span>Admin Only</span>
+                </span>
+              )}
             </h3>
           </div>
         </div>
@@ -234,16 +289,46 @@ export function ProjectsTableView({
 
       {/* ─── SLICERS ─── */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="sm:col-span-2 relative">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Search campaign name, brand, person in charge..."
+              placeholder="Search campaign, sport, region, brand, PIC..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/50"
             />
+          </div>
+
+          <div>
+            <select
+              value={sportFilter}
+              onChange={(e) => setSportFilter(e.target.value)}
+              className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="all">All Sports</option>
+              {SPORT_FILTER_OPTIONS.map((sp) => (
+                <option key={sp} value={sp}>
+                  {t(sp)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <select
+              value={regionFilter}
+              onChange={(e) => setRegionFilter(e.target.value)}
+              className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="all">All Regions</option>
+              {REGION_FILTER_OPTIONS.map((reg) => (
+                <option key={reg} value={reg}>
+                  {t(reg)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -268,18 +353,20 @@ export function ProjectsTableView({
             <colgroup>
               <col className="w-[36px]" />
               <col className="w-[36px]" />
-              <col className="w-[240px]" />
-              <col className="w-[180px]" />
-              <col className="w-[160px]" />
-              <col className="w-[160px]" />
-              <col className="w-[130px]" />
-              <col className="w-[105px]" />
+              <col className="w-[230px]" />
+              <col className="w-[125px]" />
+              <col className="w-[110px]" />
+              <col className="w-[170px]" />
+              <col className="w-[150px]" />
+              <col className="w-[140px]" />
+              <col className="w-[120px]" />
+              <col className="w-[100px]" />
               <col className="w-[225px]" />
             </colgroup>
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
               <tr>
                 <th
-                  className="py-2.5 px-3 text-center w-[36px] cursor-pointer select-none"
+                  className="py-2 px-3 text-center w-[36px] cursor-pointer select-none"
                   onClick={handleToggleSelectAll}
                   title={isAllSelected ? "Deselect all visible campaigns" : "Select all visible campaigns"}
                 >
@@ -295,30 +382,40 @@ export function ProjectsTableView({
                     />
                   )}
                 </th>
-                <th className="py-2.5 px-3 text-center">#</th>
+                <th className="py-2 px-3 text-center">#</th>
                 <th
                   onClick={() => toggleSort("name")}
-                  className="py-2.5 px-3 cursor-pointer hover:text-emerald-700 transition"
+                  className="py-2 px-3 cursor-pointer hover:text-emerald-700 transition"
                 >
                   <div className="flex items-center space-x-1">
                     <span>Campaign Name</span>
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="py-2.5 px-3">Participating Brands</th>
+                <th className="py-2 px-3">Sport</th>
+                <th className="py-2 px-3">Region</th>
+                <th className="py-2 px-3">Participating Brands</th>
                 <th
                   onClick={() => toggleSort("budget")}
-                  className="py-2.5 px-3 cursor-pointer hover:text-emerald-700 transition text-right"
+                  className={`py-2 px-3 text-right ${
+                    isAdmin
+                      ? "cursor-pointer hover:text-emerald-700 transition"
+                      : "text-slate-400 cursor-default"
+                  }`}
                 >
                   <div className="flex items-center justify-end space-x-1">
                     <span>Budget & Spend</span>
-                    <ArrowUpDown className="w-3 h-3" />
+                    {isAdmin ? (
+                      <ArrowUpDown className="w-3 h-3" />
+                    ) : (
+                      <Lock className="w-3 h-3 text-slate-400" />
+                    )}
                   </div>
                 </th>
-                <th className="py-2.5 px-3">Booked Roster</th>
-                <th className="py-2.5 px-3">PIC</th>
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3 text-center">Actions</th>
+                <th className="py-2 px-3">Booked Roster</th>
+                <th className="py-2 px-3">PIC</th>
+                <th className="py-2 px-3">Status</th>
+                <th className="py-2 px-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -335,12 +432,12 @@ export function ProjectsTableView({
                     <tr
                       key={proj.id}
                       onClick={() => onOpenProjectDetail(proj)}
-                      className={`hover:bg-emerald-50/40 transition group h-[52px] cursor-pointer ${
+                      className={`hover:bg-emerald-50/40 transition group h-11 cursor-pointer ${
                         isSelected ? "bg-emerald-50/60" : ""
                       }`}
                     >
                       <td
-                        className="py-2.5 px-3 text-center cursor-pointer"
+                        className="py-2 px-3 text-center cursor-pointer"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (onToggleSelectProject) onToggleSelectProject(proj.id);
@@ -357,39 +454,69 @@ export function ProjectsTableView({
                           />
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-center font-medium text-slate-400">
+                      <td className="py-2 px-3 text-center font-medium text-slate-400">
                         {idx + 1}
                       </td>
 
                       {/* Campaign Name */}
-                      <td className="py-2.5 px-3">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <div
                           onClick={() => onOpenProjectDetail(proj)}
-                          className="flex items-center space-x-2.5 cursor-pointer max-w-[260px]"
-                          title={`${proj.name} — ${proj.objective || ""}`}
+                          className="flex items-center space-x-2 cursor-pointer max-w-[260px]"
+                          title={`${proj.name} — ${proj.objective || "Sports influencer campaign"}`}
                         >
-                          <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition">
+                          <div className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition">
                             📋
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-slate-900 group-hover:text-emerald-600 transition truncate flex items-center space-x-1">
-                              <span className="truncate">{proj.name}</span>
-                              <ChevronRight className="w-3 h-3 text-slate-400 shrink-0 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" />
-                            </div>
-                            <p className="text-[10px] text-slate-400 truncate">
-                              {proj.objective || "Sports influencer campaign"}
-                            </p>
-                          </div>
+                          <span className="font-bold text-slate-900 group-hover:text-emerald-600 transition truncate text-xs">
+                            {proj.name}
+                          </span>
+                          <ChevronRight className="w-3 h-3 text-slate-400 shrink-0 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" />
                         </div>
                       </td>
 
+                      {/* Sport */}
+                      <td className="py-2 px-3 whitespace-nowrap">
+                        <div className="flex items-center space-x-1">
+                          {proj.sport && proj.sport.length > 0 ? (
+                            <>
+                              {proj.sport.slice(0, 2).map((sp) => (
+                                <span
+                                  key={sp}
+                                  className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium border border-slate-200"
+                                >
+                                  {t(sp)}
+                                </span>
+                              ))}
+                              {proj.sport.length > 2 && (
+                                <span
+                                  className="text-[10px] bg-slate-200/80 text-slate-600 px-1.5 py-0.5 rounded font-bold cursor-help"
+                                  title={proj.sport.slice(2).map((s) => t(s)).join(", ")}
+                                >
+                                  +{proj.sport.length - 2}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">Multi-sport</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Region */}
+                      <td className="py-2 px-3 whitespace-nowrap">
+                        <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-medium border border-slate-200">
+                          {t(proj.region || "Nationwide")}
+                        </span>
+                      </td>
+
                       {/* Participating Brands */}
-                      <td className="py-2.5 px-3">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         {proj.brandDetails && proj.brandDetails.length > 0 ? (
                           <div className="flex items-center space-x-1.5 whitespace-nowrap">
                             <span
                               className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 truncate max-w-[140px]"
-                              title={`${proj.brandDetails[0].name} (${proj.brandDetails[0].role}) ${proj.brandDetails[0].contribution ? `· ${formatCurrency(proj.brandDetails[0].contribution)}` : ""}`}
+                              title={`${proj.brandDetails[0].name} (${proj.brandDetails[0].role})${isAdmin && proj.brandDetails[0].contribution ? ` · ${formatCurrency(proj.brandDetails[0].contribution)}` : ""}`}
                             >
                               {proj.brandDetails[0].name}
                             </span>
@@ -427,25 +554,27 @@ export function ProjectsTableView({
                       </td>
 
                       {/* Budget & Spend */}
-                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                        <div className="font-bold text-slate-900 text-xs leading-none">
-                          {formatCurrency(proj.budget)}
-                        </div>
-                        <div className="text-[10px] text-slate-500 flex items-center justify-end space-x-1 mt-1">
-                          <span>Alloc:</span>
-                          <span className="font-semibold text-emerald-600">{formatCurrency(allocated)}</span>
-                          <span className="text-slate-400">({burnRate}%)</span>
-                        </div>
-                        <div className="w-20 ml-auto bg-slate-100 h-1 rounded-full mt-1 overflow-hidden">
+                      <td className="py-2 px-3 text-right whitespace-nowrap">
+                        {isAdmin ? (
                           <div
-                            className="bg-emerald-500 h-full rounded-full transition-all duration-300"
-                            style={{ width: `${burnRate}%` }}
-                          />
-                        </div>
+                            className="flex items-center justify-end space-x-1.5 whitespace-nowrap"
+                            title={`Budget: ${formatCurrency(proj.budget)} | Allocated: ${formatCurrency(allocated)} (${burnRate}%)`}
+                          >
+                            <span className="font-bold text-slate-900 text-xs">{formatCurrency(proj.budget)}</span>
+                            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              {burnRate}%
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-100/80 px-2 py-0.5 rounded">
+                            <Lock className="w-2.5 h-2.5 text-slate-400" />
+                            <span>Admin Only</span>
+                          </span>
+                        )}
                       </td>
 
                       {/* Booked Roster */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <div className="flex items-center space-x-1.5">
                           <span className="inline-flex items-center space-x-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
                             <Sparkles className="w-2.5 h-2.5" />
@@ -470,14 +599,14 @@ export function ProjectsTableView({
                       </td>
 
                       {/* PIC */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <div className="text-slate-700 font-medium text-xs truncate max-w-[125px]" title={proj.pic || "—"}>
                           {proj.pic || "—"}
                         </div>
                       </td>
 
                       {/* Status */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                             proj.status.toLowerCase().includes("hoàn thành") || proj.status.toLowerCase().includes("completed")
@@ -492,7 +621,7 @@ export function ProjectsTableView({
                       </td>
 
                       {/* Actions */}
-                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <td className="py-2 px-3 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center space-x-1.5">
                           <button
                             type="button"
@@ -554,7 +683,7 @@ export function ProjectsTableView({
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={11} className="py-12 text-center text-slate-400">
                     No matching campaigns found.
                   </td>
                 </tr>

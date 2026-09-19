@@ -1,6 +1,7 @@
 import { getSportHubDashboardData } from "@/lib/sport-hub/service";
 import { getLarkDashboardData } from "@/lib/lark/client";
 import { TrendingPageView } from "@/components/sport-hub/pages/trending-page-view";
+import { getServerUserRole, sanitizeFinancialData } from "@/lib/auth/financial-sanitizer";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ const EMPTY_FALLBACK: any = {
 
 export default async function Page() {
   let initialData: any = EMPTY_FALLBACK;
+  const { isAdmin } = await getServerUserRole();
 
   try {
     initialData = await getLarkDashboardData();
@@ -44,5 +46,7 @@ export default async function Page() {
     }
   }
 
-  return <TrendingPageView initialData={initialData} />;
+  const securedData = sanitizeFinancialData(initialData, isAdmin);
+
+  return <TrendingPageView initialData={securedData} />;
 }

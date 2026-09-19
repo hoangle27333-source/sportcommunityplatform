@@ -16,10 +16,12 @@ import {
   ExternalLink,
   Award,
   DollarSign,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatNumber, formatCurrency, t } from "@/lib/i18n";
 import type { Project, ProjectParticipant, KOL, Community } from "./types";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 
 interface ProjectDetailModalProps {
   isOpen: boolean;
@@ -46,6 +48,7 @@ export function ProjectDetailModal({
   onOpenEvaluation,
   onSelectKol,
 }: ProjectDetailModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [activeTab, setActiveTab] = useState<"kols" | "communities" | "overview">("kols");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -149,7 +152,7 @@ export function ProjectDetailModal({
                   >
                     <span className="font-bold text-white">{b.name}</span>
                     <span className="text-[10px] text-blue-300">({b.role})</span>
-                    {b.contribution && (
+                    {Boolean(b.contribution && b.contribution > 0) && (
                       <span className="text-[10px] text-emerald-400 font-semibold">
                         · {formatCurrency(b.contribution)}
                       </span>
@@ -170,7 +173,32 @@ export function ProjectDetailModal({
               )}
             </div>
 
-            <div className="flex items-center space-x-4 text-slate-300 text-xs">
+            <div className="flex flex-wrap items-center gap-3 text-slate-300 text-xs">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-slate-400">Sport:</span>
+                <span className="inline-flex items-center gap-1">
+                  {project.sport && project.sport.length > 0 ? (
+                    project.sport.map((s, idx) => (
+                      <span
+                        key={idx}
+                        className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded text-[11px] font-semibold"
+                      >
+                        {t(s)}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded text-[11px] font-semibold">
+                      Pickleball
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <span className="text-slate-400">Region:</span>
+                <span className="bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded text-[11px] font-semibold">
+                  {t(project.region || "Toàn quốc")}
+                </span>
+              </div>
               <div>
                 <span className="text-slate-400">PIC:</span>{" "}
                 <span className="font-bold text-white">{project.pic || "PM"}</span>
@@ -191,30 +219,46 @@ export function ProjectDetailModal({
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Total Campaign Budget
             </p>
-            <p className="text-base font-black text-slate-900 mt-0.5">
-              {formatCurrency(totalBudget)}
-            </p>
+            {isAdmin ? (
+              <p className="text-base font-black text-slate-900 mt-0.5">
+                {formatCurrency(totalBudget)}
+              </p>
+            ) : (
+              <p className="text-sm font-bold text-slate-400 mt-1 flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <span>Admin Only</span>
+              </p>
+            )}
           </div>
 
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Allocated Talent Fees
             </p>
-            <div className="flex items-baseline space-x-1.5 mt-0.5">
-              <p className="text-base font-black text-emerald-600">
-                {formatCurrency(totalAllocated)}
+            {isAdmin ? (
+              <>
+                <div className="flex items-baseline space-x-1.5 mt-0.5">
+                  <p className="text-base font-black text-emerald-600">
+                    {formatCurrency(totalAllocated)}
+                  </p>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    ({burnPercent}%)
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1 overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${burnPercent}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm font-bold text-slate-400 mt-1 flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <span>Admin Only</span>
               </p>
-              <span className="text-[11px] font-bold text-slate-500">
-                ({burnPercent}%)
-              </span>
-            </div>
-            {/* Progress bar */}
-            <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1 overflow-hidden">
-              <div
-                className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                style={{ width: `${burnPercent}%` }}
-              />
-            </div>
+            )}
           </div>
 
           <div>
@@ -338,9 +382,16 @@ export function ProjectDetailModal({
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             Commercial Fee
                           </p>
-                          <p className="text-sm font-black text-slate-900">
-                            {formatCurrency(part.agreedFee)}
-                          </p>
+                          {isAdmin ? (
+                            <p className="text-sm font-black text-slate-900">
+                              {formatCurrency(part.agreedFee)}
+                            </p>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                              <Lock className="w-2.5 h-2.5 text-slate-400" />
+                              <span>Admin Only</span>
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -493,9 +544,16 @@ export function ProjectDetailModal({
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           Agreed Pin Fee
                         </p>
-                        <p className="text-sm font-black text-slate-900">
-                          {formatCurrency(part.agreedFee)}
-                        </p>
+                        {isAdmin ? (
+                          <p className="text-sm font-black text-slate-900">
+                            {formatCurrency(part.agreedFee)}
+                          </p>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                            <Lock className="w-2.5 h-2.5 text-slate-400" />
+                            <span>Admin Only</span>
+                          </span>
+                        )}
                       </div>
                     </div>
 

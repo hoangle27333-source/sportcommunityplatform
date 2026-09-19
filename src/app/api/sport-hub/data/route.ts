@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSportHubDashboardData } from "@/lib/sport-hub/service";
+import { getServerUserRole, sanitizeFinancialData } from "@/lib/auth/financial-sanitizer";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const data = await getSportHubDashboardData();
+    const { isAdmin } = await getServerUserRole();
+    const rawData = await getSportHubDashboardData();
+    const data = sanitizeFinancialData(rawData as any, isAdmin);
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),

@@ -269,6 +269,52 @@ export const DEFAULT_PROJECT_BRANDS: Record<string, { brands: string[]; brandDet
   },
 };
 
+export const DEFAULT_PROJECT_METADATA: Record<string, { sport: string[]; region: string }> = {
+  "c3a08ca8-0823-4302-a28f-b6c49468f30f": {
+    sport: ["Pickleball"],
+    region: "TP. Hồ Chí Minh",
+  },
+  "recvvsOelZ0xR2": {
+    sport: ["Pickleball"],
+    region: "TP. Hồ Chí Minh",
+  },
+  "recvvzfpeuGL65": {
+    sport: ["Chạy bộ"],
+    region: "Hà Nội",
+  },
+  "recvvzfpwR4PfU": {
+    sport: ["Pickleball", "Tennis"],
+    region: "Hà Nội",
+  },
+};
+
+export function inferSportFromName(name?: string): string[] {
+  if (!name) return ["Pickleball"];
+  const n = name.toLowerCase();
+  if (n.includes("pickleball") && (n.includes("tennis") || n.includes("quần vợt"))) return ["Pickleball", "Tennis"];
+  if (n.includes("pickleball")) return ["Pickleball"];
+  if (n.includes("marathon") || n.includes("chạy") || n.includes("running") || n.includes("điền kinh")) return ["Chạy bộ"];
+  if (n.includes("bóng đá") || n.includes("football") || n.includes("soccer")) return ["Bóng đá"];
+  if (n.includes("cầu lông") || n.includes("badminton")) return ["Cầu lông"];
+  if (n.includes("tennis") || n.includes("quần vợt")) return ["Tennis"];
+  if (n.includes("bóng rổ") || n.includes("basketball")) return ["Bóng rổ"];
+  if (n.includes("đạp xe") || n.includes("cycling")) return ["Đạp xe"];
+  if (n.includes("bơi lội") || n.includes("swimming")) return ["Bơi lội"];
+  return ["Pickleball"];
+}
+
+export function inferRegionFromName(name?: string): string {
+  if (!name) return "Toàn quốc";
+  const n = name.toLowerCase();
+  if (n.includes("hà nội") || n.includes("ha noi") || n.includes("hanoi")) return "Hà Nội";
+  if (n.includes("hồ chí minh") || n.includes("sài gòn") || n.includes("tp.hcm") || n.includes("tphcm")) return "TP. Hồ Chí Minh";
+  if (n.includes("đà nẵng") || n.includes("da nang")) return "Đà Nẵng";
+  if (n.includes("miền bắc") || n.includes("bắc bộ")) return "Miền Bắc";
+  if (n.includes("miền nam") || n.includes("nam bộ")) return "Miền Nam";
+  if (n.includes("miền trung")) return "Miền Trung";
+  return "Toàn quốc";
+}
+
 /**
  * Fetch all participants for a specific project or all projects
  */
@@ -544,5 +590,34 @@ export function filterAndApplyProjectOverrides<T extends { id: string; name?: st
         ...override,
       };
     });
+}
+
+/**
+ * Re-links participants belonging to merged/secondary duplicate entities to the master entity
+ */
+export function relinkParticipantsForMergedEntity(
+  type: "kol" | "community",
+  primaryId: string,
+  primaryName: string,
+  secondaryIds: string[]
+): void {
+  const secSet = new Set(secondaryIds);
+  memoryParticipants = memoryParticipants.map((p) => {
+    if (type === "kol" && p.kolId && secSet.has(p.kolId)) {
+      return {
+        ...p,
+        kolId: primaryId,
+        entityName: primaryName,
+      };
+    }
+    if (type === "community" && p.communityId && secSet.has(p.communityId)) {
+      return {
+        ...p,
+        communityId: primaryId,
+        entityName: primaryName,
+      };
+    }
+    return p;
+  });
 }
 

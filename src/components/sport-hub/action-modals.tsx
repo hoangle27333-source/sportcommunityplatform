@@ -21,12 +21,14 @@ import {
   CheckCircle2,
   Film,
   ExternalLink,
+  Lock,
 } from "lucide-react";
 
 import type { Project } from "./types";
 import { TeamMemberSelect } from "./team-member-select";
 import { AuditTrailModal } from "./audit-trail-modal";
 import { createClient } from "@/lib/supabase/client";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 
 export { KolPostScoutModal } from "./kol-post-scout-modal";
 export { CommunityPostScoutModal } from "./community-post-scout-modal";
@@ -731,6 +733,7 @@ export const SPORT_OPTIONS = [
 ];
 
 export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
   const [selectedSports, setSelectedSports] = useState<string[]>(["Pickleball"]);
   const [tier, setTier] = useState("Micro (10k - 50k)");
@@ -779,7 +782,7 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
         if (typeof d.followers === "number") setFollowers(d.followers);
         if (typeof d.avgViews === "number") setAvgViews(d.avgViews);
         if (typeof d.er === "number") setEr(d.er);
-        if (typeof d.quotation === "number") setQuotation(d.quotation);
+        if (typeof d.quotation === "number" && isAdmin) setQuotation(d.quotation);
         if (d.status) setStatus(d.status);
         if (d.contact) setContact(d.contact);
         if (d.bio) setBio(d.bio);
@@ -832,7 +835,7 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
             followers,
             avgViews,
             er,
-            quotation,
+            quotation: isAdmin ? quotation : 0,
             status,
             profileUrl,
             contact,
@@ -1076,15 +1079,27 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Quotation Estimate (VND)
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Quotation Estimate (VND)</span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <Lock className="w-2.5 h-2.5" /> Admin Only
+                  </span>
+                )}
               </label>
-              <input
-                type="number"
-                value={quotation}
-                onChange={(e) => setQuotation(Number(e.target.value))}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+              {isAdmin ? (
+                <input
+                  type="number"
+                  value={quotation}
+                  onChange={(e) => setQuotation(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              ) : (
+                <div className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Configured by administrators only</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1210,6 +1225,7 @@ export function AddCommunityModal({
   onClose,
   onSuccess,
 }: AddCommunityModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
   const [selectedSports, setSelectedSports] = useState<string[]>(["Pickleball"]);
   const [geography, setGeography] = useState("Nationwide");
@@ -1263,7 +1279,7 @@ export function AddCommunityModal({
         if (d.privacy) setPrivacy(d.privacy);
         if (d.purpose && Array.isArray(d.purpose) && d.purpose.length > 0) setSelectedPurposes(d.purpose);
         if (d.adminContact) setAdminContact(d.adminContact);
-        if (typeof d.pricePerPin === "number") setPricePerPin(d.pricePerPin);
+        if (typeof d.pricePerPin === "number" && isAdmin) setPricePerPin(d.pricePerPin);
         if (d.status) setStatus(d.status);
         setGroupUrl(targetUrl);
         setScoutUrl(targetUrl);
@@ -1325,7 +1341,7 @@ export function AddCommunityModal({
             privacy,
             purpose: selectedPurposes,
             adminContact,
-            pricePerPin,
+            pricePerPin: isAdmin ? pricePerPin : 0,
             status,
             groupUrl,
           },
@@ -1601,15 +1617,27 @@ export function AddCommunityModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Pin Post Fee / Month (VND)
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Pin Post Fee / Month (VND)</span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <Lock className="w-2.5 h-2.5" /> Admin Only
+                  </span>
+                )}
               </label>
-              <input
-                type="number"
-                value={pricePerPin}
-                onChange={(e) => setPricePerPin(Number(e.target.value))}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
+              {isAdmin ? (
+                <input
+                  type="number"
+                  value={pricePerPin}
+                  onChange={(e) => setPricePerPin(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              ) : (
+                <div className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Configured by administrators only</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1691,6 +1719,7 @@ export function EditCommunityModal({
   onClose,
   onSuccess,
 }: EditCommunityModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
   const [selectedSports, setSelectedSports] = useState<string[]>(["Pickleball"]);
   const [geography, setGeography] = useState("Nationwide");
@@ -1787,7 +1816,7 @@ export function EditCommunityModal({
             privacy,
             purpose: selectedPurposes,
             adminContact,
-            pricePerPin,
+            ...(isAdmin ? { pricePerPin } : {}),
             status,
             groupUrl,
           },
@@ -1807,7 +1836,7 @@ export function EditCommunityModal({
           privacy,
           purpose: selectedPurposes,
           adminContact,
-          pricePerPin,
+          ...(isAdmin ? { pricePerPin } : {}),
           status,
           groupUrl,
         });
@@ -1949,16 +1978,28 @@ export function EditCommunityModal({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Commercial Pinned Post Rate (VND)
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Commercial Pinned Post Rate (VND)</span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <Lock className="w-2.5 h-2.5" /> Admin Only
+                  </span>
+                )}
               </label>
-              <input
-                type="number"
-                step="500000"
-                value={pricePerPin}
-                onChange={(e) => setPricePerPin(Number(e.target.value))}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
+              {isAdmin ? (
+                <input
+                  type="number"
+                  step="500000"
+                  value={pricePerPin}
+                  onChange={(e) => setPricePerPin(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              ) : (
+                <div className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Configured by administrators only</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2121,10 +2162,13 @@ export function AddProjectModal({
   onClose,
   onSuccess,
 }: AddProjectModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("Sport Booking Hub");
   const [budget, setBudget] = useState(100000000);
   const [pic, setPic] = useState("");
+  const [sport, setSport] = useState("Pickleball");
+  const [region, setRegion] = useState("Toàn quốc");
   const [objective, setObjective] = useState("");
   const [status, setStatus] = useState("Planning");
   const [submitting, setSubmitting] = useState(false);
@@ -2149,8 +2193,10 @@ export function AddProjectModal({
             name,
             brand,
             brands: brand.split(",").map((s) => s.trim()).filter(Boolean),
-            budget,
+            budget: isAdmin ? budget : 0,
             pic,
+            sport: [sport],
+            region,
             objective,
             status,
           },
@@ -2230,15 +2276,27 @@ export function AddProjectModal({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Target Budget (VND)
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Target Budget (VND)</span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <Lock className="w-2.5 h-2.5" /> Admin Only
+                  </span>
+                )}
               </label>
-              <input
-                type="number"
-                value={budget}
-                onChange={(e) => setBudget(Number(e.target.value))}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
+              {isAdmin ? (
+                <input
+                  type="number"
+                  value={budget}
+                  onChange={(e) => setBudget(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              ) : (
+                <div className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Configured by administrators only</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2263,6 +2321,46 @@ export function AddProjectModal({
                 <option value="In Progress">In Progress</option>
                 <option value="Completed">Completed</option>
                 <option value="Settled">Settled</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Sport Discipline
+              </label>
+              <select
+                value={sport}
+                onChange={(e) => setSport(e.target.value)}
+                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+              >
+                <option value="Pickleball">Pickleball</option>
+                <option value="Chạy bộ">Running / Marathon</option>
+                <option value="Bóng đá">Football</option>
+                <option value="Cầu lông">Badminton</option>
+                <option value="Tennis">Tennis</option>
+                <option value="Bóng rổ">Basketball</option>
+                <option value="Đạp xe">Cycling</option>
+                <option value="Bơi lội">Swimming</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Region / Location
+              </label>
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+              >
+                <option value="Toàn quốc">Nationwide</option>
+                <option value="Hà Nội">Hanoi</option>
+                <option value="TP. Hồ Chí Minh">Ho Chi Minh City</option>
+                <option value="Đà Nẵng">Da Nang</option>
+                <option value="Miền Bắc">Northern Region</option>
+                <option value="Miền Nam">Southern Region</option>
               </select>
             </div>
           </div>
@@ -2329,12 +2427,15 @@ export function EditProjectModal({
   onClose,
   onSuccess,
 }: EditProjectModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [budget, setBudget] = useState(100000000);
   const [pic, setPic] = useState("");
   const [objective, setObjective] = useState("");
   const [status, setStatus] = useState("Planning");
+  const [sport, setSport] = useState("Pickleball");
+  const [region, setRegion] = useState("Toàn quốc");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -2352,6 +2453,8 @@ export function EditProjectModal({
       setPic(project.pic || "");
       setObjective(project.objective || "");
       setStatus(project.status || "Planning");
+      setSport(project.sport && project.sport.length > 0 ? project.sport[0] : "Pickleball");
+      setRegion(project.region || "Toàn quốc");
       setStartDate(project.startDate || "");
       setEndDate(project.endDate || "");
     }
@@ -2372,17 +2475,21 @@ export function EditProjectModal({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const updatePayload = {
+    const updatePayload: Record<string, any> = {
       name: name.trim(),
       brand: brandList[0] || brand.trim() || "Sport Booking Hub",
       brands: brandList.length > 0 ? brandList : ["Sport Booking Hub"],
-      budget: Number(budget) || 0,
       pic: pic.trim(),
       objective: objective.trim(),
       status,
+      sport: [sport],
+      region,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
     };
+    if (isAdmin) {
+      updatePayload.budget = Number(budget) || 0;
+    }
 
     try {
       const res = await fetch("/api/sport-hub/record", {
@@ -2472,20 +2579,32 @@ export function EditProjectModal({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Total Campaign Budget (VND)
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span>Total Campaign Budget (VND)</span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <Lock className="w-2.5 h-2.5" /> Admin Only
+                  </span>
+                )}
               </label>
-              <div className="relative">
-                <DollarSign className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="number"
-                  min="0"
-                  step="1000000"
-                  value={budget}
-                  onChange={(e) => setBudget(Number(e.target.value))}
-                  className="w-full text-xs pl-8 pr-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
-                />
-              </div>
+              {isAdmin ? (
+                <div className="relative">
+                  <DollarSign className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000000"
+                    value={budget}
+                    onChange={(e) => setBudget(Number(e.target.value))}
+                    className="w-full text-xs pl-8 pr-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
+                  />
+                </div>
+              ) : (
+                <div className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Configured by administrators only</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2511,6 +2630,47 @@ export function EditProjectModal({
                 <option value="In Progress">In Progress (Đang triển khai)</option>
                 <option value="Completed">Completed (Đã hoàn thành)</option>
                 <option value="Settled">Settled (Đã quyết toán)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Sport & Region */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Sport Discipline
+              </label>
+              <select
+                value={sport}
+                onChange={(e) => setSport(e.target.value)}
+                className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
+              >
+                <option value="Pickleball">Pickleball</option>
+                <option value="Chạy bộ">Running / Marathon</option>
+                <option value="Bóng đá">Football</option>
+                <option value="Cầu lông">Badminton</option>
+                <option value="Tennis">Tennis</option>
+                <option value="Bóng rổ">Basketball</option>
+                <option value="Đạp xe">Cycling</option>
+                <option value="Bơi lội">Swimming</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Region / Location
+              </label>
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
+              >
+                <option value="Toàn quốc">Nationwide</option>
+                <option value="Hà Nội">Hanoi</option>
+                <option value="TP. Hồ Chí Minh">Ho Chi Minh City</option>
+                <option value="Đà Nẵng">Da Nang</option>
+                <option value="Miền Bắc">Northern Region</option>
+                <option value="Miền Nam">Southern Region</option>
               </select>
             </div>
           </div>
@@ -2648,6 +2808,7 @@ export function EditKolModal({
   onClose,
   onSuccess,
 }: EditKolModalProps) {
+  const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
   const [selectedSports, setSelectedSports] = useState<string[]>(["Pickleball"]);
   const [tier, setTier] = useState("Micro (10k - 50k)");
@@ -2719,7 +2880,7 @@ export function EditKolModal({
             followers,
             avgViews,
             er,
-            quotation,
+            ...(isAdmin ? { quotation } : {}),
             status,
             profileUrl,
             contact,
@@ -2740,7 +2901,7 @@ export function EditKolModal({
           followers,
           avgViews,
           er,
-          quotation,
+          ...(isAdmin ? { quotation } : {}),
           status,
           info: contact || kol.info,
           profileUrl: profileUrl || kol.profileUrl,
@@ -2916,15 +3077,27 @@ export function EditKolModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Quotation Estimate (VND)
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Quotation Estimate (VND)</span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <Lock className="w-2.5 h-2.5" /> Admin Only
+                  </span>
+                )}
               </label>
-              <input
-                type="number"
-                value={quotation}
-                onChange={(e) => setQuotation(Number(e.target.value))}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              {isAdmin ? (
+                <input
+                  type="number"
+                  value={quotation}
+                  onChange={(e) => setQuotation(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              ) : (
+                <div className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>Configured by administrators only</span>
+                </div>
+              )}
             </div>
 
             <div>

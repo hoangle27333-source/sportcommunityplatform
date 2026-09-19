@@ -1,0 +1,130 @@
+{
+  "kols": {
+    "afe0f2d8-f6ac-4d2c-9b1f-785ff44a28d1": [
+      {
+        "platform": "TikTok",
+        "handle": "@dokimphuc.football",
+        "url": "https://www.tiktok.com/@dokimphuc.football",
+        "followers": 3800000,
+        "avgViews": 450000,
+        "er": 5.2,
+        "isPrimary": true,
+        "status": "Verified"
+      },
+      {
+        "platform": "YouTube",
+        "handle": "Đỗ Kim Phúc Official",
+        "url": "https://www.youtube.com/@dokimphuc",
+        "followers": 1350000,
+        "avgViews": 220000,
+        "er": 4.8,
+        "status": "Verified"
+      },
+      {
+        "platform": "Facebook",
+        "handle": "Đỗ Kim Phúc Freestyle",
+        "url": "https://facebook.com/dokimphuc.vn",
+        "followers": 950000,
+        "avgViews": 85000,
+        "er": 3.5,
+        "status": "Verified"
+      },
+      {
+        "platform": "Instagram",
+        "handle": "@dokimphuc",
+        "url": "https://instagram.com/dokimphuc",
+        "followers": 240000,
+        "avgViews": 45000,
+        "er": 4.1,
+        "status": "Active"
+      },
+      {
+        "platform": "Strava Club",
+        "handle": "dokimphuc_athlete",
+        "name": "dokimphuc_athlete",
+        "url": "https://www.strava.com/athletes/dokimphuc",
+        "followers": 25000,
+        "members": 25000,
+        "avgViews": 18000,
+        "er": 5.5,
+        "isPrimary": false,
+        "status": "Active",
+        "lastScoutedAt": "2026-09-19T10:02:01.786Z"
+      },
+      {
+        "platform": "Instagram",
+        "handle": "hocvienhup",
+        "url": "https://instagram.com/hocvienhup",
+        "followers": 15000,
+        "avgViews": 25000,
+        "er": 4.5,
+        "isPrimary": true,
+        "status": "Active"
+      }
+    ],
+    "Đỗ Kim Phúc": [
+      {
+        "platform": "TikTok",
+        "handle": "@dokimphuc.football",
+        "url": "https://www.tiktok.com/@dokimphuc.football",
+        "followers": 3800000,
+        "avgViews": 450000,
+        "er": 5.2,
+        "isPrimary": true,
+        "status": "Verified"
+      },
+      {
+        "platform": "YouTube",
+        "handle": "Đỗ Kim Phúc Official",
+        "url": "https://www.youtube.com/@dokimphuc",
+        "followers": 1350000,
+        "avgViews": 220000,
+        "er": 4.8,
+        "status": "Verified"
+      },
+      {
+        "platform": "Facebook",
+        "handle": "Đỗ Kim Phúc Freestyle",
+        "url": "https://facebook.com/dokimphuc.vn",
+        "followers": 950000,
+        "avgViews": 85000,
+        "er": 3.5,
+        "status": "Verified"
+      },
+      {
+        "platform": "Instagram",
+        "handle": "@dokimphuc",
+        "url": "https://instagram.com/dokimphuc",
+        "followers": 240000,
+        "avgViews": 45000,
+        "er": 4.1,
+        "status": "Active"
+      },
+      {
+        "platform": "Strava Club",
+        "handle": "dokimphuc_athlete",
+        "name": "dokimphuc_athlete",
+        "url": "https://www.strava.com/athletes/dokimphuc",
+        "followers": 25000,
+        "members": 25000,
+        "avgViews": 18000,
+        "er": 5.5,
+        "isPrimary": false,
+        "status": "Active",
+        "lastScoutedAt": "2026-09-19T10:02:01.786Z"
+      },
+      {
+        "platform": "Instagram",
+        "handle": "hocvienhup",
+        "url": "https://instagram.com/hocvienhup",
+        "followers": 15000,
+        "avgViews": 25000,
+        "er": 4.5,
+        "isPrimary": true,
+        "status": "Active"
+      }
+    ]
+  },
+  "communities": {},
+  "updatedAt": "2026-09-19T10:03:08.321Z"
+}

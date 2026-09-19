@@ -3,6 +3,7 @@ import {
   fetchProjectParticipants,
   addParticipantToProject,
 } from "@/lib/sport-hub/service";
+import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,13 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    const participants = await fetchProjectParticipants(id);
+    const { isAdmin } = await getServerUserRole();
+    const rawParticipants = await fetchProjectParticipants(id);
+
+    const participants = isAdmin
+      ? rawParticipants
+      : rawParticipants.map((p) => ({ ...p, agreedFee: 0 }));
+
     return NextResponse.json({ success: true, participants });
   } catch (error: any) {
     return NextResponse.json(
@@ -28,7 +35,14 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
+    const { isAdmin } = await getServerUserRole();
     const body = await request.json();
+
+    // Disallow non-admin setting agreedFee
+    if (!isAdmin) {
+      body.agreedFee = 0;
+    }
+
     const created = await addParticipantToProject({
       ...body,
       projectId: id,
