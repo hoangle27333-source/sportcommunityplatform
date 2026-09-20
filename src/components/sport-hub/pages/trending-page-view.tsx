@@ -29,6 +29,7 @@ import { KolPostScoutModal } from "../kol-post-scout-modal";
 import { Kol360Modal, Community360Modal } from "../dossier-modals";
 import { AddPostModal } from "../action-modals";
 import { ColumnInfoTooltip } from "../column-info-tooltip";
+import { ActionTooltip } from "../action-tooltip";
 import { t, formatNumber } from "@/lib/i18n";
 import type { DashboardData, Post, KOL, Community } from "../types";
 
@@ -661,26 +662,30 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                           <td className="py-2 px-3 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center space-x-1">
                               {/* 360 Dossier Action (Icon-only) */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpen360ForAuthor(p.author, p.kolRecordIds)}
-                                className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/60 flex items-center justify-center transition hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="View 360° Profile Dossier"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
+                              <ActionTooltip label="View 360° Profile">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpen360ForAuthor(p.author, p.kolRecordIds)}
+                                  className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/60 flex items-center justify-center transition hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="View 360° Profile"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              </ActionTooltip>
 
                               {/* Watch Post Action (Icon-only) */}
                               {p.postUrl && p.postUrl !== "#" ? (
-                                <a
-                                  href={p.postUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/60 flex items-center justify-center transition hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Open Original Post Reel"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
+                                <ActionTooltip label="Open Original Post" align="right">
+                                  <a
+                                    href={p.postUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/60 flex items-center justify-center transition hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                    title="Open Original Post"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                </ActionTooltip>
                               ) : (
                                 <div
                                   className="w-7 h-7 rounded-lg bg-slate-100 text-slate-300 flex items-center justify-center cursor-not-allowed"

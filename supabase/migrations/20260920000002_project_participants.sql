@@ -48,5 +48,7 @@ create index if not exists idx_project_participants_entity on public.project_par
 
 -- RLS policies
 alter table public.project_participants enable row level security;
+drop policy if exists "Allow read project_participants" on public.project_participants;
 create policy "Allow read project_participants" on public.project_participants for select using (true);
+drop policy if exists "Allow write project_participants" on public.project_participants;
 create policy "Allow write project_participants" on public.project_participants for all using (true) with check (true);

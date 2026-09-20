@@ -6,6 +6,7 @@ import { Community, CommunityChannel } from "./types";
 import { getCommunityAggregates } from "@/lib/sport-hub/kol-channels";
 import { PlatformIcon, getPlatformBadgeStyle } from "./platform-icon";
 import { formatNumber, t } from "@/lib/i18n";
+import { ActionTooltip } from "./action-tooltip";
 
 export interface CommunityChannelDrawerProps {
   community: Community;
@@ -193,15 +194,17 @@ export function CommunityChannelDrawer({
                   {/* Direct Link */}
                   <td className="py-2 px-3 text-center whitespace-nowrap">
                     {ch.url && ch.url !== "#" ? (
-                      <a
-                        href={ch.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1 rounded-lg text-purple-600 hover:bg-purple-50 inline-flex items-center transition"
-                        title="Open channel URL"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
+                      <ActionTooltip label="Open Channel Link" align="right">
+                        <a
+                          href={ch.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1 rounded-lg text-purple-600 hover:bg-purple-50 inline-flex items-center transition"
+                          title="Open channel URL"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </ActionTooltip>
                     ) : (
                       <span className="text-slate-300 text-[10px]">—</span>
                     )}

@@ -194,17 +194,39 @@ alter table public.scout_requests enable row level security;
 alter table public.scouted_posts enable row level security;
 
 -- Allow read access to all users (anon & authenticated)
+drop policy if exists "Allow read kols" on public.kols;
 create policy "Allow read kols" on public.kols for select using (true);
+
+drop policy if exists "Allow read communities" on public.communities;
 create policy "Allow read communities" on public.communities for select using (true);
+
+drop policy if exists "Allow read sport_projects" on public.sport_projects;
 create policy "Allow read sport_projects" on public.sport_projects for select using (true);
+
+drop policy if exists "Allow read kol_reports" on public.kol_reports;
 create policy "Allow read kol_reports" on public.kol_reports for select using (true);
+
+drop policy if exists "Allow read scout_requests" on public.scout_requests;
 create policy "Allow read scout_requests" on public.scout_requests for select using (true);
+
+drop policy if exists "Allow read scouted_posts" on public.scouted_posts;
 create policy "Allow read scouted_posts" on public.scouted_posts for select using (true);
 
 -- Allow full mutations for authenticated users & anon (internal portal usage)
+drop policy if exists "Allow write kols" on public.kols;
 create policy "Allow write kols" on public.kols for all using (true) with check (true);
+
+drop policy if exists "Allow write communities" on public.communities;
 create policy "Allow write communities" on public.communities for all using (true) with check (true);
+
+drop policy if exists "Allow write sport_projects" on public.sport_projects;
 create policy "Allow write sport_projects" on public.sport_projects for all using (true) with check (true);
+
+drop policy if exists "Allow write kol_reports" on public.kol_reports;
 create policy "Allow write kol_reports" on public.kol_reports for all using (true) with check (true);
+
+drop policy if exists "Allow write scout_requests" on public.scout_requests;
 create policy "Allow write scout_requests" on public.scout_requests for all using (true) with check (true);
+
+drop policy if exists "Allow write scouted_posts" on public.scouted_posts;
 create policy "Allow write scouted_posts" on public.scouted_posts for all using (true) with check (true);

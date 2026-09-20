@@ -21,7 +21,6 @@ import {
   Lock,
   ChevronDown,
   ChevronRight,
-  GitMerge,
   Plus,
   Layers,
 } from "lucide-react";
@@ -32,6 +31,7 @@ import { getCommunityAggregates } from "@/lib/sport-hub/kol-channels";
 import { MultiChannelCluster } from "../platform-icon";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { ColumnInfoTooltip } from "../column-info-tooltip";
+import { ActionTooltip } from "../action-tooltip";
 
 export interface CommunityTableViewProps {
   communities: Community[];
@@ -636,99 +636,87 @@ export function CommunityTableView({
                           <div className="flex items-center justify-center space-x-1">
                             {/* View 360 */}
                             {onSelectCommunity && (
-                              <button
-                                type="button"
-                                onClick={() => onSelectCommunity(comm)}
-                                className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200/60 cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
-                                title="View 360° Community Dossier"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
+                              <ActionTooltip label="View 360° Profile">
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectCommunity(comm)}
+                                  className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200/60 cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
+                                  title="View 360° Profile"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              </ActionTooltip>
                             )}
 
                             {/* Scout Discussions */}
                             {onScoutCommunityPosts && (
-                              <button
-                                type="button"
-                                onClick={() => onScoutCommunityPosts(comm)}
-                                className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Scout Discussions & Posts"
-                              >
-                                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                              </button>
-                            )}
-
-                            {/* Evaluate / Report */}
-                            {onOpenReport && (
-                              <button
-                                type="button"
-                                onClick={() => onOpenReport(comm)}
-                                className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition flex items-center justify-center border border-amber-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Evaluate Campaign Performance"
-                              >
-                                <Star className="w-3.5 h-3.5 text-amber-600" />
-                              </button>
+                              <ActionTooltip label="Scout Discussions">
+                                <button
+                                  type="button"
+                                  onClick={() => onScoutCommunityPosts(comm)}
+                                  className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Scout Discussions"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                </button>
+                              </ActionTooltip>
                             )}
 
                             {/* Add Channel Action */}
                             {onAddChannel && (
-                              <button
-                                type="button"
-                                onClick={() => onAddChannel(comm)}
-                                className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Add Social Channel"
-                              >
-                                <Plus className="w-3.5 h-3.5 text-purple-600" />
-                              </button>
-                            )}
-
-                            {/* Merge with... Action */}
-                            {onMergeCommunity && (
-                              <button
-                                type="button"
-                                onClick={() => onMergeCommunity(comm)}
-                                className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Merge duplicate community"
-                              >
-                                <GitMerge className="w-3.5 h-3.5 text-indigo-600" />
-                              </button>
+                              <ActionTooltip label="Add Channel">
+                                <button
+                                  type="button"
+                                  onClick={() => onAddChannel(comm)}
+                                  className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Add Channel"
+                                >
+                                  <Plus className="w-3.5 h-3.5 text-purple-600" />
+                                </button>
+                              </ActionTooltip>
                             )}
 
                             {/* Edit Group */}
                             {onEditCommunity && (
-                              <button
-                                type="button"
-                                onClick={() => onEditCommunity(comm)}
-                                className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Edit Community Details"
-                              >
-                                <Edit3 className="w-3.5 h-3.5 text-purple-600" />
-                              </button>
+                              <ActionTooltip label="Edit Group">
+                                <button
+                                  type="button"
+                                  onClick={() => onEditCommunity(comm)}
+                                  className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Edit Group"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5 text-purple-600" />
+                                </button>
+                              </ActionTooltip>
                             )}
 
                             {/* Delete Group */}
                             {onDeleteCommunity && (
-                              <button
-                                type="button"
-                                onClick={() => onDeleteCommunity(comm)}
-                                className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Delete Community from Database"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                              </button>
+                              <ActionTooltip label="Delete Group" align="right">
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteCommunity(comm)}
+                                  className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Delete Group"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                </button>
+                              </ActionTooltip>
                             )}
 
                             {/* Group URL link */}
                             {comm.groupUrl && comm.groupUrl !== "#" ? (
-                              <a
-                                href={comm.groupUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="w-7 h-7 rounded-lg text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 transition inline-flex items-center justify-center border border-blue-200/60 hover:scale-105 active:scale-95 shadow-2xs"
-                                title="Open Community Link"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
+                              <ActionTooltip label="Open Group Link" align="right">
+                                <a
+                                  href={comm.groupUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="w-7 h-7 rounded-lg text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 transition inline-flex items-center justify-center border border-blue-200/60 hover:scale-105 active:scale-95 shadow-2xs"
+                                  title="Open Group Link"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              </ActionTooltip>
                             ) : (
                               <span className="text-slate-400 text-xs">—</span>
                             )}
@@ -827,44 +815,40 @@ export function CommunityTableView({
                       {/* Quick Icons */}
                       <div className="flex items-center space-x-1">
                         {onAddChannel && (
-                          <button
-                            type="button"
-                            onClick={() => onAddChannel(comm)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition cursor-pointer"
-                            title="Add social channel"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        {onMergeCommunity && (
-                          <button
-                            type="button"
-                            onClick={() => onMergeCommunity(comm)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
-                            title="Merge duplicate community"
-                          >
-                            <GitMerge className="w-3.5 h-3.5" />
-                          </button>
+                          <ActionTooltip label="Add Channel">
+                            <button
+                              type="button"
+                              onClick={() => onAddChannel(comm)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition cursor-pointer"
+                              title="Add Channel"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </ActionTooltip>
                         )}
                         {onEditCommunity && (
-                          <button
-                            type="button"
-                            onClick={() => onEditCommunity(comm)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition cursor-pointer"
-                            title="Edit community profile"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
+                          <ActionTooltip label="Edit Group">
+                            <button
+                              type="button"
+                              onClick={() => onEditCommunity(comm)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition cursor-pointer"
+                              title="Edit Group"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          </ActionTooltip>
                         )}
                         {onDeleteCommunity && (
-                          <button
-                            type="button"
-                            onClick={() => onDeleteCommunity(comm)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                            title="Delete community"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <ActionTooltip label="Delete Group" align="right">
+                            <button
+                              type="button"
+                              onClick={() => onDeleteCommunity(comm)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              title="Delete Group"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </ActionTooltip>
                         )}
                       </div>
                     </div>

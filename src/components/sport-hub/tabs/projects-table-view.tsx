@@ -4,7 +4,6 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Search,
   Briefcase,
-  Star,
   TrendingUp,
   DollarSign,
   Calendar,
@@ -26,6 +25,7 @@ import { t, formatNumber, formatCurrency } from "@/lib/i18n";
 import type { Project, ProjectParticipant, Report } from "../types";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { ColumnInfoTooltip } from "../column-info-tooltip";
+import { ActionTooltip } from "../action-tooltip";
 
 const SPORT_FILTER_OPTIONS = [
   "Pickleball",
@@ -640,59 +640,54 @@ export function ProjectsTableView({
                       {/* Actions */}
                       <td className="py-2 px-3 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center space-x-1.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenProjectDetail(proj);
-                            }}
-                            className="text-[11px] bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg font-bold transition flex items-center space-x-1 shadow-2xs active:scale-95 cursor-pointer"
-                          >
-                            <SlidersHorizontal className="w-3 h-3" />
-                            <span>Command Center</span>
-                          </button>
-
-                          {/* Quick Edit Action */}
-                          {onEditProject && (
+                          <ActionTooltip label="Command Center">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onEditProject(proj);
+                                onOpenProjectDetail(proj);
                               }}
-                              className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition flex items-center justify-center border border-amber-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                              title="Edit Campaign Details"
+                              className="text-[11px] bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg font-bold transition flex items-center space-x-1 shadow-2xs active:scale-95 cursor-pointer"
+                              title="Command Center"
                             >
-                              <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                              <SlidersHorizontal className="w-3 h-3" />
+                              <span>Command Center</span>
                             </button>
+                          </ActionTooltip>
+
+                          {/* Quick Edit Action */}
+                          {onEditProject && (
+                            <ActionTooltip label="Edit Campaign">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditProject(proj);
+                                }}
+                                className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition flex items-center justify-center border border-amber-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                title="Edit Campaign"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                              </button>
+                            </ActionTooltip>
                           )}
 
                           {/* Quick Delete Action */}
                           {onDeleteProject && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDeleteProject(proj);
-                              }}
-                              className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                              title="Delete Campaign"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                            </button>
+                            <ActionTooltip label="Delete Campaign" align="right">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteProject(proj);
+                                }}
+                                className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                title="Delete Campaign"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              </button>
+                            </ActionTooltip>
                           )}
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenReportForProject(proj.name);
-                            }}
-                            className="p-1 text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition cursor-pointer"
-                            title="Write PM Sign-off Report"
-                          >
-                            <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                          </button>
                         </div>
                       </td>
                     </tr>

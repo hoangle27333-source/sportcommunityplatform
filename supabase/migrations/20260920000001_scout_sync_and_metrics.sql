@@ -27,5 +27,7 @@ create index if not exists idx_metric_snapshots_recorded_at on public.kol_metric
 -- 4. Row Level Security for snapshots
 alter table public.kol_metric_snapshots enable row level security;
 
+drop policy if exists "Allow read kol_metric_snapshots" on public.kol_metric_snapshots;
 create policy "Allow read kol_metric_snapshots" on public.kol_metric_snapshots for select using (true);
+drop policy if exists "Allow write kol_metric_snapshots" on public.kol_metric_snapshots;
 create policy "Allow write kol_metric_snapshots" on public.kol_metric_snapshots for all using (true) with check (true);

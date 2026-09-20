@@ -6,6 +6,7 @@ import { KOL, KOLChannel } from "./types";
 import { getKolAggregates } from "@/lib/sport-hub/kol-channels";
 import { PlatformIcon, getPlatformBadgeStyle } from "./platform-icon";
 import { formatNumber } from "@/lib/i18n";
+import { ActionTooltip } from "./action-tooltip";
 
 export interface KolChannelDrawerProps {
   kol: KOL;
@@ -200,15 +201,17 @@ export function KolChannelDrawer({ kol, onView360, onAddChannel, onClose }: KolC
                   {/* Direct Link */}
                   <td className="py-2 px-3 text-center whitespace-nowrap">
                     {ch.url && ch.url !== "#" ? (
-                      <a
-                        href={ch.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1 rounded-lg text-indigo-600 hover:bg-indigo-50 inline-flex items-center transition"
-                        title="Open channel URL"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
+                      <ActionTooltip label="Open Channel Link" align="right">
+                        <a
+                          href={ch.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1 rounded-lg text-indigo-600 hover:bg-indigo-50 inline-flex items-center transition"
+                          title="Open channel URL"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </ActionTooltip>
                     ) : (
                       <span className="text-slate-300 text-[10px]">—</span>
                     )}

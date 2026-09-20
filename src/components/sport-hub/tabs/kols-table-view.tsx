@@ -23,7 +23,6 @@ import {
   ChevronDown,
   ChevronRight,
   Layers,
-  GitMerge,
   Plus,
   Lock,
 } from "lucide-react";
@@ -34,6 +33,7 @@ import { MultiChannelCluster, PlatformIcon } from "../platform-icon";
 import { KolChannelDrawer } from "../kol-channel-drawer";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { ColumnInfoTooltip } from "../column-info-tooltip";
+import { ActionTooltip } from "../action-tooltip";
 
 export interface KOL {
   id: string;
@@ -785,72 +785,70 @@ export function KolsTableView({
                               {kol.pendingScoutDiff &&
                                 Object.keys(kol.pendingScoutDiff.changes || {}).length > 0 &&
                                 onOpenDiff && (
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenDiff(kol)}
-                                    className="w-7 h-7 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition flex items-center justify-center shadow-2xs animate-pulse cursor-pointer"
-                                    title="Review Scout Data Changes (Diff)"
-                                  >
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                  </button>
+                                  <ActionTooltip label="Review Scout Diff">
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenDiff(kol)}
+                                      className="w-7 h-7 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition flex items-center justify-center shadow-2xs animate-pulse cursor-pointer"
+                                      title="Review Scout Diff"
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5" />
+                                    </button>
+                                  </ActionTooltip>
                                 )}
 
                               {/* View 360 */}
-                              <button
-                                type="button"
-                                onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
-                                className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200/60 cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
-                                title="View 360° Profile Dossier"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
+                              <ActionTooltip label="View 360° Profile">
+                                <button
+                                  type="button"
+                                  onClick={() => (onView360 ? onView360(kol) : onSelectKol(kol.id))}
+                                  className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200/60 cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
+                                  title="View 360° Profile"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              </ActionTooltip>
 
                               {/* Add Channel Action */}
                               {onAddChannel && (
-                                <button
-                                  type="button"
-                                  onClick={() => onAddChannel(kol)}
-                                  className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Add Social Channel"
-                                >
-                                  <Plus className="w-3.5 h-3.5 text-purple-600" />
-                                </button>
-                              )}
-
-                              {/* Merge with... Action */}
-                              {onMergeKol && (
-                                <button
-                                  type="button"
-                                  onClick={() => onMergeKol(kol)}
-                                  className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Merge duplicate profile"
-                                >
-                                  <GitMerge className="w-3.5 h-3.5 text-indigo-600" />
-                                </button>
+                                <ActionTooltip label="Add Channel">
+                                  <button
+                                    type="button"
+                                    onClick={() => onAddChannel(kol)}
+                                    className="w-7 h-7 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition flex items-center justify-center border border-purple-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                    title="Add Channel"
+                                  >
+                                    <Plus className="w-3.5 h-3.5 text-purple-600" />
+                                  </button>
+                                </ActionTooltip>
                               )}
 
                               {/* Edit Action */}
                               {onEditKol && (
-                                <button
-                                  type="button"
-                                  onClick={() => onEditKol(kol)}
-                                  className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition flex items-center justify-center border border-amber-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Edit KOL Profile"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5 text-amber-600" />
-                                </button>
+                                <ActionTooltip label="Edit Profile">
+                                  <button
+                                    type="button"
+                                    onClick={() => onEditKol(kol)}
+                                    className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition flex items-center justify-center border border-amber-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                    title="Edit Profile"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                  </button>
+                                </ActionTooltip>
                               )}
 
                               {/* Delete Action */}
                               {onDeleteKol && (
-                                <button
-                                  type="button"
-                                  onClick={() => onDeleteKol(kol)}
-                                  className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Delete KOL"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                                </button>
+                                <ActionTooltip label="Delete Profile" align="right">
+                                  <button
+                                    type="button"
+                                    onClick={() => onDeleteKol(kol)}
+                                    className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition flex items-center justify-center border border-rose-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
+                                    title="Delete Profile"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                  </button>
+                                </ActionTooltip>
                               )}
                             </div>
                           </td>
