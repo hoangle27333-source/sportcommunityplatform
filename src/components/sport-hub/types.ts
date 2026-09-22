@@ -28,12 +28,56 @@ export interface KOL {
   bio?: string;
   avatarUrl?: string;
   channels?: KOLChannel[];
+  audienceAudit?: KolAudienceAudit;
   userLockedFields?: string[];
   pendingScoutDiff?: {
     scoutedAt: string;
     changes: Record<string, { current: any; scouted: any }>;
   } | null;
   lastScoutedAt?: string;
+}
+
+export interface TagDistributionItem {
+  tag: string;
+  percentage: number;
+  postOrCommentCount?: number;
+  color?: string;
+}
+
+export interface BookedCategoryItem {
+  category: string;
+  percentage: number;
+  count?: number;
+}
+
+export interface PartnerBrandItem {
+  brand: string;
+  handle?: string;
+  industry?: string;
+  postCount: number;
+  logoUrl?: string;
+}
+
+export interface KolAudienceAudit {
+  id?: string;
+  kolId?: string;
+  auditId?: string;
+  auditedAt?: string;
+  totalPostsScanned: number;
+  totalCommentsScanned: number;
+  realAudienceRate: number; // e.g. 85.7 (%)
+  seedingRate: number;      // e.g. 14.3 (%)
+  seedingRiskLevel: "Low" | "Moderate" | "High";
+  topTagDistribution: TagDistributionItem[];
+  sponsoredContentRate: number; // e.g. 71.4 (%)
+  commercialSaturation: "Low Commercial" | "Balanced" | "Heavy Commercial";
+  bookedCategories: BookedCategoryItem[];
+  partnerBrands: PartnerBrandItem[];
+  sampleComments?: {
+    organic: string[];
+    seeding: string[];
+  };
+  auditSummary?: string;
 }
 
 export interface CommunityChannel {
@@ -63,6 +107,7 @@ export interface Community {
   channels?: CommunityChannel[];
   privacy?: string;
   purpose?: string[];
+  audienceAudit?: KolAudienceAudit;
 }
 
 export interface Post {
@@ -78,6 +123,9 @@ export interface Post {
   postUrl: string;
   viralGrade: string;
   status: string;
+  isSponsored?: boolean;
+  sponsorBrand?: string;
+  contentAudit?: KolAudienceAudit;
 }
 
 export interface Report {

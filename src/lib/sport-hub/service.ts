@@ -54,6 +54,7 @@ export interface KOLItem {
     changes: Record<string, { current: any; scouted: any }>;
   } | null;
   lastScoutedAt?: string;
+  audienceAudit?: Record<string, unknown> | null;
 }
 
 export interface CommunityItem {
@@ -71,6 +72,7 @@ export interface CommunityItem {
   privacy?: string;
   purpose?: string[];
   channels?: CommunityChannel[];
+  audienceAudit?: Record<string, unknown> | null;
 }
 
 export interface ProjectItem {
@@ -123,8 +125,13 @@ export interface PostItem {
   thumbnailUrl?: string;
   sport?: string;
   viralTier?: string;
+  viralGrade?: string;
   hashtags?: string;
   notes?: string;
+  isSponsored?: boolean;
+  sponsorBrand?: string;
+  sponsorCategory?: string;
+  sponsorDisclosureType?: string;
 }
 
 export interface SportHubDashboardData {
@@ -188,6 +195,7 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
       userLockedFields: Array.isArray(r.user_locked_fields) ? r.user_locked_fields : [],
       pendingScoutDiff: r.pending_scout_diff || null,
       lastScoutedAt: r.last_scouted_at || undefined,
+      audienceAudit: r.audience_audit || null,
     };
 
     const aggregates = getKolAggregates(baseKol as any);
@@ -222,6 +230,7 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
       channels:
         storedChannels ||
         (r.channels && Array.isArray(r.channels) && r.channels.length > 0 ? r.channels : undefined),
+      audienceAudit: r.audience_audit || null,
     };
 
     const aggregates = getCommunityAggregates(baseComm as any);
@@ -335,8 +344,14 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
     thumbnailUrl: r.thumbnail_url || undefined,
     sport: r.sport || undefined,
     viralTier: r.viral_tier || "Tiêu chuẩn",
+    viralGrade: r.viral_tier || "Tiêu chuẩn",
     hashtags: r.hashtags || undefined,
     notes: r.notes || undefined,
+    isSponsored: Boolean(r.is_sponsored),
+    sponsorBrand: r.sponsor_brand || "",
+    sponsorCategory: r.sponsor_category || "",
+    sponsorDisclosureType: r.sponsor_disclosure_type || "",
+    contentAudit: r.content_audit || null,
   }));
 
   // Aggregate KPIs

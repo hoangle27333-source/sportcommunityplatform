@@ -31,6 +31,7 @@ import { AddPostModal } from "../action-modals";
 import { ColumnInfoTooltip } from "../column-info-tooltip";
 import { ActionTooltip } from "../action-tooltip";
 import { t, formatNumber } from "@/lib/i18n";
+import { PostAuditControl } from "../audience-audit-panel";
 import type { DashboardData, Post, KOL, Community } from "../types";
 
 export interface TrendingPageViewProps {
@@ -581,11 +582,19 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                               <div className="w-6 h-6 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 group-hover:bg-blue-50 group-hover:text-blue-600 transition">
                                 <Film className="w-3 h-3" />
                               </div>
-                              <span
-                                className="font-bold text-slate-900 group-hover:text-blue-600 transition truncate text-xs"
-                                title={p.title}
-                              >
-                                {p.title}
+                              <span className="min-w-0">
+                                <span
+                                  className="font-bold text-slate-900 group-hover:text-blue-600 transition truncate text-xs block"
+                                  title={p.title}
+                                >
+                                  {p.title}
+                                </span>
+                                <PostAuditControl
+                                  postId={p.id}
+                                  title={p.title}
+                                  initialSponsored={p.isSponsored}
+                                  initialBrand={p.sponsorBrand}
+                                />
                               </span>
                               {p.postUrl && p.postUrl !== "#" ? (
                                 <a
@@ -738,6 +747,14 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                         <h3 className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">
                           {p.title}
                         </h3>
+                        <div className="mt-1">
+                          <PostAuditControl
+                            postId={p.id}
+                            title={p.title}
+                            initialSponsored={p.isSponsored}
+                            initialBrand={p.sponsorBrand}
+                          />
+                        </div>
                       </div>
 
                       {/* Author & 360 link */}

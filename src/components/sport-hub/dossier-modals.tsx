@@ -36,6 +36,10 @@ import {
   Save,
   Link2,
   Check,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  PieChart,
 } from "lucide-react";
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
 import {
@@ -44,8 +48,10 @@ import {
   getPlatformConfig,
   getKolChannels,
 } from "@/lib/sport-hub/kol-channels";
+import { getTagColor } from "@/lib/sport-hub/kol-audience-audit";
 import { PlatformIcon, getPlatformBadgeStyle } from "./platform-icon";
-import { KOLChannel, CommunityChannel } from "./types";
+import { AudienceAuditSection, PostAuditControl } from "./audience-audit-panel";
+import { KOLChannel, CommunityChannel, KolAudienceAudit } from "./types";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 
 // Shared avatar dictionary for Vietnamese sports KOLs
@@ -78,6 +84,31 @@ export function getKolAvatar(name: string): string | null {
   return null;
 }
 
+export function formatAuditTimestamp(isoString?: string): string {
+  if (!isoString) return "";
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return isoString;
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return isoString;
+  }
+}
+
 export interface KOL {
   id: string;
   name: string;
@@ -93,6 +124,7 @@ export interface KOL {
   info: string;
   profileUrl: string;
   channels?: KOLChannel[];
+  audienceAudit?: KolAudienceAudit;
   pendingScoutDiff?: {
     scoutedAt: string;
     changes: Record<string, { current: any; scouted: any }>;
@@ -112,6 +144,9 @@ export interface Post {
   postUrl: string;
   viralGrade: string;
   status: string;
+  isSponsored?: boolean;
+  sponsorBrand?: string;
+  sponsorCategory?: string;
 }
 
 export interface Report {
@@ -185,6 +220,52 @@ export function Kol360Modal({
   useEffect(() => {
     if (kol) setCurrentKol(kol);
   }, [kol]);
+
+  // Audience Authenticity & Commercial Sponsorship Audit State
+  const [audienceAudit, setAudienceAudit] = useState<KolAudienceAudit | null>(() =>
+    kol?.audienceAudit || null
+  );
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [showSampleComments, setShowSampleComments] = useState(false);
+
+  useEffect(() => {
+    if (kol) {
+      setAudienceAudit(kol.audienceAudit || null);
+    }
+  }, [kol]);
+
+  const handleRunLiveAudit = async () => {
+    if (!currentKol) return;
+    setIsAuditing(true);
+    const toastId = toast.loading(`Auditing audience authenticity & sponsored content for ${currentKol.name}...`);
+    try {
+      const res = await fetch(`/api/sport-hub/kol/${currentKol.id}/audience-audit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success || !json?.data) {
+        toast.error(json?.error || `Audience audit failed (HTTP ${res.status})`, {
+          id: toastId,
+        });
+        return;
+      }
+      setAudienceAudit(json.data);
+      setCurrentKol((prev) => (prev ? { ...prev, audienceAudit: json.data } : null));
+      toast.success(
+        json.data.auditSummary || `Audience and brand audit updated for ${currentKol.name}.`,
+        { id: toastId }
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Could not reach the audience audit service.", {
+        id: toastId,
+      });
+    } finally {
+      setIsAuditing(false);
+    }
+  };
 
   // In-Dossier Channel & Specs Studio Editing State
   const [isEditing, setIsEditing] = useState(false);
@@ -630,7 +711,7 @@ export function Kol360Modal({
             </div>
 
             {/* Quick Action Buttons in Modal Header */}
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               {currentKol.pendingScoutDiff &&
                 Object.keys(currentKol.pendingScoutDiff.changes || {}).length > 0 &&
                 onOpenDiff && (
@@ -655,6 +736,18 @@ export function Kol360Modal({
                   <span>Scout Posts</span>
                 </button>
               )}
+
+              {/* Run Audience Audit Header Action */}
+              <button
+                type="button"
+                disabled={isAuditing}
+                onClick={() => handleRunLiveAudit()}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition flex items-center space-x-1.5 border border-white/15 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                title="Run Audience Authenticity & Sponsored Content Audit"
+              >
+                <ShieldCheck className={`w-3.5 h-3.5 text-indigo-300 ${isAuditing ? "animate-spin" : ""}`} />
+                <span>{isAuditing ? "Auditing..." : "Run Audience Audit"}</span>
+              </button>
 
               {onOpenGrowth && (
                 <button
@@ -704,7 +797,7 @@ export function Kol360Modal({
           </div>
 
           {/* High-Level Media & Performance KPI Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-white/10 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 mt-4 pt-4 border-t border-white/10 text-xs">
             <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
               <span className="text-slate-300">Scouted Posts</span>
               <span className="font-black text-white text-sm">{kolPosts.length} posts</span>
@@ -721,6 +814,29 @@ export function Kol360Modal({
               <span className="text-slate-300">Avg Post ER</span>
               <span className="font-black text-emerald-300 text-sm">{avgPostEr}%</span>
             </div>
+            {audienceAudit ? (
+              <>
+                <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
+                  <span className="text-slate-300">Real Audience</span>
+                  <span className="font-black text-emerald-300 text-sm">{audienceAudit.realAudienceRate}%</span>
+                </div>
+                <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
+                  <span className="text-slate-300">Sponsored Rate</span>
+                  <span className="font-black text-indigo-300 text-sm">{audienceAudit.sponsoredContentRate}%</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
+                  <span className="text-slate-300">Real Audience</span>
+                  <span className="font-bold text-slate-400 text-xs">—</span>
+                </div>
+                <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
+                  <span className="text-slate-300">Sponsored Rate</span>
+                  <span className="font-bold text-slate-400 text-xs">—</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -1722,6 +1838,420 @@ export function Kol360Modal({
             </div>
           </div>
 
+          {/* ─── AUDIENCE AUTHENTICITY & COMMERCIAL SPONSORSHIP AUDIT ─── */}
+          {audienceAudit && audienceAudit.totalPostsScanned > 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6 space-y-5">
+              {/* Section Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                <div className="flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-900">
+                        Audience Authenticity & Commercial Sponsorship Audit
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
+                        AI NLP Scanner
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Comment topic clustering, seeding vs organic detection, and brand collaboration saturation
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2.5">
+                  <span className="text-[11px] text-slate-400">
+                    Audited {audienceAudit.totalPostsScanned} posts & {audienceAudit.totalCommentsScanned} comments
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isAuditing}
+                    onClick={() => handleRunLiveAudit()}
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Force refresh audience authenticity and commercial sponsor scan"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
+                    <span>{isAuditing ? "Auditing..." : "Refresh Audit"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Main 2-Column Audit Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* COLUMN 1: AUDIENCE QUALITY & COMMENT TOPIC DISTRIBUTION */}
+                <div className="space-y-4 bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200/80">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <MessageCircle className="w-4 h-4 text-indigo-600" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                        Audience Engagement Authenticity
+                      </h4>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                        audienceAudit.seedingRiskLevel === "Low"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : audienceAudit.seedingRiskLevel === "Moderate"
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-rose-50 text-rose-700 border-rose-200"
+                      }`}
+                    >
+                      {audienceAudit.seedingRiskLevel} Seeding Risk
+                    </span>
+                  </div>
+
+                  {/* Dual Metric Split */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs font-extrabold">
+                      <span className="text-emerald-700 flex items-center space-x-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{audienceAudit.realAudienceRate}% Real Audience</span>
+                      </span>
+                      <span className="text-amber-700">
+                        {audienceAudit.seedingRate}% Seeding / Bot
+                      </span>
+                    </div>
+
+                    {/* Dual-tone Progress Bar */}
+                    <div className="h-3 w-full bg-amber-200 rounded-full overflow-hidden flex shadow-inner">
+                      <div
+                        className="h-full bg-emerald-500 transition-all duration-500"
+                        style={{ width: `${audienceAudit.realAudienceRate}%` }}
+                        title={`Organic Audience: ${audienceAudit.realAudienceRate}%`}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                      Evaluated from technical sports inquiries, sentence naturalness, and bot-comment heuristics.
+                    </p>
+                  </div>
+
+                  {/* Top 5 Tag Distribution (Comments & Content Topics) */}
+                  <div className="space-y-2.5 pt-3 border-t border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                        <BarChart3 className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Top 5 Tag Distribution</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Audience comment & content topics
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {audienceAudit.topTagDistribution.map((item, idx) => {
+                        const barColor = item.color || getTagColor(item.tag, idx);
+                        return (
+                          <div key={item.tag} className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-700 text-[11px] truncate max-w-[220px]">
+                                {item.tag}
+                              </span>
+                              <span className="font-extrabold text-slate-900 text-xs">
+                                {item.percentage}%
+                              </span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-200/80 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                  width: `${item.percentage}%`,
+                                  backgroundColor: barColor,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Sample Comments Drilldown Toggle */}
+                  {audienceAudit.sampleComments && (
+                    <div className="pt-2 border-t border-slate-200/60">
+                      <button
+                        type="button"
+                        onClick={() => setShowSampleComments(!showSampleComments)}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 cursor-pointer transition"
+                      >
+                        <span>
+                          {showSampleComments
+                            ? "Hide Sample Audit Comments"
+                            : "Inspect Sample Comments & Seeding Signals"}
+                        </span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform ${
+                            showSampleComments ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+
+                      {showSampleComments && (
+                        <div className="mt-2.5 space-y-2.5 text-xs bg-white p-3 rounded-xl border border-slate-200 animate-in fade-in duration-150">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-emerald-700 block mb-1">
+                              ✓ Organic Audience Discussions:
+                            </span>
+                            <ul className="space-y-1 text-slate-700 italic text-[11px]">
+                              {audienceAudit.sampleComments.organic.map((c, i) => (
+                                <li key={i} className="pl-2 border-l-2 border-emerald-400">
+                                  &ldquo;{c}&rdquo;
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100">
+                            <span className="text-[10px] font-bold uppercase text-amber-700 block mb-1">
+                              ⚠ Flagged Seeding / Bot Signals:
+                            </span>
+                            <ul className="space-y-1 text-slate-600 italic text-[11px]">
+                              {audienceAudit.sampleComments.seeding.map((c, i) => (
+                                <li key={i} className="pl-2 border-l-2 border-amber-400">
+                                  &ldquo;{c}&rdquo;
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* COLUMN 2: COMMERCIAL SATURATION & BRAND BOOKING PORTFOLIO */}
+                <div className="space-y-4 bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200/80 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Briefcase className="w-4 h-4 text-indigo-600" />
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                          Commercial Sponsorship Saturation
+                        </h4>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          audienceAudit.commercialSaturation === "Heavy Commercial"
+                            ? "bg-purple-50 text-purple-700 border-purple-200"
+                            : audienceAudit.commercialSaturation === "Balanced"
+                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        }`}
+                      >
+                        {audienceAudit.commercialSaturation}
+                      </span>
+                    </div>
+
+                    {/* Prominent % Sponsored Content Card (Benchmark Style with Highlight Ring) */}
+                    <div className="bg-gradient-to-br from-white to-indigo-50/50 p-4 rounded-xl border-2 border-indigo-300/80 shadow-sm flex items-center justify-between gap-4">
+                      <div>
+                        <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                          The percentage of sponsored content
+                        </span>
+                        <div className="flex items-baseline space-x-2 mt-1">
+                          <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+                            {audienceAudit.sponsoredContentRate}%
+                          </span>
+                          <span className="text-xs font-bold text-indigo-600">
+                            sponsored by brands
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                          Scanned via Vietnam Advertising Law disclosure tags (#ad, #quangcao, #duoctaitro) and platform Branded Content tools.
+                        </p>
+                      </div>
+
+                      {/* Circular visual badge */}
+                      <div className="w-16 h-16 rounded-full border-4 border-indigo-600/30 flex items-center justify-center shrink-0 bg-white shadow-xs">
+                        <span className="text-xs font-black text-indigo-700 text-center leading-tight">
+                          {audienceAudit.sponsoredContentRate > 60
+                            ? "Heavy"
+                            : audienceAudit.sponsoredContentRate > 30
+                            ? "Balanced"
+                            : "Low"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Booked Categories (Ngành Hàng Được Book) */}
+                    <div className="space-y-2 pt-2 border-t border-slate-200">
+                      <span className="text-xs font-bold text-slate-800 block">
+                        Top Booked Categories (Brand Industries):
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {audienceAudit.bookedCategories.map((cat) => (
+                          <div
+                            key={cat.category}
+                            className="bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between text-xs"
+                          >
+                            <span className="font-semibold text-slate-700 truncate mr-1">
+                              {cat.category}
+                            </span>
+                            <div className="text-right shrink-0">
+                              <span className="font-extrabold text-indigo-600">
+                                {cat.percentage}%
+                              </span>
+                              {cat.count !== undefined && cat.count > 0 && (
+                                <span className="text-[10px] text-slate-400 block font-normal">
+                                  {cat.count} {cat.count === 1 ? "post" : "posts"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Detected Brand Collaborations (Thương hiệu đã book) */}
+                    <div className="space-y-2 pt-2 border-t border-slate-200">
+                      <span className="text-xs font-bold text-slate-800 block">
+                        Detected Brand Partners & Collaborations:
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {audienceAudit.partnerBrands.map((brand) => (
+                          <div
+                            key={brand.brand}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs hover:border-indigo-300 transition"
+                          >
+                            <span className="font-extrabold text-slate-900">{brand.brand}</span>
+                            {brand.handle && (
+                              <span className="font-mono text-[10px] text-indigo-600">
+                                {brand.handle}
+                              </span>
+                            )}
+                            {brand.industry && (
+                              <span className="text-[10px] text-slate-400 hidden sm:inline">
+                                • {brand.industry}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                              {brand.postCount} {brand.postCount === 1 ? "post" : "posts"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Audit Summary & Timestamp Prose Card (Under Panels) */}
+              <div className="p-4 bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 rounded-xl border border-indigo-100/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="space-y-1 max-w-3xl">
+                  <div className="flex items-center space-x-2">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="font-extrabold uppercase text-[10px] text-indigo-900 tracking-wider">
+                      AI Audit Summary & Synthesis:
+                    </span>
+                    {audienceAudit.auditedAt && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        • Audited {formatAuditTimestamp(audienceAudit.auditedAt)}
+                      </span>
+                    )}
+                  </div>
+                  {audienceAudit.auditSummary && (
+                    <p className="text-slate-800 italic leading-relaxed text-xs">
+                      &ldquo;{audienceAudit.auditSummary}&rdquo;
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isAuditing}
+                  onClick={() => handleRunLiveAudit()}
+                  className="shrink-0 px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200 shadow-2xs flex items-center space-x-1.5 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                  title="Force re-run live audit"
+                >
+                  <RefreshCw className={`w-3 h-3 text-indigo-600 ${isAuditing ? "animate-spin" : ""}`} />
+                  <span>{isAuditing ? "Auditing..." : "Refresh Audit"}</span>
+                </button>
+              </div>
+            </div>
+          ) : audienceAudit && audienceAudit.totalPostsScanned === 0 ? (
+            /* ─── EMPTY AUDIT WITH ZERO POSTS ─── */
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-inner">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-900">
+                  Zero Posts Found for Audience Audit
+                </h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+                  {audienceAudit.auditSummary ||
+                    "No posts or comments were available during the audit scan. Scout posts for this creator to generate comment sentiment, authenticity, and brand saturation insights."}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                {onScoutKolPosts && (
+                  <button
+                    type="button"
+                    onClick={() => onScoutKolPosts(currentKol)}
+                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Scout Posts for {currentKol.name}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={isAuditing}
+                  onClick={() => handleRunLiveAudit()}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAuditing ? "animate-spin" : ""}`} />
+                  <span>{isAuditing ? "Auditing..." : "Re-run Audit"}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* ─── EMPTY STATE: NO AUDIT RUN YET ─── */
+            <div className="bg-white rounded-2xl border border-dashed border-slate-300 shadow-2xs p-6 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-indigo-600 flex items-center justify-center mx-auto">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-900">
+                  Audience Authenticity & Commercial Sponsorship Audit
+                </h4>
+                {kolPosts.length === 0 ? (
+                  <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+                    No audience authenticity audit available. Scout posts first to ingest social activity, then click &ldquo;Run Audience Audit&rdquo; to analyze comments, authenticity, and commercial sponsorships.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+                    Audience authenticity and sponsored content have not been audited yet. Analyze comment sentiments, seeding risk, and brand sponsorship ratios across {kolPosts.length} scouted posts.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                {kolPosts.length === 0 && onScoutKolPosts ? (
+                  <button
+                    type="button"
+                    onClick={() => onScoutKolPosts(currentKol)}
+                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Scout Posts First</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isAuditing}
+                    onClick={() => handleRunLiveAudit()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
+                    <span>{isAuditing ? "Running Audit..." : "Run Audience Audit"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ─── BOTTOM SECTION: COMPREHENSIVE SCOUTED POSTS SUMMARY TABLE ─── */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
             {/* Table Header & Controls */}
@@ -1846,10 +2376,24 @@ export function Kol360Modal({
                             <div className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center text-xs shrink-0 mt-0.5 group-hover:bg-purple-100 group-hover:text-purple-700 transition">
                               🎬
                             </div>
-                            <div>
-                              <p className="font-bold text-slate-900 leading-snug">
-                                {post.title}
-                              </p>
+                            <div className="min-w-0">
+                              <div className="flex items-center space-x-1.5 flex-wrap">
+                                <p className="font-bold text-slate-900 leading-snug">
+                                  {post.title}
+                                </p>
+                                {(post.isSponsored ||
+                                  post.sponsorBrand ||
+                                  (post.title &&
+                                    (post.title.toLowerCase().includes("@garmin") ||
+                                      post.title.toLowerCase().includes("@nike") ||
+                                      post.title.toLowerCase().includes("#ad") ||
+                                      post.title.toLowerCase().includes("#quangcao") ||
+                                      post.title.toLowerCase().includes("#duoctaitro")))) && (
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    {post.sponsorBrand ? `Sponsored: ${post.sponsorBrand}` : "Sponsored"}
+                                  </span>
+                                )}
+                              </div>
                               <span className="text-[10px] text-slate-400">
                                 Author: {post.author || currentKol.name}
                               </span>
@@ -2584,6 +3128,13 @@ export function Community360Modal({
             )}
           </div>
 
+          <AudienceAuditSection
+            endpoint={`/api/sport-hub/community/${community.id}/audience-audit`}
+            initialAudit={(community as { audienceAudit?: any }).audienceAudit || null}
+            subjectName={community.name}
+            emptyMessage="No audience audit for this community yet. Run an audit to score discussion authenticity, seeding risk, and sponsored posts in this club."
+          />
+
           {/* ─── BOTTOM SECTION: COMPREHENSIVE COMMUNITY POSTS & SEEDING TABLE ─── */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
             {/* Table Header & Controls */}
@@ -2649,9 +3200,15 @@ export function Community360Modal({
                             <div className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center text-xs shrink-0 mt-0.5 group-hover:bg-purple-100 group-hover:text-purple-700 transition">
                               💬
                             </div>
-                            <p className="font-bold text-slate-900 leading-snug">
-                              {post.title}
-                            </p>
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 leading-snug">{post.title}</p>
+                              <PostAuditControl
+                                postId={post.id}
+                                title={post.title}
+                                initialSponsored={post.isSponsored}
+                                initialBrand={post.sponsorBrand}
+                              />
+                            </div>
                           </div>
                         </td>
                         <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap">
