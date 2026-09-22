@@ -51,6 +51,7 @@ import {
 import { getTagColor } from "@/lib/sport-hub/kol-audience-audit";
 import { PlatformIcon, getPlatformBadgeStyle } from "./platform-icon";
 import { AudienceAuditSection, PostAuditControl } from "./audience-audit-panel";
+import { cleanAuditSummary } from "@/lib/sport-hub/audience-audit-types";
 import { KOLChannel, CommunityChannel, KolAudienceAudit } from "./types";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 
@@ -254,10 +255,7 @@ export function Kol360Modal({
       }
       setAudienceAudit(json.data);
       setCurrentKol((prev) => (prev ? { ...prev, audienceAudit: json.data } : null));
-      toast.success(
-        json.data.auditSummary || `Audience and brand audit updated for ${currentKol.name}.`,
-        { id: toastId }
-      );
+      toast.success(`Audience audit updated for ${currentKol.name}.`, { id: toastId });
     } catch (err: any) {
       toast.error(err?.message || "Could not reach the audience audit service.", {
         id: toastId,
@@ -818,7 +816,9 @@ export function Kol360Modal({
               <>
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
                   <span className="text-slate-300">Real Audience</span>
-                  <span className="font-black text-emerald-300 text-sm">{audienceAudit.realAudienceRate}%</span>
+                  <span className="font-black text-emerald-300 text-sm">
+                    {audienceAudit.totalCommentsScanned > 0 ? `${audienceAudit.realAudienceRate}%` : "—"}
+                  </span>
                 </div>
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
                   <span className="text-slate-300">Sponsored Rate</span>
@@ -1890,42 +1890,54 @@ export function Kol360Modal({
                         Audience Engagement Authenticity
                       </h4>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                        audienceAudit.seedingRiskLevel === "Low"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : audienceAudit.seedingRiskLevel === "Moderate"
-                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                          : "bg-rose-50 text-rose-700 border-rose-200"
-                      }`}
-                    >
-                      {audienceAudit.seedingRiskLevel} Seeding Risk
-                    </span>
+                    {audienceAudit.totalCommentsScanned > 0 ? (
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                          audienceAudit.seedingRiskLevel === "Low"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : audienceAudit.seedingRiskLevel === "Moderate"
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-rose-50 text-rose-700 border-rose-200"
+                        }`}
+                      >
+                        {audienceAudit.seedingRiskLevel} Seeding Risk
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold border bg-slate-100 text-slate-600 border-slate-200">
+                        No comment sample
+                      </span>
+                    )}
                   </div>
 
                   {/* Dual Metric Split */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-extrabold">
-                      <span className="text-emerald-700 flex items-center space-x-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{audienceAudit.realAudienceRate}% Real Audience</span>
-                      </span>
-                      <span className="text-amber-700">
-                        {audienceAudit.seedingRate}% Seeding / Bot
-                      </span>
-                    </div>
-
-                    {/* Dual-tone Progress Bar */}
-                    <div className="h-3 w-full bg-amber-200 rounded-full overflow-hidden flex shadow-inner">
-                      <div
-                        className="h-full bg-emerald-500 transition-all duration-500"
-                        style={{ width: `${audienceAudit.realAudienceRate}%` }}
-                        title={`Organic Audience: ${audienceAudit.realAudienceRate}%`}
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-relaxed">
-                      Evaluated from technical sports inquiries, sentence naturalness, and bot-comment heuristics.
-                    </p>
+                    {audienceAudit.totalCommentsScanned > 0 ? (
+                      <>
+                        <div className="flex items-center justify-between text-xs font-extrabold">
+                          <span className="text-emerald-700 flex items-center space-x-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{audienceAudit.realAudienceRate}% Real Audience</span>
+                          </span>
+                          <span className="text-amber-700">
+                            {audienceAudit.seedingRate}% Seeding / Bot
+                          </span>
+                        </div>
+                        <div className="h-3 w-full bg-amber-200 rounded-full overflow-hidden flex shadow-inner">
+                          <div
+                            className="h-full bg-emerald-500 transition-all duration-500"
+                            style={{ width: `${audienceAudit.realAudienceRate}%` }}
+                            title={`Organic Audience: ${audienceAudit.realAudienceRate}%`}
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-relaxed">
+                          Evaluated from technical sports inquiries, sentence naturalness, and bot-comment heuristics.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Comment text was not included with these posts, so real-audience and seeding rates were not scored.
+                      </p>
+                    )}
                   </div>
 
                   {/* Top 5 Tag Distribution (Comments & Content Topics) */}
@@ -2153,7 +2165,7 @@ export function Kol360Modal({
                   </div>
                   {audienceAudit.auditSummary && (
                     <p className="text-slate-800 italic leading-relaxed text-xs">
-                      &ldquo;{audienceAudit.auditSummary}&rdquo;
+                      &ldquo;{cleanAuditSummary(audienceAudit.auditSummary, audienceAudit.totalCommentsScanned)}&rdquo;
                     </p>
                   )}
                 </div>

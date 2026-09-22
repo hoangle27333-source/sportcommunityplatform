@@ -12,7 +12,10 @@ import {
   Sparkles,
   ChevronDown,
 } from "lucide-react";
-import type { AudienceAuditResult } from "@/lib/sport-hub/audience-audit-types";
+import {
+  cleanAuditSummary,
+  type AudienceAuditResult,
+} from "@/lib/sport-hub/audience-audit-types";
 
 const TAG_COLORS = ["#2563eb", "#6366f1", "#0d9488", "#0891b2", "#8b5cf6"];
 
@@ -71,7 +74,7 @@ export function AudienceAuditSection({
         return;
       }
       setAudit(json.data);
-      toast.success(json.data.auditSummary || "Audit updated.", { id: toastId });
+      toast.success("Audience audit updated.", { id: toastId });
     } catch (err: any) {
       toast.error(err?.message || "Could not reach the audit service.", { id: toastId });
     } finally {
@@ -139,28 +142,42 @@ export function AudienceAuditSection({
               <MessageCircle className="w-4 h-4 text-indigo-600" />
               Audience Engagement Authenticity
             </h4>
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                audit.seedingRiskLevel === "Low"
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : audit.seedingRiskLevel === "Moderate"
-                    ? "bg-amber-50 text-amber-700 border-amber-200"
-                    : "bg-rose-50 text-rose-700 border-rose-200"
-              }`}
-            >
-              {audit.seedingRiskLevel} Seeding Risk
-            </span>
+            {audit.totalCommentsScanned > 0 ? (
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                  audit.seedingRiskLevel === "Low"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : audit.seedingRiskLevel === "Moderate"
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-rose-50 text-rose-700 border-rose-200"
+                }`}
+              >
+                {audit.seedingRiskLevel} Seeding Risk
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold border bg-slate-100 text-slate-600 border-slate-200">
+                No comment sample
+              </span>
+            )}
           </div>
-          <div className="flex justify-between text-xs font-extrabold">
-            <span className="text-emerald-700 inline-flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              {audit.realAudienceRate}% Real Audience
-            </span>
-            <span className="text-amber-700">{audit.seedingRate}% Seeding / Bot</span>
-          </div>
-          <div className="h-3 w-full bg-amber-200 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500" style={{ width: `${audit.realAudienceRate}%` }} />
-          </div>
+          {audit.totalCommentsScanned > 0 ? (
+            <>
+              <div className="flex justify-between text-xs font-extrabold">
+                <span className="text-emerald-700 inline-flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {audit.realAudienceRate}% Real Audience
+                </span>
+                <span className="text-amber-700">{audit.seedingRate}% Seeding / Bot</span>
+              </div>
+              <div className="h-3 w-full bg-amber-200 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500" style={{ width: `${audit.realAudienceRate}%` }} />
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-slate-500">
+              Comment text was not included with these posts, so real-audience and seeding rates were not scored.
+            </p>
+          )}
           <div className="space-y-2 pt-2 border-t border-slate-200">
             <span className="text-xs font-bold text-slate-800 inline-flex items-center gap-1">
               <BarChart3 className="w-3.5 h-3.5 text-blue-600" /> Top 5 Tag Distribution
@@ -256,7 +273,7 @@ export function AudienceAuditSection({
 
       {audit.auditSummary && (
         <p className="text-xs italic text-slate-700 bg-indigo-50/60 border border-indigo-100 rounded-xl p-3">
-          “{audit.auditSummary}”
+          “{cleanAuditSummary(audit.auditSummary, audit.totalCommentsScanned)}”
         </p>
       )}
     </div>

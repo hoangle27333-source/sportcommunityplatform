@@ -9,8 +9,9 @@
 import { getAIProvider } from "@/lib/ai";
 import { getLarkDashboardData } from "@/lib/lark/client";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type {
-  AudienceAuditResult,
+import {
+  cleanAuditSummary,
+  type AudienceAuditResult,
   BookedCategoryItem,
   CommercialSaturation,
   PartnerBrandItem,
@@ -467,9 +468,8 @@ function heuristicAudit(
   const summaryParts = [
     `Audience audit for ${kolName}: scanned ${posts.length} posts`,
     commentsScanned > 0
-      ? `and ${commentsScanned} comments`
-      : "(no comment samples stored — rates estimated from available captions only)",
-    `. Real organic audience ${realAudienceRate}% (seeding ${seedingRate}%, risk ${seedingRiskLevel(seedingRate)}).`,
+      ? ` and ${commentsScanned} comments. Real organic audience ${realAudienceRate}% (seeding ${seedingRate}%, risk ${seedingRiskLevel(seedingRate)}).`
+      : ". No comment sample was available, so audience authenticity was not scored.",
     ` Sponsored content ${sponsoredContentRate}% → ${commercialSaturationFromRate(sponsoredContentRate)}.`,
   ];
 
@@ -478,7 +478,7 @@ function heuristicAudit(
     result: {
       totalPostsScanned: posts.length,
       totalCommentsScanned: commentsScanned,
-      realAudienceRate: commentsScanned > 0 ? realAudienceRate : 100,
+      realAudienceRate: commentsScanned > 0 ? realAudienceRate : 0,
       seedingRate: commentsScanned > 0 ? seedingRate : 0,
       seedingRiskLevel: commentsScanned > 0 ? seedingRiskLevel(seedingRate) : "Low",
       topTagDistribution: buildTagDistribution(tagHits, 5),
@@ -525,7 +525,7 @@ Analyze ONLY the posts JSON below. Never invent comments, brands, handles, or sp
 1) Comment authenticity: label each provided commentsSample string organic vs seeding/bot. If commentsSample is empty, return empty comment arrays and do not estimate a seeding rate.
 2) Top 5 content topic tags with percentages from the captions (English tags: Sports, Daily Topics, Travel, Transportation, Art and Entertainment, Food, Fashion).
 3) Sponsored content only when a caption contains Vietnam Ad Law tags (#ad #quangcao #duoctaitro) or an explicit brand mention already in the text.
-4) A short English auditSummary (2-4 sentences) that matches the evidence.
+4) auditSummary: 1 or 2 English sentences about topics and sponsorship only. Do not mention missing comments, seeding, authenticity limits, or that a rate could not be estimated.
 
 KOL name: ${kolName}
 Heuristic baseline (may refine, do not invent impossible rates):
@@ -666,7 +666,10 @@ Return ONLY JSON with this shape:
           organic: sampleOrganic,
           seeding: sampleSeeding,
         },
-        auditSummary: String(data.auditSummary || heuristic.auditSummary),
+        auditSummary: cleanAuditSummary(
+          String(data.auditSummary || heuristic.auditSummary),
+          sourceComments.length > 0 ? commentsScanned : heuristic.totalCommentsScanned
+        ),
       },
     };
   } catch (err) {

@@ -1,5 +1,17 @@
 /** Audience authenticity & sponsored-content audit contracts (API + cache). */
 
+/** Drop model sentences that explain a missing comment sample as if the audit failed. */
+export function cleanAuditSummary(summary: string, commentsScanned: number): string {
+  const text = String(summary || "").replace(/\s+/g, " ").trim();
+  if (!text || commentsScanned > 0) return text;
+  const kept = text.split(/(?<=[.!?])\s+/).filter((sentence) => {
+    return !/comment|seeding|authenticity|could not|unable to|preventing an analysis|not contain/i.test(
+      sentence
+    );
+  });
+  return kept.join(" ").trim();
+}
+
 export type SeedingRiskLevel = "Low" | "Moderate" | "High";
 export type CommercialSaturation =
   | "Low Commercial"
