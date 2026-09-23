@@ -228,6 +228,7 @@ export function Kol360Modal({
   );
   const [isAuditing, setIsAuditing] = useState(false);
   const [showSampleComments, setShowSampleComments] = useState(false);
+  const [localPosts, setLocalPosts] = useState<Post[]>([]);
 
   useEffect(() => {
     if (kol) {
@@ -235,11 +236,86 @@ export function Kol360Modal({
     }
   }, [kol]);
 
-  const handleRunLiveAudit = async () => {
+  useEffect(() => {
+    setLocalPosts([]);
+  }, [currentKol?.id]);
+
+  const handleRunLiveAudit = async (options?: { forceScout?: boolean }) => {
     if (!currentKol) return;
     setIsAuditing(true);
-    const toastId = toast.loading(`Auditing audience authenticity & sponsored content for ${currentKol.name}...`);
+    const toastId = toast.loading(`Initiating audit for ${currentKol.name}...`);
     try {
+      // Step 1: Automatically trigger Apify Scraper if KOL has 0 posts or forceScout is requested
+      const shouldScout = options?.forceScout || kolPosts.length === 0;
+
+      if (shouldScout) {
+        toast.loading(
+          `No scouted posts found for ${currentKol.name}. Launching Apify scraper...`,
+          { id: toastId }
+        );
+
+        // Determine platform from channel footprint or profile
+        const platform = currentKol.platform
+          ? currentKol.platform.includes("TikTok")
+            ? "TikTok"
+            : currentKol.platform.includes("Facebook")
+            ? "Facebook"
+            : "Instagram"
+          : "Instagram";
+
+        const scoutRes = await fetch("/api/sport-hub/scout/kol-posts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kolId: currentKol.id,
+            platform: [platform],
+            limit: 10,
+          }),
+        });
+
+        const scoutJson = await scoutRes.json().catch(() => null);
+        if (scoutRes.ok && scoutJson?.success && Array.isArray(scoutJson.posts) && scoutJson.posts.length > 0) {
+          const mappedPosts: Post[] = scoutJson.posts.map((p: any) => ({
+            id: p.id || `scouted-${Date.now()}-${Math.random()}`,
+            title: p.title || `Post by ${currentKol.name}`,
+            author: p.author || currentKol.name,
+            kolRecordIds: [currentKol.id],
+            platform: p.platform || platform,
+            likes: Number(p.likes) || 0,
+            comments: Number(p.comments) || 0,
+            views: Number(p.views) || 0,
+            er: Number(p.er) || 0,
+            postUrl: p.post_url || p.postUrl || "#",
+            viralGrade: p.viral_tier || p.viralGrade || "Tiêu chuẩn",
+            status: "Scouted",
+            isSponsored: Boolean(p.is_sponsored),
+            sponsorBrand: p.sponsor_brand,
+          }));
+
+          setLocalPosts((prev) => {
+            const existingIds = new Set(prev.map((x) => x.id));
+            const newOnes = mappedPosts.filter((x) => !existingIds.has(x.id));
+            return [...prev, ...newOnes];
+          });
+
+          toast.loading(
+            `Apify scouted ${scoutJson.insertedCount || mappedPosts.length} posts! Analyzing audience authenticity & sponsored content...`,
+            { id: toastId }
+          );
+        } else {
+          toast.loading(
+            `Scout completed. Running audience authenticity audit...`,
+            { id: toastId }
+          );
+        }
+      } else {
+        toast.loading(
+          `Auditing audience authenticity & sponsored content for ${currentKol.name}...`,
+          { id: toastId }
+        );
+      }
+
+      // Step 2: Run Audience Authenticity & Sponsored Content Audit
       const res = await fetch(`/api/sport-hub/kol/${currentKol.id}/audience-audit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,11 +329,16 @@ export function Kol360Modal({
         });
         return;
       }
+
       setAudienceAudit(json.data);
       setCurrentKol((prev) => (prev ? { ...prev, audienceAudit: json.data } : null));
-      toast.success(`Audience audit updated for ${currentKol.name}.`, { id: toastId });
+      toast.success(
+        json.data.auditSummary ||
+          `Audience audit complete for ${currentKol.name} (${json.data.totalPostsScanned} posts analyzed)!`,
+        { id: toastId }
+      );
     } catch (err: any) {
-      toast.error(err?.message || "Could not reach the audience audit service.", {
+      toast.error(err?.message || "Could not complete audience audit pipeline.", {
         id: toastId,
       });
     } finally {
@@ -552,9 +633,9 @@ export function Kol360Modal({
   const avatar = getKolAvatar(currentKol.name);
   const aggregates = useMemo(() => getKolAggregates(currentKol), [currentKol]);
 
-  // Filter viral posts scouted for this KOL
+  // Filter viral posts scouted for this KOL (including newly scouted posts in this session)
   const kolPosts = useMemo(() => {
-    return posts.filter((p) => {
+    const parentMatches = posts.filter((p) => {
       const matchId = p.kolRecordIds && p.kolRecordIds.includes(currentKol.id);
       const matchAuthor =
         p.author &&
@@ -562,7 +643,11 @@ export function Kol360Modal({
           currentKol.name.toLowerCase().includes(p.author.toLowerCase()));
       return matchId || matchAuthor;
     });
-  }, [posts, currentKol]);
+
+    const parentIds = new Set(parentMatches.map((p) => p.id));
+    const extraLocal = localPosts.filter((p) => !parentIds.has(p.id));
+    return [...parentMatches, ...extraLocal];
+  }, [posts, localPosts, currentKol]);
 
   // Filtered posts by search keyword inside modal table
   const displayedPosts = useMemo(() => {
@@ -1862,19 +1947,29 @@ export function Kol360Modal({
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2.5">
-                  <span className="text-[11px] text-slate-400">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-slate-400 mr-1">
                     Audited {audienceAudit.totalPostsScanned} posts & {audienceAudit.totalCommentsScanned} comments
                   </span>
                   <button
                     type="button"
                     disabled={isAuditing}
                     onClick={() => handleRunLiveAudit()}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
-                    title="Force refresh audience authenticity and commercial sponsor scan"
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Re-run audit on existing scouted posts"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
                     <span>{isAuditing ? "Auditing..." : "Refresh Audit"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isAuditing}
+                    onClick={() => handleRunLiveAudit({ forceScout: true })}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center space-x-1.5 border border-indigo-200 shadow-2xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Scout fresh posts via Apify and re-run audit"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Scout via Apify & Re-Audit</span>
                   </button>
                 </div>
               </div>
@@ -2198,16 +2293,15 @@ export function Kol360Modal({
                 </p>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
-                {onScoutKolPosts && (
-                  <button
-                    type="button"
-                    onClick={() => onScoutKolPosts(currentKol)}
-                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Scout Posts for {currentKol.name}</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={isAuditing}
+                  onClick={() => handleRunLiveAudit({ forceScout: true })}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
+                  <span>{isAuditing ? "Scouting & Auditing..." : `Scout via Apify & Re-Audit`}</span>
+                </button>
                 <button
                   type="button"
                   disabled={isAuditing}
@@ -2215,7 +2309,7 @@ export function Kol360Modal({
                   className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isAuditing ? "animate-spin" : ""}`} />
-                  <span>{isAuditing ? "Auditing..." : "Re-run Audit"}</span>
+                  <span>{isAuditing ? "Auditing..." : "Re-run Audit Only"}</span>
                 </button>
               </div>
             </div>
@@ -2231,7 +2325,7 @@ export function Kol360Modal({
                 </h4>
                 {kolPosts.length === 0 ? (
                   <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-                    No audience authenticity audit available. Scout posts first to ingest social activity, then click &ldquo;Run Audience Audit&rdquo; to analyze comments, authenticity, and commercial sponsorships.
+                    No scouted posts found yet. Clicking &ldquo;Run Apify Scout &amp; Audit&rdquo; will automatically scrape the creator&apos;s latest social posts via Apify and evaluate audience authenticity.
                   </p>
                 ) : (
                   <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
@@ -2240,26 +2334,21 @@ export function Kol360Modal({
                 )}
               </div>
               <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
-                {kolPosts.length === 0 && onScoutKolPosts ? (
-                  <button
-                    type="button"
-                    onClick={() => onScoutKolPosts(currentKol)}
-                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Scout Posts First</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={isAuditing}
-                    onClick={() => handleRunLiveAudit()}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
-                  >
-                    <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
-                    <span>{isAuditing ? "Running Audit..." : "Run Audience Audit"}</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={isAuditing}
+                  onClick={() => handleRunLiveAudit({ forceScout: kolPosts.length === 0 })}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
+                  <span>
+                    {isAuditing
+                      ? "Auditing via Apify..."
+                      : kolPosts.length === 0
+                      ? "Run Apify Scout & Audit"
+                      : "Run Audience Audit"}
+                  </span>
+                </button>
               </div>
             </div>
           )}
