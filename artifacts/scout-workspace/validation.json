@@ -1,0 +1,84 @@
+{
+  "recordedAt": "2026-10-05T12:10:05.265700+00:00",
+  "sourceImplemented": true,
+  "typecheck": "PASS",
+  "productionBuild": "PASS",
+  "tests": {
+    "files": 18,
+    "passed": 230
+  },
+  "browser": {
+    "fixtureOnly": true,
+    "result": "PASS",
+    "checks": [
+      "desktop/mobile",
+      "explicit review import",
+      "read-only result reload",
+      "resume review",
+      "entity A/B reset",
+      "keyboard focus and Escape",
+      "provider unavailable",
+      "original entity name",
+      "unknown metric save",
+      "viewer gating"
+    ]
+  },
+  "targetReadOnly": {
+    "runtimeTablesPresent": true,
+    "sessionRuntimeColumnsPresent": true,
+    "collectionBudgetEnabled": true,
+    "verifiedCapabilitiesPresent": true
+  },
+  "authenticatedWorkspaceEndToEnd": {
+    "result": "FAIL",
+    "blocker": "Four provider runs for one task; budget exhaustion; zero persisted posts. See Chrome audit report."
+  },
+  "paidRunsStartedByWorkspaceImplementation": 0,
+  "liveAcceptanceComplete": false,
+  "chromeAudit": {
+    "profile": "hoangle27333",
+    "authenticatedRole": "admin",
+    "result": "FAIL",
+    "sessionId": "0030c099-4b7f-4b65-826e-aeae7ee8d2c7",
+    "providerRunsStarted": 4,
+    "reportedProviderCostUsd": 0.0108,
+    "savedPosts": 0,
+    "queue": "isolated local Redis recovery; normal queue unavailable",
+    "blockingFindings": [
+      "changing retrieval window creates new paid run each poll",
+      "all-platform failure marked completed",
+      "normal worker queue unavailable"
+    ],
+    "tests": {
+      "files": 19,
+      "passed": 232
+    },
+    "report": "docs/scout-chrome-audit-2026-10-05.md",
+    "finalTypecheck": "FAIL: concurrent summarize-memory-verification.ts implicit any at lines 6 and 15"
+  },
+  "auditFixes": {
+    "status": "reported defects fixed",
+    "tests": {
+      "files": 23,
+      "passed": 250
+    },
+    "typecheck": "PASS",
+    "productionBuild": "PASS",
+    "fixtureBrowser": "PASS: 11 checks, no page errors",
+    "chromeProfile": "hoangle27333",
+    "normalQueueWorker": "ready and used by real UI task",
+    "sessionId": "36ac56fd-290e-4f61-9d35-2dd74730183f",
+    "providerRunCount": 1,
+    "outcome": "valid empty result; no posts saved",
+    "uiVerified": [
+      "typed failed result and explicit retry",
+      "retry platform and limit restored",
+      "independent card selections",
+      "metadata boilerplate name rejected",
+      "obsolete queue warnings removed",
+      "No Results for empty dataset"
+    ],
+    "receipt": "chrome-fixed-session.json",
+    "fullAllFlowAcceptance": false
+  }
+}

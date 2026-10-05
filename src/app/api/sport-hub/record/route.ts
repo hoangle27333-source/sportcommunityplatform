@@ -1,3 +1,4 @@
+import { inspectionObservation } from "@/lib/apify/inspection-observation";
 import { NextRequest, NextResponse } from "next/server";
 import {
   createKOL,
@@ -37,7 +38,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { isAdmin } = await getServerUserRole();
+    const { isAdmin, role } = await getServerUserRole();
+    if (['kol','community','post'].includes(type) && (!user || !['admin','editor'].includes(role))) {
+      return NextResponse.json({success:false,error:user ? 'Editor access required' : 'Please log in'}, {status:user ? 403 : 401});
+    }
 
     // Attach creator user attribution if logged in
     if (user) {
@@ -93,6 +97,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      data.scoutProvenance = user ? await inspectionObservation(data, user.id) : null;
       record = await createKOL(data);
     } else if (type === "community") {
       const name = String(data.name || "").trim();
@@ -102,6 +107,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      data.scoutProvenance = user ? await inspectionObservation(data, user.id, true) : null;
       record = await createCommunity(data);
     } else if (type === "project") {
       const name = String(data.name || "").trim();
@@ -159,8 +165,9 @@ export async function POST(req: NextRequest) {
       {
         success: false,
         error: err.message || "Error creating record in Supabase",
+        ...(err.code ? {code:err.code} : {}),
       },
-      { status: 500 }
+      { status: err.status || 500 }
     );
   }
 }
@@ -186,7 +193,10 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const { isAdmin } = await getServerUserRole();
+    const { isAdmin, role } = await getServerUserRole();
+    if (['kol','community','post'].includes(type) && (!user || !['admin','editor'].includes(role))) {
+      return NextResponse.json({success:false,error:user ? 'Editor access required' : 'Please log in'}, {status:user ? 403 : 401});
+    }
 
     // Attach editor user attribution if logged in
     if (user) {

@@ -1,3 +1,5 @@
+import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
+import { latestGMV } from "./gmv";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   fetchProjectParticipants,
@@ -42,6 +44,8 @@ export interface KOLItem {
   avgViews: number;
   er: number;
   quotation: number;
+  gmv?: { amount: number; month: string; source: string } | null;
+  missingMetrics?: string[];
   status: string;
   info: string;
   profileUrl: string;
@@ -54,10 +58,12 @@ export interface KOLItem {
     changes: Record<string, { current: any; scouted: any }>;
   } | null;
   lastScoutedAt?: string;
+  scoutProvenance?: Record<string,any> | null;
   audienceAudit?: Record<string, unknown> | null;
 }
 
 export interface CommunityItem {
+  missingMetrics?: string[];
   id: string;
   name: string;
   sport: string[];
@@ -72,6 +78,7 @@ export interface CommunityItem {
   privacy?: string;
   purpose?: string[];
   channels?: CommunityChannel[];
+  scoutProvenance?: Record<string,any> | null;
   audienceAudit?: Record<string, unknown> | null;
 }
 
@@ -122,6 +129,7 @@ export interface PostItem {
   views: number;
   er: number;
   postUrl: string;
+  missingMetrics?: string[];
   thumbnailUrl?: string;
   sport?: string;
   viralTier?: string;
@@ -165,6 +173,13 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
   if (repRes.error) console.error("Error fetching reports:", repRes.error);
   if (postRes.error) console.error("Error fetching scouted_posts:", postRes.error);
 
+  const { isAdmin } = await getServerUserRole();
+  let gmvRows: any[] = [];
+  if (isAdmin) {
+    const { data: gmv, error: gmvError } = await supabase.from("kol_gmv_monthly").select("kol_id,amount,month,source");
+    if (gmvError) throw gmvError;
+    gmvRows = gmv || [];
+  }
   const rawKols = kolsRes.data || [];
   const rawComm = commRes.data || [];
   const rawProj = projRes.data || [];
@@ -184,14 +199,16 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
       avgViews: Number(r.avg_views) || 0,
       er: Number(r.er) || 0,
       quotation: Number(r.quotation) || 0,
+      ...(isAdmin ? { gmv: (() => { const row = latestGMV(gmvRows.filter(g => g.kol_id === r.id)); return row ? { amount: Number(row.amount), month: row.month, source: row.source } : null; })() } : {}),
+      missingMetrics: r.scout_missing_metrics || [],
+      scoutProvenance:r.scout_provenance || null,
       status: r.status || "Đang hợp tác tích cực",
       info: r.contact_info || "",
       bio: r.bio || "",
       profileUrl: r.profile_url || "#",
       avatarUrl: r.avatar_url || "",
       channels:
-        getStoredEntityChannels("kol", r.id, r.name) ||
-        (r.channels && Array.isArray(r.channels) && r.channels.length > 0 ? r.channels : undefined),
+        (r.scout_provenance && Array.isArray(r.channels) && r.channels.length ? r.channels : getStoredEntityChannels("kol",r.id,r.name) || r.channels || undefined),
       userLockedFields: Array.isArray(r.user_locked_fields) ? r.user_locked_fields : [],
       pendingScoutDiff: r.pending_scout_diff || null,
       lastScoutedAt: r.last_scouted_at || undefined,
@@ -212,13 +229,15 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
 
   // Map Communities with Multi-Channel Data and Aggregation
   const communities: CommunityItem[] = rawComm.map((r: any) => {
-    const storedChannels = getStoredEntityChannels("community", r.id, r.name);
+    const storedChannels = r.scout_provenance && Array.isArray(r.channels) && r.channels.length ? r.channels : getStoredEntityChannels("community", r.id, r.name) || r.channels;
     const baseComm: CommunityItem = {
       id: r.id,
       name: r.name || "",
       sport: Array.isArray(r.sports) ? r.sports : [],
       geography: r.geography || "Toàn quốc",
       members: Number(r.members_count) || 0,
+      missingMetrics: r.scout_missing_metrics || [],
+      scoutProvenance:r.scout_provenance || null,
       platform: r.platform || "Facebook Group",
       groupUrl: r.group_url || "#",
       activityLevel: r.activity_level || "Rất sôi động (> 20 bài/ngày)",
@@ -341,6 +360,8 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
     views: Number(r.views) || 0,
     er: Number(r.er) || 0,
     postUrl: r.post_url || "#",
+    missingMetrics: r.scout_missing_metrics || [],
+      scoutProvenance:r.scout_provenance || null,
     thumbnailUrl: r.thumbnail_url || undefined,
     sport: r.sport || undefined,
     viralTier: r.viral_tier || "Tiêu chuẩn",
@@ -393,6 +414,8 @@ export async function createKOL(data: Partial<KOLItem>) {
   const { data: record, error } = await supabase
     .from("kols")
     .insert({
+      scout_provenance: (data as any).scoutProvenance || null,
+      scout_missing_metrics: ["followers", "avgViews", "er"].filter(field => (data as any)[field] === null || (data as any).missingMetrics?.includes(field)),
       name: data.name,
       sports: data.sport || [],
       tier: data.tier || "Micro (10k - 50k)",
@@ -420,13 +443,16 @@ export async function updateKOL(id: string, data: Partial<KOLItem>) {
   // Retrieve current locked fields
   const { data: existingKol } = await supabase
     .from("kols")
-    .select("user_locked_fields")
+    .select("user_locked_fields,scout_missing_metrics")
     .eq("id", id)
     .single();
 
   const lockedSet = new Set<string>(existingKol?.user_locked_fields || []);
 
   const updatePayload: Record<string, any> = {};
+  if (data.followers !== undefined || data.avgViews !== undefined || data.er !== undefined) {
+    updatePayload.scout_missing_metrics = (existingKol?.scout_missing_metrics || []).filter((k: string) => (data as any)[k] === undefined);
+  }
   if (data.name !== undefined) {
     updatePayload.name = data.name;
     lockedSet.add("name");
@@ -635,6 +661,8 @@ export async function createCommunity(data: Partial<CommunityItem>) {
   const { data: record, error } = await supabase
     .from("communities")
     .insert({
+      scout_provenance: (data as any).scoutProvenance || null,
+      scout_missing_metrics: ["members"].filter(field => (data as any)[field] === null || (data as any).missingMetrics?.includes(field)),
       name: data.name,
       sports: data.sport || [],
       geography: data.geography || "Toàn quốc",
@@ -778,6 +806,7 @@ export async function createScoutRequest(data: any) {
     .from("scout_requests")
     .insert({
       keyword: data.keyword,
+      created_by: data.createdBy || null,
       target_type: data.targetType || "KOLs cá nhân",
       platform: data.platform || "Instagram",
       target_limit: Number(data.limit) || 10,
@@ -849,6 +878,7 @@ export async function createPost(data: Partial<PostItem>) {
   const { data: record, error } = await supabase
     .from("scouted_posts")
     .insert({
+      scout_missing_metrics: ["likes", "comments", "views", "er"].filter(field => (data as any)[field] === null || (data as any).missingMetrics?.includes(field)),
       kol_id: data.kolRecordIds?.[0] || null,
       title: data.title || "Untitled Viral Post",
       author: data.author || "Unknown Creator",
@@ -860,7 +890,7 @@ export async function createPost(data: Partial<PostItem>) {
       comments: Number(data.comments) || 0,
       views: Number(data.views) || 0,
       er: Number(data.er) || 0,
-      viral_tier: data.viralTier || viral,
+      viral_tier: (data as any).views === null ? "Unknown" : data.viralTier || viral,
       hashtags: data.hashtags || "",
       notes: data.notes || "Added via URL Scout / Manual Form",
     })
@@ -976,6 +1006,12 @@ export async function mergeEntities(payload: MergeEntitiesPayload) {
       group_url: primaryChannel?.url || primaryRecord.group_url,
       updated_at: new Date().toISOString(),
     };
+  }
+
+  if (type === "kol") {
+    const { data: secondaryGMV, error: gmvError } = await supabase.from("kol_gmv_monthly").select("id").in("kol_id", secondaryIds).limit(1);
+    if (gmvError) throw gmvError;
+    if (secondaryGMV?.length) throw new Error("Resolve monthly GMV on secondary creators before merging to preserve financial history.");
   }
 
   // Update master record in Supabase

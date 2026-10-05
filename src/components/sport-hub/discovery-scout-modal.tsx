@@ -1,6 +1,7 @@
 "use client";
+import { scoutFetch } from "@/lib/apify/scout-client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -23,34 +24,21 @@ import {
   Heart,
   MessageSquare,
 } from "lucide-react";
-import { formatNumber } from "@/lib/i18n";
+import { t, formatNumber } from "@/lib/i18n";
 
-export interface DiscoveryCandidate {
-  username: string;
-  name: string;
-  bio: string;
-  url: string;
-  followers: number;
-  avgViews: number;
-  likes: number;
-  comments: number;
-  er: number;
-  avatarUrl?: string;
-  isExisting: boolean;
-  existingId?: string;
-  posts?: {
-    caption: string;
-    url: string;
-    views: number;
-    likes: number;
-    comments: number;
-  }[];
-}
+import { ScoutDialogFrame } from "./scout-dialog-frame";
+import { useScoutCapabilities } from "./use-scout-capabilities";
+import { SCOUT_PLATFORMS } from "@/lib/apify/scout-workspace";
+import type { DiscoveryCandidate } from "@/lib/apify/scout";
 
 export interface DiscoveryScoutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (result?: any) => void;
+  resumeSessionId?: string;
+  initialCriteria?: Record<string, any>;
+  source?: string;
+  keepResultOpen?: boolean;
   onScoutSuccess?: () => void;
   defaultTargetType?: "Individual KOLs" | "Communities & Clubs" | "Sports KOLs & Influencers";
 }
@@ -70,6 +58,7 @@ export function DiscoveryScoutModal({
   onSuccess,
   onScoutSuccess,
   defaultTargetType = "Individual KOLs",
+  resumeSessionId, initialCriteria, source, keepResultOpen,
 }: DiscoveryScoutModalProps) {
   // Step state: 1 = Search Configuration & Preview, 2 = Candidate Review & Confirmation
   const [step, setStep] = useState<1 | 2>(1);
@@ -79,7 +68,10 @@ export function DiscoveryScoutModal({
     defaultTargetType === "Communities & Clubs" ? "Communities & Clubs" : "Individual KOLs";
   const [targetType, setTargetType] = useState<"Individual KOLs" | "Communities & Clubs">(initialType);
   const [keyword, setKeyword] = useState("");
-  const [platform, setPlatform] = useState("Instagram");
+  const [platform, setPlatform] = useState("");
+  const { availability, platforms } = useScoutCapabilities(targetType === "Communities & Clubs" ? "communities" : "profiles");
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [limit, setLimit] = useState(5);
   const [geography, setGeography] = useState("Nationwide");
   const [notes, setNotes] = useState("");
@@ -89,58 +81,68 @@ export function DiscoveryScoutModal({
   const [importing, setImporting] = useState(false);
 
   // Step 2 Candidates State
+
+  const [sessionId, setSessionId] = useState("");
+  const [reviewed, setReviewed] = useState<Set<string>>(new Set());
+  const [reviewTab, setReviewTab] = useState("Matched");
   const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
   const [effectiveQuery, setEffectiveQuery] = useState("");
   const [modifierApplied, setModifierApplied] = useState<string | undefined>();
   const [selectedUsernames, setSelectedUsernames] = useState<Set<string>>(new Set());
+  const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([]);
+  const [discoveryCounts, setDiscoveryCounts] = useState<{ providerCount: number; excludedCount: number; requestedCount: number } | null>(null);
 
   useEffect(() => {
-    if (defaultTargetType) {
-      const mapped: "Individual KOLs" | "Communities & Clubs" =
-        defaultTargetType === "Communities & Clubs" ? "Communities & Clubs" : "Individual KOLs";
-      setTargetType(mapped);
-      if (mapped === "Communities & Clubs") {
-        setPlatform("Facebook");
-      } else {
-        setPlatform("Instagram");
-      }
+    if (initialCriteria) {
+      setKeyword(initialCriteria.keyword || ""); setTargetType(initialCriteria.targetType || initialType);
+      setPlatform(initialCriteria.platform || ""); setGeography(initialCriteria.geography || "Nationwide");
+      setLimit(initialCriteria.limit || 5); setNotes(initialCriteria.notes || "");
     }
-  }, [defaultTargetType, isOpen]);
+    if (resumeSessionId && isOpen) void handleSearchPreview({ preventDefault() {} } as React.FormEvent, resumeSessionId);
+  }, [resumeSessionId, isOpen]);
+  useEffect(() => {
+    if (!resumeSessionId && !availability(platform).available) setPlatform(platforms[0] || "");
+  }, [platforms.join(","), targetType]);
 
   // Reset modal state on close
-  const handleClose = () => {
-    if (searching || importing) return;
+  const resetAndClose = () => {
     setStep(1);
     setCandidates([]);
     setSelectedUsernames(new Set());
     setModifierApplied(undefined);
+    setDiscoveryWarnings([]);
+    setDiscoveryCounts(null);
     onClose();
+  };
+  const handleClose = () => {
+    resetAndClose();
   };
 
   if (!isOpen) return null;
 
   // ─── STEP 1: PREVIEW CANDIDATES (NO DB COMMIT) ───
-  const handleSearchPreview = async (e: React.FormEvent) => {
+  const handleSearchPreview = async (e: React.FormEvent, resumeId?: string) => {
     e.preventDefault();
     const cleanKeyword = keyword.trim();
-    if (!cleanKeyword) {
+    if (!cleanKeyword && !resumeId) {
       toast.error("Please enter a search topic or keyword to discover candidate profiles!");
       return;
     }
 
+    if (!resumeId && !availability(platform).available) { toast.error("Choose an available platform before searching."); return; }
     setSearching(true);
     try {
-      const res = await fetch("/api/sport-hub/scout", {
+      const res = await scoutFetch("/api/sport-hub/scout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(resumeId ? { action: "resume", sessionId: resumeId } : {
           action: "preview",
           keyword: cleanKeyword,
           targetType,
           platform,
           limit,
           geography,
-          notes,
+          notes, uiContext: { source: source || "/scout" },
         }),
       });
 
@@ -150,34 +152,34 @@ export function DiscoveryScoutModal({
         return;
       }
 
-      const fetchedCandidates: DiscoveryCandidate[] = result.candidates || [];
-      if (fetchedCandidates.length === 0) {
-        toast.info(
-          `No profiles found on ${platform} matching "${cleanKeyword}". Try another keyword or platform.`
-        );
-        return;
-      }
-
+      if (!mounted.current) return;
+      const importedIds = new Set(result.importedCandidateIds || []);
+      const fetchedCandidates: DiscoveryCandidate[] = (result.candidates || []).filter((c: DiscoveryCandidate) => !importedIds.has(c.candidateId));
+      if (result.criteria) { const p = result.criteria; setKeyword(p.keyword); setTargetType(p.targetType); setPlatform(p.platform); setGeography(p.geography); setLimit(p.limit); }
+      setDiscoveryWarnings(result.warnings || []);
+      setDiscoveryCounts(result.diagnostics || null);
       setCandidates(fetchedCandidates);
+      setSessionId(result.sessionId);
+      setReviewed(new Set());
+      setReviewTab(fetchedCandidates.some(c => c.reviewState === "Matched") ? "Matched" : "Needs Review");
       setEffectiveQuery(result.effectiveQuery || cleanKeyword);
       setModifierApplied(result.modifierApplied);
 
       // By default: preselect all new candidate profiles.
       // If all are already in CRM, preselect all so user can refresh them.
-      const newProfiles = fetchedCandidates.filter((c) => !c.isExisting);
+      const newProfiles = fetchedCandidates.filter((c) => !c.isExisting && c.reviewState === "Matched");
       if (newProfiles.length > 0) {
-        setSelectedUsernames(new Set(newProfiles.map((c) => c.username)));
+        setSelectedUsernames(new Set(newProfiles.map((c) => c.candidateId)));
       } else {
-        setSelectedUsernames(new Set(fetchedCandidates.map((c) => c.username)));
+        setSelectedUsernames(new Set(fetchedCandidates.filter(c => c.reviewState === "Matched").map((c) => c.candidateId)));
       }
 
       setStep(2);
-      toast.success(
-        `Found ${fetchedCandidates.length} candidate profiles (${result.newCount ?? newProfiles.length} new). Please review and select profiles to import.`
-      );
+      if (result.partial || fetchedCandidates.length < (result.criteria?.limit || limit)) toast.info(`Found ${fetchedCandidates.length} of ${result.criteria?.limit || limit} requested profiles. Review discovery details below.`);
+      else toast.success(`Found ${fetchedCandidates.length} candidate profiles (${result.newCount ?? newProfiles.length} new). Please review and select profiles to import.`);
     } catch (err: any) {
       console.error("Discovery Preview Error:", err);
-      toast.error("Server connection error during candidate discovery");
+      toast.error(err.message || "Server connection error during candidate discovery");
     } finally {
       setSearching(false);
     }
@@ -185,7 +187,7 @@ export function DiscoveryScoutModal({
 
   // ─── STEP 2: CONFIRM & INGEST SELECTED CANDIDATES ───
   const handleConfirmImport = async () => {
-    const selected = candidates.filter((c) => selectedUsernames.has(c.username));
+    const selected = candidates.filter((c) => selectedUsernames.has(c.candidateId));
     if (selected.length === 0) {
       toast.error("Please select at least one candidate profile to import!");
       return;
@@ -193,12 +195,13 @@ export function DiscoveryScoutModal({
 
     setImporting(true);
     try {
-      const res = await fetch("/api/sport-hub/scout", {
+      const res = await scoutFetch("/api/sport-hub/scout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "confirm",
-          candidates: selected,
+          sessionId,
+          selected: selected.map(c => ({ candidateId: c.candidateId, ...(reviewed.has(c.candidateId) ? { classification: targetType === "Communities & Clubs" ? "Community" : "Individual", relevant: true, locationConfirmed: true } : {}) })),
           targetType,
           platform,
           geography,
@@ -218,12 +221,12 @@ export function DiscoveryScoutModal({
           `Successfully imported ${selected.length} profile(s) into database!`
       );
 
-      if (onSuccess) onSuccess();
+      if (mounted.current && onSuccess) onSuccess({ ...result, sessionId });
       if (onScoutSuccess) onScoutSuccess();
-      handleClose();
+      if (mounted.current && !keepResultOpen) resetAndClose();
     } catch (err: any) {
       console.error("Discovery Confirm Error:", err);
-      toast.error("Server connection error during profile import");
+      toast.error(err.message || "Server connection error during profile import");
     } finally {
       setImporting(false);
     }
@@ -231,6 +234,8 @@ export function DiscoveryScoutModal({
 
   // Toggle single candidate selection
   const toggleCandidate = (username: string) => {
+    const candidate = candidates.find(c => c.candidateId === username);
+    if (candidate?.reviewState === "Needs Review" && !reviewed.has(username)) { toast.info("Confirm type, relevance and location first."); return; }
     setSelectedUsernames((prev) => {
       const next = new Set(prev);
       if (next.has(username)) {
@@ -244,7 +249,7 @@ export function DiscoveryScoutModal({
 
   // Quick Selection Helpers
   const selectAll = () => {
-    setSelectedUsernames(new Set(candidates.map((c) => c.username)));
+    setSelectedUsernames(new Set(candidates.filter(c => c.reviewState === "Matched" || reviewed.has(c.candidateId)).map((c) => c.candidateId)));
   };
 
   const deselectAll = () => {
@@ -253,7 +258,7 @@ export function DiscoveryScoutModal({
 
   const selectNewOnly = () => {
     setSelectedUsernames(
-      new Set(candidates.filter((c) => !c.isExisting).map((c) => c.username))
+      new Set(candidates.filter((c) => !c.isExisting && (c.reviewState === "Matched" || reviewed.has(c.candidateId))).map((c) => c.candidateId))
     );
   };
 
@@ -261,42 +266,7 @@ export function DiscoveryScoutModal({
   const existingCandidatesCount = candidates.filter((c) => c.isExisting).length;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150">
-      <div
-        className={`bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 ${
-          step === 1 ? "max-w-xl" : "max-w-2xl"
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* ─── MODAL HEADER ─── */}
-        <div className="bg-gradient-to-r from-purple-800 via-indigo-800 to-blue-900 text-white px-6 py-4 sm:py-5 flex items-center justify-between shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-amber-300 shadow-inner">
-              <Compass className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Social Discovery Engine
-                </span>
-                <span className="text-[10px] font-semibold text-amber-300 bg-amber-400/20 px-2 py-0.5 rounded-full">
-                  Step {step} of 2
-                </span>
-              </div>
-              <h3 className="font-black text-base sm:text-lg leading-tight text-white mt-0.5">
-                {step === 1 ? "Discover New Profiles" : "Review & Select Candidates"}
-              </h3>
-            </div>
-          </div>
-          <button
-            onClick={handleClose}
-            disabled={searching || importing}
-            className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition cursor-pointer disabled:opacity-50"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <ScoutDialogFrame title={step === 1 ? "Find Profiles" : "Review Profiles"} description="Search for KOLs or communities. Review candidates before adding them to your directory." onClose={handleClose} wide>
         {/* ─── STEP PROGRESS BAR ─── */}
         <div className="bg-slate-50 border-b border-slate-100 px-6 py-2.5 flex items-center justify-between text-xs shrink-0">
           <div className="flex items-center space-x-2">
@@ -383,7 +353,7 @@ export function DiscoveryScoutModal({
                   type="button"
                   onClick={() => {
                     setTargetType("Individual KOLs");
-                    setPlatform("Instagram");
+                    setPlatform("");
                   }}
                   className={`py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2 border cursor-pointer ${
                     targetType === "Individual KOLs"
@@ -392,14 +362,14 @@ export function DiscoveryScoutModal({
                   }`}
                 >
                   <Users className="w-4 h-4" />
-                  <span>New Sports KOLs</span>
+                  <span>KOLs & Creators</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     setTargetType("Communities & Clubs");
-                    setPlatform("Facebook");
+                    setPlatform("");
                   }}
                   className={`py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2 border cursor-pointer ${
                     targetType === "Communities & Clubs"
@@ -408,12 +378,13 @@ export function DiscoveryScoutModal({
                   }`}
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span>New Clubs & Communities</span>
+                  <span>Communities & Clubs</span>
                 </button>
               </div>
             </div>
 
             <form onSubmit={handleSearchPreview} className="space-y-4 pt-1">
+              <p className="text-xs text-slate-500">Running tasks and saved previews are available in <a href="/scout" className="underline">Scout Activity</a>.</p>
               {/* Search Keyword */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -464,28 +435,11 @@ export function DiscoveryScoutModal({
                     onChange={(e) => setPlatform(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    <option value="Instagram">Instagram</option>
-                    <option value="TikTok">TikTok</option>
-                    <option value="Facebook">Facebook</option>
-                    <option value="YouTube">YouTube</option>
+                    <option value="">Choose a platform</option>
+                    {SCOUT_PLATFORMS.map(p => <option key={p} value={p} disabled={!availability(p).available}>{p}{!availability(p).available ? " — Unavailable" : ""}</option>)}
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Discovery Limit
-                  </label>
-                  <select
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  >
-                    <option value={5}>5 candidate profiles</option>
-                    <option value={10}>10 candidate profiles</option>
-                    <option value={15}>15 candidate profiles</option>
-                    <option value={20}>20 candidate profiles</option>
-                  </select>
-                </div>
               </div>
 
               {/* Geography & Notes */}
@@ -499,16 +453,34 @@ export function DiscoveryScoutModal({
                     onChange={(e) => setGeography(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    <option value="Nationwide">Nationwide (Toàn quốc)</option>
-                    <option value="Hanoi">Hanoi (Hà Nội)</option>
-                    <option value="Ho Chi Minh City">Ho Chi Minh City (TP.HCM)</option>
-                    <option value="Da Nang">Da Nang (Đà Nẵng)</option>
+                    <option value="Nationwide">Nationwide</option>
+                    <option value="Hanoi">Hanoi</option>
+                    <option value="Ho Chi Minh City">Ho Chi Minh City</option>
+                    <option value="Da Nang">Da Nang</option>
                   </select>
                 </div>
 
+              </div>
+              <details className="space-y-3"><summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Scout Note / Tag (Optional)
+                    Maximum Candidate Profiles
+                  </label>
+                  <select
+                    value={limit}
+                    onChange={(e) => setLimit(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  >
+                    <option value={5}>5 candidate profiles</option>
+                    <option value={10}>10 candidate profiles</option>
+                    <option value={15}>15 candidate profiles</option>
+                    <option value={20}>20 candidate profiles</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1">Returns up to this many unique profiles after relevance and URL checks.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Note / Tag (Optional)
                   </label>
                   <input
                     type="text"
@@ -518,7 +490,8 @@ export function DiscoveryScoutModal({
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
-              </div>
+              </details>
+              {!platforms.length && <p role="status" className="text-xs text-amber-800">{SCOUT_PLATFORMS.map(p => `${p}: ${availability(p).reason}`).join(" · ")}</p>}
 
               {/* Progress Indicator when Searching */}
               {searching && (
@@ -545,7 +518,7 @@ export function DiscoveryScoutModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={searching}
+                  disabled={searching || !availability(platform).available}
                   className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-95 rounded-xl transition shadow-md flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {searching ? (
@@ -594,6 +567,9 @@ export function DiscoveryScoutModal({
               </div>
             </div>
 
+            {discoveryCounts && <p className="text-xs text-slate-600">Returned {candidates.length} / {discoveryCounts.requestedCount} requested profiles · {discoveryCounts.providerCount} provider results · {discoveryCounts.excludedCount} excluded</p>}
+            {discoveryWarnings.length > 0 && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{discoveryWarnings.map((warning, index) => <p key={index}>{warning}</p>)}</div>}
+
             {/* Selection Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 py-0.5">
               <div className="flex items-center space-x-2">
@@ -633,12 +609,13 @@ export function DiscoveryScoutModal({
 
             {/* Candidate Cards Scrollable List */}
             <div className="space-y-2.5 overflow-y-auto max-h-[48vh] pr-1 flex-1">
-              {candidates.map((candidate) => {
-                const isSelected = selectedUsernames.has(candidate.username);
+              <div className="flex gap-2">{["Matched", "Needs Review"].map(tab => <button type="button" key={tab} onClick={() => setReviewTab(tab)} className={`rounded-lg px-3 py-2 text-xs ${reviewTab === tab ? "bg-indigo-100" : "bg-slate-100"}`}>{tab} ({candidates.filter(c => c.reviewState === tab).length})</button>)}</div>
+              {candidates.filter(c => c.reviewState === reviewTab).map((candidate) => {
+                const isSelected = selectedUsernames.has(candidate.candidateId);
                 return (
                   <div
-                    key={candidate.username}
-                    onClick={() => toggleCandidate(candidate.username)}
+                    key={candidate.candidateId}
+                    onClick={() => toggleCandidate(candidate.candidateId)}
                     className={`rounded-2xl border p-3.5 sm:p-4 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                       isSelected
                         ? "border-indigo-500 bg-indigo-50/20 shadow-xs ring-1 ring-indigo-500/20"
@@ -652,7 +629,7 @@ export function DiscoveryScoutModal({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleCandidate(candidate.username);
+                          toggleCandidate(candidate.candidateId);
                         }}
                         className="mt-1 text-indigo-600 hover:text-indigo-700 transition shrink-0 cursor-pointer"
                       >
@@ -688,7 +665,7 @@ export function DiscoveryScoutModal({
                           <h4 className="font-extrabold text-sm text-slate-900 truncate">
                             {candidate.name}
                           </h4>
-                          <span className="text-xs text-slate-500 font-mono">
+                          <span className="text-xs text-slate-500 font-mono max-w-full truncate" title={candidate.username}>
                             @{candidate.username}
                           </span>
 
@@ -706,6 +683,17 @@ export function DiscoveryScoutModal({
                           )}
                         </div>
 
+                        <div className="mt-2 text-xs space-y-1" onClick={e => e.stopPropagation()}>
+                          <strong>{t(candidate.platform)} · {t(candidate.classification)} · {candidate.locationMatch ? "Location verified" : "Location unverified"}</strong>
+                          <p>{candidate.reasons.join(" · ")}</p>
+                          <details><summary>Profile evidence</summary>{candidate.evidence.map((line, i) => <p key={i}>{line}</p>)}</details>
+                          {candidate.reviewState === "Needs Review" && <label className="block"><input type="checkbox" checked={reviewed.has(candidate.candidateId)} onChange={e => { const next = new Set(reviewed); if (e.target.checked) next.add(candidate.candidateId); else { next.delete(candidate.candidateId); setSelectedUsernames(prev => { const ids = new Set(prev); ids.delete(candidate.candidateId); return ids; }); } setReviewed(next); }} /> I verified this {targetType === "Communities & Clubs" ? "community" : "individual"}, topic relevance and target location.</label>}
+                          <select aria-label="Scout feedback" defaultValue="" className="w-full max-w-full border rounded p-1" onChange={async e => {
+                            const value = e.target.value; if (!value) return;
+                            const [reason, classification] = value.split("|");
+                            try { const response = await fetch("/api/sport-hub/scout/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, candidateId: candidate.candidateId, reason, classification: classification || undefined }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error); toast.success("Feedback saved for future scouting"); if (reason !== "Correct Classification") { setCandidates(prev => prev.filter(c => c.candidateId !== candidate.candidateId)); setSelectedUsernames(prev => { const next = new Set(prev); next.delete(candidate.candidateId); return next; }); } } catch (error: any) { toast.error(error.message); }
+                          }}><option value="">Give Feedback</option><option value="Not Relevant">Not Relevant</option><option value="Wrong Location">Wrong Location</option>{["Individual", "Community", "Brand/Business", "Unknown"].map(type => <option key={type} value={`Wrong Entity Type|${type}`}>Correct Type: {t(type)}</option>)}<option value={`Correct Classification|${candidate.classification}`}>Confirm Classification</option></select>
+                        </div>
                         {/* Clickable Profile Link */}
                         <div className="mt-1">
                           <a
@@ -713,10 +701,10 @@ export function DiscoveryScoutModal({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center space-x-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                            className="inline-flex max-w-full items-center space-x-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
                             title={`Open live profile on ${platform}`}
                           >
-                            <span className="truncate max-w-[280px] sm:max-w-md">
+                            <span className="min-w-0 truncate max-w-[280px] sm:max-w-md">
                               {candidate.url}
                             </span>
                             <ExternalLink className="w-3.5 h-3.5 shrink-0" />
@@ -736,14 +724,14 @@ export function DiscoveryScoutModal({
                     <div className="flex sm:flex-col items-end sm:items-end justify-between sm:justify-center shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 gap-1">
                       <div className="flex items-center space-x-1.5 text-xs font-extrabold text-slate-800">
                         <Users className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{formatNumber(candidate.followers)}</span>
+                        <span>{candidate.followers === null ? "Unknown" : formatNumber(candidate.followers)}</span>
                         <span className="text-[10px] text-slate-500 font-normal">followers</span>
                       </div>
                       <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-semibold">
                         <span className="text-indigo-600 font-bold">
-                          {candidate.er.toFixed(1)}% ER
+                          {candidate.er === null ? "Unknown ER" : `${candidate.er.toFixed(1)}% ER`}
                         </span>
-                        {candidate.avgViews > 0 && (
+                        {candidate.avgViews !== null && (
                           <span>• {formatNumber(candidate.avgViews)} avg</span>
                         )}
                       </div>
@@ -765,14 +753,14 @@ export function DiscoveryScoutModal({
                 <div>
                   <p className="font-bold">Ingesting Selected Profiles into Database...</p>
                   <p className="text-[11px] text-indigo-700 mt-0.5 leading-relaxed">
-                    Saving records, deduplicating with existing CRM data, recording metric snapshots, and linking viral sample posts.
+                    Saving verified profiles and deduplicating with existing CRM records.
                   </p>
                 </div>
               </div>
             )}
 
             {/* Step 2 Bottom Action Bar */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between shrink-0">
+            <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
               <button
                 type="button"
                 disabled={importing}
@@ -783,7 +771,7 @@ export function DiscoveryScoutModal({
                 <span>Back to Search</span>
               </button>
 
-              <div className="flex items-center space-x-2.5">
+              <div className="flex items-center justify-end space-x-2.5">
                 <button
                   type="button"
                   disabled={importing}
@@ -813,7 +801,6 @@ export function DiscoveryScoutModal({
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </ScoutDialogFrame>
   );
 }

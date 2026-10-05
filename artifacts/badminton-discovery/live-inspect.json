@@ -1,0 +1,248 @@
+{
+  "table": "kols",
+  "error": null,
+  "data": [
+    {
+      "id": "069ecaf0-4aa4-4f97-9e09-352bf0c192af",
+      "name": "Henry Badminton",
+      "profile_url": "https://facebook.com/search/top",
+      "platform": "Facebook",
+      "channels": [],
+      "scout_identity": "Facebook:https://facebook.com/search/top",
+      "user_locked_fields": []
+    }
+  ]
+}
+{
+  "table": "scout_sessions",
+  "error": null,
+  "data": [
+    {
+      "id": "aff513a2-6943-4141-a6de-ab85cc444799",
+      "created_at": "2026-10-05T10:22:42.12842+00:00",
+      "status": "complete",
+      "params": {
+        "limit": 5,
+        "notes": "",
+        "keyword": "badminton",
+        "platform": "Facebook",
+        "geography": "Nationwide",
+        "targetType": "Individual KOLs"
+      },
+      "result": {
+        "success": true,
+        "criteria": {
+          "limit": 5,
+          "keyword": "badminton",
+          "platform": "Facebook",
+          "geography": "Nationwide",
+          "targetType": "Individual KOLs"
+        },
+        "newCount": 1,
+        "sessionId": "aff513a2-6943-4141-a6de-ab85cc444799",
+        "candidates": [
+          {
+            "er": null,
+            "bio": "Lives in Ho Chi Minh City, Vietnam",
+            "url": "https://facebook.com/search/top",
+            "name": "Henry Badminton",
+            "likes": null,
+            "posts": [],
+            "reasons": [
+              "Profile matches the search topic",
+              "Entity type is unverified",
+              "Location supported by profile evidence"
+            ],
+            "avgViews": null,
+            "category": "",
+            "comments": null,
+            "evidence": [
+              "Henry Badminton",
+              "Lives in Ho Chi Minh City, Vietnam"
+            ],
+            "location": "",
+            "platform": "Facebook",
+            "relevant": true,
+            "username": "top",
+            "avatarUrl": "https://scontent.frst1-1.fna.fbcdn.net/v/t39.30808-1/820076749_122094250275496805_4797037402048552_n.jpg?stp=cp0_dst-jpg_tt6&cstp=mx1080x1080&ctp=s60x60&_nc_cat=111&_nc_map=urlgen_bucketless&ccb=1-7&_nc_sid=e99d92&_nc_ohc=d5YG9Z_YYG0Q7kNvwE7kfUC&_nc_oc=AdqDjtCdWHo7qoK8crhozVJ5W0tAc6xuhKivPt8s_pVYZNsHmbWL0Mmnusna_sl-4ag&_nc_zt=24&_nc_ht=scontent.frst1-1.fna&_nc_gid=gwhZV0dN03eMHFfqz8eCXA&_nc_ss=70289&oh=00_AQNe8M4Z4Oci5La0SKEUN94geioJO3U71HagBubPhzt4Pw&oe=6AC94C56",
+            "followers": null,
+            "accountKey": "Facebook:https://facebook.com/search/top",
+            "entityType": "",
+            "isExisting": false,
+            "provenance": {
+              "platform": "Facebook",
+              "fetchedAt": "2026-10-05T10:22:51.976Z",
+              "profileUrl": "https://facebook.com/search/top"
+            },
+            "candidateId": "67d20761-2688-4571-ada5-a30fe1f85a5c",
+            "reviewState": "Needs Review",
+            "locationMatch": true,
+            "classification": "Unknown",
+            "verifiedGeography": "Nationwide"
+          }
+        ],
+        "totalFound": 1,
+        "excludedCount": 0,
+        "existingCount": 0,
+        "effectiveQuery": "badminton"
+      },
+      "candidates": [
+        {
+          "er": null,
+          "bio": "Lives in Ho Chi Minh City, Vietnam",
+          "url": "https://facebook.com/search/top",
+          "name": "Henry Badminton",
+          "likes": null,
+          "posts": [],
+          "reasons": [
+            "Profile matches the search topic",
+            "Entity type is unverified",
+            "Location supported by profile evidence"
+          ],
+          "avgViews": null,
+          "category": "",
+          "comments": null,
+          "evidence": [
+            "Henry Badminton",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ],
+          "location": "",
+          "platform": "Facebook",
+          "relevant": true,
+          "username": "top",
+          "avatarUrl": "https://scontent.frst1-1.fna.fbcdn.net/v/t39.30808-1/820076749_122094250275496805_4797037402048552_n.jpg?stp=cp0_dst-jpg_tt6&cstp=mx1080x1080&ctp=s60x60&_nc_cat=111&_nc_map=urlgen_bucketless&ccb=1-7&_nc_sid=e99d92&_nc_ohc=d5YG9Z_YYG0Q7kNvwE7kfUC&_nc_oc=AdqDjtCdWHo7qoK8crhozVJ5W0tAc6xuhKivPt8s_pVYZNsHmbWL0Mmnusna_sl-4ag&_nc_zt=24&_nc_ht=scontent.frst1-1.fna&_nc_gid=gwhZV0dN03eMHFfqz8eCXA&_nc_ss=70289&oh=00_AQNe8M4Z4Oci5La0SKEUN94geioJO3U71HagBubPhzt4Pw&oe=6AC94C56",
+          "followers": null,
+          "accountKey": "Facebook:https://facebook.com/search/top",
+          "entityType": "",
+          "isExisting": false,
+          "provenance": {
+            "platform": "Facebook",
+            "fetchedAt": "2026-10-05T10:22:51.976Z",
+            "profileUrl": "https://facebook.com/search/top"
+          },
+          "candidateId": "67d20761-2688-4571-ada5-a30fe1f85a5c",
+          "reviewState": "Needs Review",
+          "locationMatch": true,
+          "classification": "Unknown",
+          "verifiedGeography": "Nationwide"
+        }
+      ]
+    }
+  ]
+}
+{
+  "table": "scout_requests",
+  "error": null,
+  "data": [
+    {
+      "id": "9fe35643-5d48-47f9-a9f6-9340d7d66603",
+      "keyword": "badminton",
+      "target_type": "Individual KOLs",
+      "platform": "Facebook",
+      "target_limit": 1,
+      "geography": "Nationwide",
+      "status": "Đã hoàn thành",
+      "results_summary": "Imported 1 new profiles; refreshed 0 existing profiles; saved 0 observed posts.",
+      "created_at": "2026-10-05T10:23:34.076202+00:00",
+      "updated_at": "2026-10-05T10:23:34.076202+00:00",
+      "created_by": "3e291191-a856-46bb-b7c1-01db5dedb166",
+      "creator_name": "",
+      "scout_session_id": null
+    },
+    {
+      "id": "be10ab1c-4d0f-43dc-a2d9-3d410ecd7408",
+      "keyword": "Pickleball Vietnam",
+      "target_type": "Individual KOLs",
+      "platform": "Instagram",
+      "target_limit": 1,
+      "geography": "Nationwide",
+      "status": "Đã hoàn thành",
+      "results_summary": "Imported selected profiles: 1 new KOLs imported.",
+      "created_at": "2026-09-19T10:21:29.24977+00:00",
+      "updated_at": "2026-09-19T10:21:29.24977+00:00",
+      "created_by": null,
+      "creator_name": "",
+      "scout_session_id": null
+    },
+    {
+      "id": "ca918d7b-f47f-4421-a36f-f7bddd37d04c",
+      "keyword": "pickleball",
+      "target_type": "Individual KOLs",
+      "platform": "Instagram",
+      "target_limit": 5,
+      "geography": "Nationwide",
+      "status": "Lỗi",
+      "results_summary": "Lỗi xử lý: Missing APIFY_TOKEN environment variable",
+      "created_at": "2026-09-19T09:26:54.632227+00:00",
+      "updated_at": "2026-09-19T09:26:56.958508+00:00",
+      "created_by": null,
+      "creator_name": "",
+      "scout_session_id": null
+    },
+    {
+      "id": "0d195a8e-c75c-480e-830f-74d4c81027b6",
+      "keyword": "pickleball",
+      "target_type": "Individual KOLs",
+      "platform": "Instagram",
+      "target_limit": 5,
+      "geography": "Nationwide",
+      "status": "Lỗi",
+      "results_summary": "Lỗi xử lý: Missing APIFY_TOKEN environment variable",
+      "created_at": "2026-09-19T09:09:02.075016+00:00",
+      "updated_at": "2026-09-19T09:09:03.564667+00:00",
+      "created_by": null,
+      "creator_name": "",
+      "scout_session_id": null
+    },
+    {
+      "id": "420943bd-06c7-4bb1-b75d-4f4748459857",
+      "keyword": "pickleball",
+      "target_type": "Individual KOLs",
+      "platform": "Instagram",
+      "target_limit": 5,
+      "geography": "Nationwide",
+      "status": "Lỗi",
+      "results_summary": "Lỗi xử lý: Missing APIFY_TOKEN environment variable",
+      "created_at": "2026-09-19T09:08:33.297814+00:00",
+      "updated_at": "2026-09-19T09:08:35.534604+00:00",
+      "created_by": null,
+      "creator_name": "",
+      "scout_session_id": null
+    },
+    {
+      "id": "599801b2-7eb8-446a-a56c-5e85a6c0ff0f",
+      "keyword": "pickleball hanoi",
+      "target_type": "KOLs cá nhân",
+      "platform": "Instagram",
+      "target_limit": 5,
+      "geography": "Hà Nội",
+      "status": "Đã hoàn thành",
+      "results_summary": "Đã scout thành công 5 hồ sơ mới và thêm vào Bảng 1 (Danh Bạ KOLs Thể Thao) lúc 15:42 17/09/2026!",
+      "created_at": "2026-09-18T18:12:24.607832+00:00",
+      "updated_at": "2026-09-18T18:12:24.607832+00:00",
+      "created_by": null,
+      "creator_name": "",
+      "scout_session_id": null
+    }
+  ]
+}
+{
+  "table": "scout_provider_capabilities",
+  "error": {
+    "code": "PGRST205",
+    "details": null,
+    "hint": "Perhaps you meant the table 'public.sport_projects'",
+    "message": "Could not find the table 'public.scout_provider_capabilities' in the schema cache"
+  },
+  "data": null
+}
+{
+  "table": "scout_provider_runs",
+  "error": {
+    "code": "PGRST205",
+    "details": null,
+    "hint": "Perhaps you meant the table 'public.scout_sessions'",
+    "message": "Could not find the table 'public.scout_provider_runs' in the schema cache"
+  },
+  "data": null
+}

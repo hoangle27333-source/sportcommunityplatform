@@ -12,7 +12,7 @@ export function cleanAuditSummary(summary: string, commentsScanned: number): str
   return kept.join(" ").trim();
 }
 
-export type SeedingRiskLevel = "Low" | "Moderate" | "High";
+export type SeedingRiskLevel = "Low" | "Moderate" | "High" | "Unknown";
 export type CommercialSaturation =
   | "Low Commercial"
   | "Balanced"
@@ -27,6 +27,8 @@ export type SponsorDisclosureType =
   | string;
 
 export interface TagDistributionItem {
+  color?:string;
+  postOrCommentCount?:number;
   tag: string;
   percentage: number;
 }
@@ -53,8 +55,8 @@ export interface SampleComments {
 export interface AudienceAuditResult {
   totalPostsScanned: number;
   totalCommentsScanned: number;
-  realAudienceRate: number;
-  seedingRate: number;
+  realAudienceRate: number | null;
+  seedingRate: number | null;
   seedingRiskLevel: SeedingRiskLevel;
   topTagDistribution: TagDistributionItem[];
   sponsoredContentRate: number;
@@ -65,6 +67,10 @@ export interface AudienceAuditResult {
   auditSummary: string;
   auditedAt?: string;
   auditId?: string;
+  commentClassifications?: {evidenceId:string;label:'organic'|'seeding'}[];
+  evidenceFingerprint?: string;
+  analyzerVersion?: string;
+  sampleCoverage?: {available:number;classified:number;limitation:string};
 }
 
 export interface AudienceAuditApiResponse {
@@ -90,4 +96,9 @@ export interface RunAudienceAuditOptions {
   force?: boolean;
   /** Skip live AI and use heuristics only (tests / offline). */
   heuristicsOnly?: boolean;
+}
+
+export function normalizeAudienceAudit<T extends AudienceAuditResult>(audit:T):T {
+  if(audit.totalCommentsScanned>0) return audit;
+  return {...audit,realAudienceRate:null,seedingRate:null,seedingRiskLevel:'Unknown'};
 }

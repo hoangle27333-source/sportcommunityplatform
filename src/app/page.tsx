@@ -1,5 +1,4 @@
 import { getSportHubDashboardData } from "@/lib/sport-hub/service";
-import { getLarkDashboardData } from "@/lib/lark/client";
 import { DashboardView } from "@/components/sport-hub/pages/dashboard-view";
 import { getServerUserRole, sanitizeFinancialData } from "@/lib/auth/financial-sanitizer";
 import type { Metadata } from "next";
@@ -33,21 +32,16 @@ export default async function HomePage() {
   const { isAdmin } = await getServerUserRole();
 
   try {
-    // Primary: Load directly from Lark Base (Single Source of Truth)
-    initialData = await getLarkDashboardData();
-  } catch (larkErr) {
-    console.warn("Lark Base load failed, falling back to Supabase:", larkErr);
-    try {
-      const supabaseData = await getSportHubDashboardData();
-      if (supabaseData.kols.length > 0 || supabaseData.communities.length > 0) {
-        initialData = supabaseData;
-      }
-    } catch (supaErr) {
-      console.error("Both Lark and Supabase failed:", supaErr);
+    const supabaseData = await getSportHubDashboardData();
+    if (supabaseData) {
+      initialData = supabaseData;
     }
+  } catch (supaErr) {
+    console.error("Failed to load data from Supabase:", supaErr);
   }
 
   const securedData = sanitizeFinancialData(initialData, isAdmin);
 
   return <DashboardView initialData={securedData} />;
 }
+

@@ -20,7 +20,7 @@ export function sanitizeFinancialData<T extends any>(
 
   const d = data as any;
   const sanitizedKols = (d.kols || []).map((k: any) =>
-    k ? { ...k, quotation: 0 } : k
+    k ? (() => { const { gmv, ...rest } = k; return { ...rest, quotation: 0 }; })() : k
   );
 
   const sanitizedCommunities = (d.communities || []).map((c: any) =>
@@ -93,12 +93,7 @@ export async function getServerUserRole(): Promise<{
 
     const role = (profile?.role as AppRole) || "viewer";
 
-    // Fallback for hardcoded admin emails if profile role is not yet updated
-    const isHardcodedAdmin =
-      user.email === "admin@sportcommunityplatform.com" ||
-      user.email === "hoangle27333@gmail.com";
-
-    const effectiveRole = isHardcodedAdmin ? "admin" : role;
+    const effectiveRole = role;
 
     return {
       userId: user.id,

@@ -1,0 +1,91 @@
+{
+  "verifiedAt": "2026-10-04T11:01:30.207Z",
+  "checks": [
+    {
+      "name": "instagram-profiles",
+      "runId": "XihGQFiZacZOPWoAp",
+      "status": "SUCCEEDED",
+      "count": 1,
+      "parsed": 0,
+      "verified": false,
+      "sampleKeys": [
+        "error",
+        "errorDescription"
+      ]
+    },
+    {
+      "name": "instagram-hashtag",
+      "runId": "911oXd9llwfscbOcV",
+      "status": "SUCCEEDED",
+      "count": 1,
+      "parsed": 0,
+      "verified": false,
+      "sampleKeys": [
+        "searchTerm",
+        "searchSource",
+        "name",
+        "postsCount",
+        "url",
+        "id"
+      ]
+    },
+    {
+      "name": "facebook-profiles",
+      "runId": "GNiUqbJiKpnegFgdO",
+      "status": "SUCCEEDED",
+      "count": 1,
+      "parsed": 1,
+      "verified": true,
+      "sampleKeys": [
+        "facebookUrl",
+        "searchType",
+        "id",
+        "name",
+        "url",
+        "profilePictureUrl",
+        "isVerified"
+      ]
+    },
+    {
+      "name": "tiktok-hashtag",
+      "verified": false,
+      "error": "HTTP 402"
+    },
+    {
+      "name": "facebook-groups",
+      "runId": "Blaxf8QETUWvUtaoC",
+      "status": "SUCCEEDED",
+      "count": 1,
+      "parsed": 1,
+      "verified": true,
+      "sampleKeys": [
+        "imageUrl",
+        "name",
+        "url",
+        "groupId",
+        "vanity",
+        "privacy",
+        "privacyDescription",
+        "visibility",
+        "members",
+        "membersText",
+        "postsToday",
+        "postsLastMonth",
+        "avgPostsPerDay",
+        "createdAt",
+        "history",
+        "location",
+        "locations",
+        "description",
+        "adminAndModeratorCount",
+        "rulesCount",
+        "rules",
+        "profilePictureUrl",
+        "query",
+        "rank",
+        "scrapedAt",
+        "error"
+      ]
+    }
+  ]
+}

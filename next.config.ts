@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Emit a self-contained server bundle for the Docker `web` image when requested.
   output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
   // Native/binary deps that must not be webpack-bundled — they load platform

@@ -1,3 +1,4 @@
+import { importGMV } from "@/lib/sport-hub/gmv";
 import { NextRequest, NextResponse } from "next/server";
 import { bulkInsertKOLs, bulkInsertCommunities } from "@/lib/sport-hub/service";
 import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
@@ -189,9 +190,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { isAdmin } = await getServerUserRole();
+    const { isAdmin, userId, role } = await getServerUserRole();
+    if (!userId || (!isAdmin && role !== "editor")) return NextResponse.json({ success: false, error: "Editor access required" }, { status: userId ? 403 : 401 });
     let createdCount = 0;
 
+    if (type === "gmv" || records.some((r: any) => Object.hasOwn(r, "GMV (VND)"))) {
+      if (!isAdmin) return NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 });
+      const count = await importGMV(records, userId);
+      return NextResponse.json({ success: true, count, message: `Saved ${count} monthly GMV records.` });
+    }
     if (type === "kol") {
       let mapped = records.map(mapKOLRecord).filter(Boolean);
       if (mapped.length === 0) {
@@ -240,7 +247,7 @@ export async function POST(req: NextRequest) {
         success: false,
         error: err.message || "Error processing batch upload",
       },
-      { status: 500 }
+      { status: err.status || (err.name === "ZodError" ? 400 : 500) }
     );
   }
 }

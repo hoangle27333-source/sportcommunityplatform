@@ -9,7 +9,7 @@ const PUBLIC_PATHS = [
   "/auth/callback",
   "/fonts",
   "/templates",
-  "/api/webhooks",
+  "/scout",
   "/community",
   "/projects",
   "/trending",
@@ -18,7 +18,7 @@ const PUBLIC_PATHS = [
   "/team",
   "/api/sport-hub",
   "/api/lark",
-  "/sport-hub",
+  "/api/tracked-accounts",
 ];
 
 function isPublicPath(pathname: string): boolean {

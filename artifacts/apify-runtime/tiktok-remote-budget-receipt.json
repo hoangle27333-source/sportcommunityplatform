@@ -1,0 +1,12 @@
+{
+  "observedAt": "2026-10-05T13:44:51.255Z",
+  "sessionId": "c6655dd8-d442-4cb9-9852-188728d0a012",
+  "reservationCaps": [
+    0.5,
+    0.5
+  ],
+  "sessionCap": 1,
+  "thirdReservationDenied": true,
+  "paidRunsStarted": 0,
+  "policyModified": false
+}

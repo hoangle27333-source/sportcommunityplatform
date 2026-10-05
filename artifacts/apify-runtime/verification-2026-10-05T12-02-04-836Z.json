@@ -1,0 +1,87 @@
+{
+  "verifiedAt": "2026-10-05T12:02:04.836Z",
+  "checks": [
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "Facebook",
+      "task": "keyword",
+      "actor": "apify~facebook-search-scraper",
+      "input": {
+        "categories": [
+          "#chaybo"
+        ],
+        "locations": [
+          "Vietnam"
+        ],
+        "searchType": "posts",
+        "resultsLimit": 1
+      },
+      "name": "facebook-keyword-0",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.333",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "EQl1kVAEsG5ecWat4",
+          "build_id": "bmN9WC7wmtqUiEM9w",
+          "dataset_ids": {
+            "default": "zDPIHwWa6cfuDqxig"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-09-23T13:58:33.720Z",
+            "startedAt": "2026-09-23T13:58:33.720Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat charge for starting an Actor run."
+                },
+                "page-profile": {
+                  "eventTitle": "Page or profile",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Page or profile pushed into the dataset (Outdated)."
+                },
+                "google-result": {
+                  "eventTitle": "Google result",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Facebook page pushed into the dataset from a Google search. Applies to the Pages (Google) search type only."
+                },
+                "facebook-result": {
+                  "eventTitle": "Facebook result",
+                  "eventPriceUsd": 0.006,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Page, profile, post, or reel pushed into the dataset from a Facebook search."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.024,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    }
+  ]
+}

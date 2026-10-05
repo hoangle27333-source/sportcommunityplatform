@@ -1,6 +1,9 @@
 "use client";
+import { useSearchParams, useRouter } from "next/navigation";
+import { ScoutTaskLauncher } from "../scout-task-launcher";
+import { scoutFetch } from "@/lib/apify/scout-client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { PlatformHeader } from "../platform-header";
 import { CommunityTableView } from "../tabs/community-table-view";
@@ -10,12 +13,9 @@ import {
   EditCommunityModal,
   DeleteConfirmModal,
   ReportModal,
-  ScoutModal,
-  CommunityPostScoutModal,
 } from "../action-modals";
 import { ExcelUploadModal } from "../excel-upload-modal";
 import { BatchActionBar } from "../batch-action-bar";
-import { DiscoveryScoutModal } from "../discovery-scout-modal";
 import { AddChannelModal, MergeEntityModal } from "../channel-modals";
 import { formatNumber } from "@/lib/i18n";
 import type { DashboardData, Community } from "../types";
@@ -30,11 +30,16 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
 
   // Modals state
   const [selectedCommunityFor360, setSelectedCommunityFor360] = useState<Community | null>(null);
+  const query = useSearchParams(); const router = useRouter();
+  const resultRecordId = query.get('recordId');
+  useEffect(() => {
+    if (resultRecordId) setSelectedCommunityFor360(initialData.communities.find(record => record.id === resultRecordId) || null);
+  }, [resultRecordId, initialData]);
+
   const [editingCommunity, setEditingCommunity] = useState<Community | null>(null);
   const [deletingCommunity, setDeletingCommunity] = useState<Community | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [scoutTargetCommunity, setScoutTargetCommunity] = useState<Community | null>(null);
-  const [isScoutModalOpen, setIsScoutModalOpen] = useState(false);
   const [isAddCommunityModalOpen, setIsAddCommunityModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -43,7 +48,7 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
   const [mergeTargetCommunities, setMergeTargetCommunities] = useState<Community[]>([]);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
 
-  // Batch Selection & Discovery Scout State
+  // Batch Selection & Find Profiles State
   const [selectedCommunityIds, setSelectedCommunityIds] = useState<string[]>([]);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [isBatchRescouting, setIsBatchRescouting] = useState(false);
@@ -77,33 +82,8 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
     setSelectedCommunityIds([]);
   };
 
-  const handleBatchRescout = async () => {
-    if (selectedCommunityIds.length === 0) return;
-    setIsBatchRescouting(true);
-    try {
-      const res = await fetch("/api/sport-hub/batch-action", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "community",
-          action: "rescout",
-          ids: selectedCommunityIds,
-        }),
-      });
-      const result = await res.json().catch(() => null);
-      if (result?.success) {
-        toast.success(result.message || `Successfully synced live data for ${selectedCommunityIds.length} communities!`);
-        await handleRefresh();
-        setSelectedCommunityIds([]);
-      } else {
-        toast.error(result?.error || "Failed to batch sync community metrics");
-      }
-    } catch {
-      toast.error("Network error during batch sync");
-    } finally {
-      setIsBatchRescouting(false);
-    }
-  };
+  const [refreshOpen, setRefreshOpen] = useState(false);
+  const handleBatchRescout = async () => { if (selectedCommunityIds.length) setRefreshOpen(true); };
 
   const handleConfirmBatchDelete = async () => {
     if (selectedCommunityIds.length === 0) return;
@@ -247,6 +227,7 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
         />
       </main>
 
+      {refreshOpen && <ScoutTaskLauncher context={{ intent: "refresh", mode: "entity", entityType: "community", ids: selectedCommunityIds, source: "/community" }} subjects={data.communities} onClose={() => setRefreshOpen(false)} onSuccess={handleRefresh} />}
       {/* ─── MODALS ─── */}
       {/* 1. Base 360° Community Dossier Modal */}
       {selectedCommunityFor360 && (
@@ -255,7 +236,7 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
           community={selectedCommunityFor360}
           posts={data.posts}
           reports={data.reports}
-          onClose={() => setSelectedCommunityFor360(null)}
+          onClose={() => { setSelectedCommunityFor360(null); if (resultRecordId) router.replace("/community", { scroll: false }); }}
           onOpenReport={(comm) => {
             setReportTargetCommunity(comm);
             setIsReportModalOpen(true);
@@ -288,19 +269,8 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
         onSuccess={handleRefresh}
       />
 
-      <CommunityPostScoutModal
-        isOpen={!!scoutTargetCommunity}
-        community={scoutTargetCommunity}
-        onClose={() => setScoutTargetCommunity(null)}
-        onSuccess={handleRefresh}
-      />
+      {scoutTargetCommunity && <ScoutTaskLauncher key={scoutTargetCommunity.id} context={{ intent: "content", mode: "entity", entityType: "community", ids: [scoutTargetCommunity.id], source: "/community" }} entity={scoutTargetCommunity} onClose={() => setScoutTargetCommunity(null)} onSuccess={handleRefresh} />}
 
-      <ScoutModal
-        isOpen={isScoutModalOpen}
-        defaultTargetType="Communities & Clubs"
-        onClose={() => setIsScoutModalOpen(false)}
-        onSuccess={handleRefresh}
-      />
 
       <AddCommunityModal
         isOpen={isAddCommunityModalOpen}
@@ -331,22 +301,18 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
         itemTypeLabel="communities"
         onSelectAll={() => setSelectedCommunityIds(data.communities.map((c) => c.id))}
         onClearSelection={handleClearSelection}
+        rescoutRequiresConfirmation={false}
         onBatchRescout={handleBatchRescout}
         onBatchDelete={handleConfirmBatchDelete}
         onBatchMerge={() => handleOpenMerge()}
         mergeButtonLabel="Merge Communities"
         loadingRescout={isBatchRescouting}
         loadingDelete={isBatchDeleting}
-        rescoutButtonLabel="Sync Live Data"
+        rescoutButtonLabel="Refresh Data"
       />
 
-      {/* 4. Dedicated Discovery Scout Modal */}
-      <DiscoveryScoutModal
-        isOpen={isDiscoveryScoutOpen}
-        onClose={() => setIsDiscoveryScoutOpen(false)}
-        defaultTargetType="Communities & Clubs"
-        onScoutSuccess={handleRefresh}
-      />
+      {/* 4. Dedicated Find Profiles Modal */}
+      {isDiscoveryScoutOpen && <ScoutTaskLauncher key={"profiles"} context={{ intent: "profiles", mode: "search", entityType: "community", source: "/community" }} onClose={() => setIsDiscoveryScoutOpen(false)} onSuccess={handleRefresh} />}
 
       {/* 5. Add Social Channel Modal */}
       {channelTargetCommunity && (

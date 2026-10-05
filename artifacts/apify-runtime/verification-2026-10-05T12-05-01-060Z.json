@@ -1,0 +1,28 @@
+{
+  "verifiedAt": "2026-10-05T12:05:01.060Z",
+  "checks": [
+    {
+      "name": "instagram-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "facebook-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "tiktok-profiles-0",
+      "verified": false,
+      "blocked": true,
+      "reason": "Actor minimum run cap exceeds the $0.25 policy.",
+      "minimumRunCapUsd": 0.5,
+      "paidRunStarted": false
+    }
+  ]
+}

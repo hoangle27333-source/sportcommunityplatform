@@ -1,0 +1,33 @@
+{
+  "recordedAt": "2026-10-05T12:42:15.202Z",
+  "sessionId": "36ac56fd-290e-4f61-9d35-2dd74730183f",
+  "status": "complete",
+  "success": true,
+  "partial": false,
+  "counts": {
+    "failed": 0,
+    "excluded": 0,
+    "inserted": 0,
+    "duplicate": 0,
+    "refreshed": 0
+  },
+  "warnings": [],
+  "providerRunCount": 1,
+  "runs": [
+    {
+      "id": "ix884iPfs0mmFYQlF",
+      "state": "succeeded",
+      "build": "0.0.797",
+      "window": "2026-09-05T12:41:02.774Z",
+      "actualUsd": 0,
+      "observations": 0
+    }
+  ],
+  "retrievalWindows": {
+    "4f347261156e80afe50cfedaf1058487ba5af8766efe21c4a4ac94e0f3340db7": "2026-09-05T12:41:02.774Z"
+  },
+  "providerBuilds": {
+    "apify~instagram-scraper:profile-posts:posts": "0.0.797"
+  },
+  "persistedResultPostCount": 0
+}

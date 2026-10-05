@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, AuthError } from "@/lib/auth/require-user";
 import { parseProfileUrl } from "@/lib/scraper/url-parser";
-import { QUEUE_NAMES, enqueue } from "@/lib/queue";
+import { scoutAccess } from '@/lib/apify/sessions';
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +44,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    await scoutAccess();
     const { db, user } = await requireUser();
 
     const body = (await req.json()) as { url?: string; label?: string };
     const rawUrl = body.url?.trim();
 
     if (!rawUrl) {
-      return NextResponse.json({ error: "URL là bắt buộc." }, { status: 400 });
+      return NextResponse.json({ error: "A profile URL is required." }, { status: 400 });
     }
 
     const parsed = parseProfileUrl(rawUrl);
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "URL không hợp lệ. Vui lòng nhập đường dẫn Facebook Page hoặc Instagram profile.",
+            "Enter a valid Facebook Page or Instagram profile URL.",
         },
         { status: 400 },
       );
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     const label = (body.label as string) || "competitor";
     if (!["competitor", "own", "reference"].includes(label)) {
-      return NextResponse.json({ error: "label không hợp lệ." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid label." }, { status: 400 });
     }
 
     // Insert
@@ -87,14 +88,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 
-    // Enqueue immediate scrape
-    await enqueue(
-      QUEUE_NAMES.playwright, // reuse playwright queue — scraper uses the same browser infra
-      "scrape-tracked-account",
-      { trackedAccountId: (account as { id: string }).id },
-    );
-
-    return NextResponse.json({ account }, { status: 201 });
+    return NextResponse.json({success:true,account,message:'Account saved. Choose Refresh Data to collect observations.'}, {status:201});
   } catch (e) {
     if (e instanceof AuthError) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });

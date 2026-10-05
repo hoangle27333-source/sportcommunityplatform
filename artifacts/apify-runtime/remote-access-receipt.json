@@ -1,0 +1,48 @@
+{
+  "observedAt": "2026-10-05T13:39:20.098Z",
+  "checks": [
+    {
+      "table": "scout_budget_settings",
+      "serviceRole": "pass",
+      "anonymous": "denied"
+    },
+    {
+      "table": "scout_provider_capabilities",
+      "serviceRole": "pass",
+      "anonymous": "denied"
+    },
+    {
+      "table": "scout_provider_runs",
+      "serviceRole": "pass",
+      "anonymous": "denied"
+    },
+    {
+      "table": "scout_provider_cache",
+      "serviceRole": "pass",
+      "anonymous": "denied"
+    },
+    {
+      "table": "scout_usage_ledger",
+      "serviceRole": "pass",
+      "anonymous": "denied"
+    },
+    {
+      "table": "scout_watermarks",
+      "serviceRole": "pass",
+      "anonymous": "denied"
+    },
+    {
+      "table": "scout_comment_evidence",
+      "serviceRole": "pass",
+      "anonymous": "denied"
+    }
+  ],
+  "reservationRpc": "anonymous denied",
+  "settings": {
+    "session_usd": 1,
+    "daily_usd": 10,
+    "verification_usd": 5,
+    "run_usd": 0.25
+  },
+  "paidRunsStarted": 0
+}

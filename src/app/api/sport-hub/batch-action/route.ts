@@ -1,3 +1,4 @@
+import { startSession } from '@/lib/apify/sessions';
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -89,115 +90,7 @@ export async function POST(req: NextRequest) {
     if (action === "rescout" || action === "sync") {
       const nowIso = new Date().toISOString();
 
-      if (type === "kol" || type === "kols") {
-        // Fetch current records
-        const { data: currentKols, error: fetchErr } = await supabase
-          .from("kols")
-          .select("id, name, followers, avg_views, er, tier, platform, quotation")
-          .in("id", ids);
-
-        if (fetchErr) throw fetchErr;
-
-        const updatedKols: any[] = [];
-
-        for (const kol of currentKols || []) {
-          // Calculate refreshed metrics with realistic organic growth variance
-          const growthFactor = 1 + (Math.floor(Math.random() * 5) + 1) / 100; // +1% to +5%
-          const newFollowers = Math.round((kol.followers || 10000) * growthFactor);
-          const newAvgViews = Math.round((kol.avg_views || 5000) * (1 + (Math.random() * 0.08 - 0.03)));
-          const newEr = +(Math.max(1.2, (kol.er || 3.5) + (Math.random() * 0.4 - 0.2))).toFixed(1);
-
-          // Update KOL record
-          const { data: updated, error: updateErr } = await supabase
-            .from("kols")
-            .update({
-              followers: newFollowers,
-              avg_views: newAvgViews,
-              er: newEr,
-              last_scouted_at: nowIso,
-            })
-            .eq("id", kol.id)
-            .select()
-            .single();
-
-          if (!updateErr && updated) {
-            updatedKols.push(updated);
-
-            // Record a point-in-time growth snapshot
-            await supabase.from("kol_metric_snapshots").insert({
-              kol_id: kol.id,
-              followers: newFollowers,
-              avg_views: newAvgViews,
-              er: newEr,
-              recorded_at: nowIso,
-            });
-          }
-        }
-
-        // Log Audit Event
-        try {
-          await supabase.from("audit_log").insert({
-            actor_id: user ? user.id : null,
-            action: "batch_rescout",
-            entity: "kol",
-            detail: {
-              actorEmail: user ? user.email : "Anonymous",
-              syncedCount: updatedKols.length,
-              ids,
-            },
-          });
-        } catch (auditErr) {
-          console.warn("Audit log error on batch rescout:", auditErr);
-        }
-
-        return NextResponse.json({
-          success: true,
-          action: "rescout",
-          type: "kol",
-          syncedCount: updatedKols.length,
-          updatedRecords: updatedKols,
-          message: `Successfully synced live data for ${updatedKols.length} creator(s).`,
-        });
-      }
-
-      if (type === "community" || type === "communities") {
-        const { data: currentComms, error: fetchErr } = await supabase
-          .from("communities")
-          .select("id, name, members_count, activity_level")
-          .in("id", ids);
-
-        if (fetchErr) throw fetchErr;
-
-        const updatedComms: any[] = [];
-
-        for (const comm of currentComms || []) {
-          const memberGrowth = 1 + (Math.floor(Math.random() * 4) + 1) / 100;
-          const newMembers = Math.round((comm.members_count || 1000) * memberGrowth);
-
-          const { data: updated, error: updateErr } = await supabase
-            .from("communities")
-            .update({
-              members_count: newMembers,
-              updated_at: nowIso,
-            })
-            .eq("id", comm.id)
-            .select()
-            .single();
-
-          if (!updateErr && updated) {
-            updatedComms.push(updated);
-          }
-        }
-
-        return NextResponse.json({
-          success: true,
-          action: "rescout",
-          type: "community",
-          syncedCount: updatedComms.length,
-          updatedRecords: updatedComms,
-          message: `Successfully refreshed live membership for ${updatedComms.length} community club(s).`,
-        });
-      }
+      if (['kol','kols','community','communities'].includes(type)) return startSession('sync',{ids,entityType:type==='kol' || type==='kols' ? 'kol' : 'community',uiContext:body.uiContext});
 
       if (type === "project" || type === "projects") {
         const { data: currentProjects, error: fetchErr } = await supabase

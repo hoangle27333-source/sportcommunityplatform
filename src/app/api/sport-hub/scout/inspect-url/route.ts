@@ -1,5 +1,10 @@
+import {metadataIdentity} from '@/lib/apify/metadata-identity';
+import {urlKind} from '@/lib/apify/discovery-quality';
+import { startSession,scoutFailure } from '@/lib/apify/sessions';
 import { NextRequest, NextResponse } from "next/server";
 import { detectSportNiche, calculateTier } from "@/lib/apify/scout";
+
+function inspectionResponse(value:any,init?:ResponseInit){return NextResponse.json({...value,...(value.data ? {scouted:value.data,source:'public-metadata',coverage:{verified:false,missingFields:Object.keys(value.data).filter(k=>value.data[k]==null || value.data[k]==='Unknown')}} : {})},init);}
 
 export const dynamic = "force-dynamic";
 
@@ -63,10 +68,11 @@ function humanizeSlug(slug: string): string {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    if(body.action==='verify') {if(!['profile','group'].includes(urlKind(body.url)))return inspectionResponse({success:false,error:'Enter a profile or community URL. Post links cannot become profiles.'},{status:400});const host=new URL(body.url).hostname;const platform=host==='instagram.com' || host.endsWith('.instagram.com') ? 'Instagram' : host==='facebook.com' || host.endsWith('.facebook.com') ? 'Facebook' : host==='tiktok.com' || host.endsWith('.tiktok.com') ? 'TikTok' : null;if(!platform)return inspectionResponse({success:false,error:'This platform is unavailable for verified enrichment.'},{status:400});return startSession('inspect',{url:body.url,platform});}
     const { url, type } = body as { url: string; type: "kol" | "community" | "post" };
 
     if (!url || typeof url !== "string") {
-      return NextResponse.json(
+      return inspectionResponse(
         { success: false, error: "Please enter a valid URL (e.g. https://...)" },
         { status: 400 }
       );
@@ -76,12 +82,13 @@ export async function POST(req: NextRequest) {
     try {
       parsedUrl = new URL(url.trim());
     } catch {
-      return NextResponse.json(
+      return inspectionResponse(
         { success: false, error: "Invalid URL format. Please include http:// or https://" },
         { status: 400 }
       );
     }
 
+    if(['kol','community'].includes(type) && ['post','reel','story','watch'].includes(urlKind(url))) return inspectionResponse({success:false,error:'This is a post URL. Enter a profile or community URL instead.'},{status:400});
     const host = parsedUrl.hostname.toLowerCase();
     const pathname = parsedUrl.pathname;
     const pathParts = pathname.split("/").filter(Boolean);
@@ -205,8 +212,8 @@ export async function POST(req: NextRequest) {
       // Graceful fallback to heuristics
     }
 
-    const combinedText = `${meta.title} ${meta.description} ${oembedData?.title || ""} ${url}`;
-    const rawDetectedSports = detectSportNiche(combinedText);
+    const combinedText = `${meta.title} ${meta.description} ${oembedData?.title || ""}`;
+    const rawDetectedSports = combinedText.trim() ? detectSportNiche(combinedText).filter(s=>s!=="Khác") : [];
     const sportTranslation: Record<string, string> = {
       "Bóng đá": "Football",
       "Cầu lông": "Badminton",
@@ -220,7 +227,7 @@ export async function POST(req: NextRequest) {
       "Golf": "Golf",
     };
     const detectedSports = rawDetectedSports.map((s) => sportTranslation[s] || s);
-    const primarySport = detectedSports[0] || "Pickleball";
+    const primarySport = detectedSports[0] || "Unknown";
 
     // ─── 3. Response Construction By Target Type ───
 
@@ -238,53 +245,48 @@ export async function POST(req: NextRequest) {
           .replace(/\(@[^)]+\)/g, "")
           .trim();
       }
-      if (!cleanName && handle) cleanName = humanizeSlug(handle);
-      if (!cleanName) cleanName = "Creator " + (handle || "Athlete");
+      cleanName=metadataIdentity(cleanName);
+      const nameWarning=!cleanName ? 'Public metadata did not identify a profile name. Enter the original name before saving.' : '';
+      // A URL handle is retained as a suggestion, never promoted to an observed name.
+
 
       // Extract followers count from meta description
-      let followers = 28000;
+      let followers: number | null = null;
       const fMatch = meta.description.match(/([\d.,]+[kmbKMB]?)\s*(?:followers|người theo dõi|người đăng ký|subscribers)/i);
       if (fMatch) {
         const p = parseCountString(fMatch[1]);
-        if (p && p > 0) followers = p;
+        if (p !== null) followers = p;
       }
 
-      const tier = calculateTier(followers);
-      const avgViews = Math.round(followers * 0.45);
-      const er = +(3.8 + Math.min(followers / 50000, 3.2)).toFixed(1);
-      const quotation =
-        followers >= 1000000
-          ? 60000000
-          : followers >= 200000
-          ? 35000000
-          : followers >= 50000
-          ? 15000000
-          : followers >= 10000
-          ? 6000000
-          : 2500000;
+      const tier = followers === null ? "Unknown" : calculateTier(followers);
+      const avgViews = null;
+      const er = null;
+      const quotation = null;
 
       // Extract contact or bio
-      let bio = meta.description.slice(0, 300) || `${cleanName} - Vận động viên & sáng tạo nội dung thể thao (${primarySport}).`;
+      let bio = meta.description.slice(0, 300) || "";
       const contact = handle ? `Direct @${handle}` : "Direct Social Message";
 
-      return NextResponse.json({
+      return inspectionResponse({
         success: true,
         type: "kol",
         data: {
           name: cleanName,
-          platform: platform.includes("Reels") || platform.includes("Post") ? "Instagram" : platform,
+          suggestedName: cleanName ? undefined : handle,
+          metadataWarnings: nameWarning ? [nameWarning] : [],
+          platform: platform.split(" ")[0],
           sport: detectedSports,
           tier,
           geography: combinedText.toLowerCase().includes("hà nội") || combinedText.toLowerCase().includes("hanoi")
             ? "Hanoi"
             : combinedText.toLowerCase().includes("hồ chí minh") || combinedText.toLowerCase().includes("sài gòn")
             ? "Ho Chi Minh City"
-            : "Nationwide",
+            : "Unknown",
           followers,
           avgViews,
           er,
           quotation,
-          status: "Active Partnership",
+          status: "New Scout (Unverified)",
           contact,
           bio,
           profileUrl: url,
@@ -302,32 +304,21 @@ export async function POST(req: NextRequest) {
           .replace(/on (Facebook|Strava).*$/i, "")
           .trim();
       }
-      if (!groupName && handle) groupName = humanizeSlug(handle);
-      if (!groupName) groupName = `Cộng Đồng ${primarySport} Việt Nam`;
+      groupName=metadataIdentity(groupName);
+      if (!groupName) groupName = "";
 
       // Extract members count
-      let members = 15000;
+      let members: number | null = null;
       const mMatch = meta.description.match(/([\d.,]+[kmbKMB]?)\s*(?:members|thành viên|athletes|vận động viên)/i);
       if (mMatch) {
         const p = parseCountString(mMatch[1]);
-        if (p && p > 0) members = p;
+        if (p !== null) members = p;
       }
 
-      const pricePerPin =
-        members >= 80000
-          ? 4000000
-          : members >= 30000
-          ? 3000000
-          : members >= 10000
-          ? 2000000
-          : 1000000;
+      const pricePerPin = null;
+      const activityLevel = "Unknown";
 
-      const activityLevel =
-        meta.description.includes("20 posts") || meta.description.includes("rất sôi động") || members > 30000
-          ? "Very Active (> 20 posts/day)"
-          : "Moderate (5 - 10 posts/day)";
-
-      const purposes = ["Match Finding & Socializing", "Skill & Technique Sharing"];
+      const purposes:string[] = [];
       if (combinedText.toLowerCase().includes("giải") || combinedText.toLowerCase().includes("tournament")) {
         purposes.push("Amateur Tournaments");
       }
@@ -335,25 +326,26 @@ export async function POST(req: NextRequest) {
         purposes.push("Gear & Racket Trading");
       }
 
-      return NextResponse.json({
+      return inspectionResponse({
         success: true,
         type: "community",
         data: {
           name: groupName,
+          metadataWarnings: groupName ? [] : ['Public metadata did not identify a community name. Enter the original name before saving.'],
           platform: platform.includes("Facebook") ? "Facebook Group" : platform.includes("Strava") ? "Strava Club" : "Facebook Group",
           sport: detectedSports,
           geography: combinedText.toLowerCase().includes("hà nội") || combinedText.toLowerCase().includes("hanoi")
             ? "Hanoi"
             : combinedText.toLowerCase().includes("hồ chí minh") || combinedText.toLowerCase().includes("sài gòn")
             ? "Ho Chi Minh City"
-            : "Nationwide",
+            : "Unknown",
           members,
           activityLevel,
-          privacy: meta.description.toLowerCase().includes("private") || meta.description.toLowerCase().includes("riêng tư") ? "Private" : "Public",
+          privacy: "Unknown",
           purpose: purposes,
-          adminContact: handle ? `Admin ${handle}` : "Group Management Team",
+          adminContact: "",
           pricePerPin,
-          status: "Active Partnership",
+          status: "New Scout (Unverified)",
           groupUrl: url,
         },
       });
@@ -380,38 +372,26 @@ export async function POST(req: NextRequest) {
         postTitle = meta.description.slice(0, 160);
       }
       if (!postTitle) {
-        postTitle = `Khoảnh khắc thi đấu & tập luyện thể thao (${primarySport})`;
+        postTitle = "";
       }
 
       if (!author) {
-        if (handle) author = humanizeSlug(handle);
-        else author = "Sport Creator";
+        if (handle) author = handle;
       }
 
       // Extract hashtags
       const hashtagMatches = (postTitle + " " + meta.description).match(/#[\p{L}\w]+/gu);
-      const hashtags = hashtagMatches ? Array.from(new Set(hashtagMatches)).slice(0, 5).join(" ") : `#${primarySport.toLowerCase()} #sport`;
+      const hashtags = hashtagMatches ? Array.from(new Set(hashtagMatches)).slice(0, 5).join(" ") : "";
 
-      // Estimated metrics for post
-      const views = isVideoPost ? 55000 : 18000;
-      const likes = Math.round(views * 0.055);
-      const comments = Math.round(likes * 0.04);
-      const er = +(((likes + comments) / views) * 100).toFixed(1);
+      // Metrics are unknown until obtained from a verified provider
+      const views = null;
+      const likes = null;
+      const comments = null;
+      const er = null;
+      const viralTier = "Unknown";
+      const postPlatform = platform;
 
-      const viralTier =
-        views >= 100000
-          ? "Super Viral (> 100k views)"
-          : views >= 20000
-          ? "High Engagement (10k - 100k views)"
-          : "Standard";
-
-      let postPlatform = platform;
-      if (platform === "TikTok" || platform === "TikTok Video") postPlatform = "TikTok Video";
-      else if (platform === "Instagram" || platform === "Instagram Reels") postPlatform = "Instagram Reels";
-      else if (platform === "Facebook" || platform === "Facebook Reels") postPlatform = "Facebook Reels";
-      else if (platform === "YouTube" || platform === "YouTube Shorts") postPlatform = "YouTube Shorts";
-
-      return NextResponse.json({
+      return inspectionResponse({
         success: true,
         type: "post",
         data: {
@@ -431,13 +411,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(
+    return inspectionResponse(
       { success: false, error: "Invalid inspection type" },
       { status: 400 }
     );
   } catch (err: any) {
+    if(err?.code) return scoutFailure(err);
     console.error("API /api/sport-hub/scout/inspect-url error:", err);
-    return NextResponse.json(
+    return inspectionResponse(
       { success: false, error: err.message || "Failed to inspect URL" },
       { status: 500 }
     );

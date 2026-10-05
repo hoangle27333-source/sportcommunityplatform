@@ -1,0 +1,688 @@
+{
+  "verifiedAt": "2026-10-05T11:56:21.694Z",
+  "checks": [
+    {
+      "name": "instagram-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "facebook-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "Instagram",
+      "task": "profiles",
+      "actor": "apify~instagram-scraper",
+      "input": {
+        "search": "running",
+        "searchType": "user",
+        "resultsType": "details",
+        "searchLimit": 1,
+        "resultsLimit": 1
+      },
+      "name": "instagram-profiles-0",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.796",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "cnBoavWb51LqIt8lO",
+          "build_id": "EU82CClFsIaPWKvDo",
+          "dataset_ids": {
+            "default": "w5B0kjnNnMDY4htEz"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-02-20T12:24:59.754Z",
+            "startedAt": "2026-02-20T12:24:59.754Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "Result",
+                  "eventPriceUsd": 0.0027,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each result written to the dataset"
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0027,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Instagram",
+      "task": "hashtag",
+      "actor": "apify~instagram-scraper",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/explore/tags/chaybo/"
+        ],
+        "resultsType": "posts",
+        "resultsLimit": 1
+      },
+      "name": "instagram-hashtag-0",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.796",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "nCI1lUJekcqNywmhy",
+          "build_id": "EU82CClFsIaPWKvDo",
+          "dataset_ids": {
+            "default": "naJagxx2ooaRErbBO"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-02-20T12:24:59.754Z",
+            "startedAt": "2026-02-20T12:24:59.754Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "Result",
+                  "eventPriceUsd": 0.0027,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each result written to the dataset"
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0027,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Instagram",
+      "task": "profile-details",
+      "actor": "apify~instagram-scraper",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/nike/"
+        ],
+        "resultsType": "details",
+        "resultsLimit": 1
+      },
+      "name": "instagram-profile-details",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.796",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "1PUYHF9W7yYuYxCMJ",
+          "build_id": "EU82CClFsIaPWKvDo",
+          "dataset_ids": {
+            "default": "opWhkXYZlUFuLq4uK"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-02-20T12:24:59.754Z",
+            "startedAt": "2026-02-20T12:24:59.754Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "Result",
+                  "eventPriceUsd": 0.0027,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each result written to the dataset"
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0027,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Instagram",
+      "task": "profile-posts",
+      "actor": "apify~instagram-scraper",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/nike/"
+        ],
+        "resultsType": "posts",
+        "resultsLimit": 1
+      },
+      "name": "instagram-profile-posts",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.796",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "hAy844s7i9io71FcE",
+          "build_id": "EU82CClFsIaPWKvDo",
+          "dataset_ids": {
+            "default": "4nFYJiNhPOm8gSLoD"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-02-20T12:24:59.754Z",
+            "startedAt": "2026-02-20T12:24:59.754Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "Result",
+                  "eventPriceUsd": 0.0027,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each result written to the dataset"
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0027,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Facebook",
+      "task": "profiles",
+      "actor": "apify~facebook-search-scraper",
+      "input": {
+        "categories": [
+          "running"
+        ],
+        "locations": [
+          "Vietnam"
+        ],
+        "searchType": "profiles",
+        "resultsLimit": 1
+      },
+      "name": "facebook-profiles-0",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.333",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "8NeuNBEbdVUP11gTv",
+          "build_id": "bmN9WC7wmtqUiEM9w",
+          "dataset_ids": {
+            "default": "4LcFup8o1jZAazz2M"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-09-23T13:58:33.720Z",
+            "startedAt": "2026-09-23T13:58:33.720Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat charge for starting an Actor run."
+                },
+                "page-profile": {
+                  "eventTitle": "Page or profile",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Page or profile pushed into the dataset (Outdated)."
+                },
+                "google-result": {
+                  "eventTitle": "Google result",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Facebook page pushed into the dataset from a Google search. Applies to the Pages (Google) search type only."
+                },
+                "facebook-result": {
+                  "eventTitle": "Facebook result",
+                  "eventPriceUsd": 0.006,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Page, profile, post, or reel pushed into the dataset from a Facebook search."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.024,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Facebook",
+      "task": "profiles",
+      "actor": "apify~facebook-search-scraper",
+      "input": {
+        "categories": [
+          "running"
+        ],
+        "locations": [
+          "Vietnam"
+        ],
+        "searchType": "pages",
+        "resultsLimit": 1
+      },
+      "name": "facebook-profiles-1",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.333",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "vWunxfJWYClUyjFhP",
+          "build_id": "bmN9WC7wmtqUiEM9w",
+          "dataset_ids": {
+            "default": "JIXFaZAlB7YNAenIa"
+          },
+          "actual_usd": 0.001,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-09-23T13:58:33.720Z",
+            "startedAt": "2026-09-23T13:58:33.720Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat charge for starting an Actor run."
+                },
+                "page-profile": {
+                  "eventTitle": "Page or profile",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Page or profile pushed into the dataset (Outdated)."
+                },
+                "google-result": {
+                  "eventTitle": "Google result",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Facebook page pushed into the dataset from a Google search. Applies to the Pages (Google) search type only."
+                },
+                "facebook-result": {
+                  "eventTitle": "Facebook result",
+                  "eventPriceUsd": 0.006,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Page, profile, post, or reel pushed into the dataset from a Facebook search."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.024,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Facebook",
+      "task": "hashtag",
+      "actor": "apify~facebook-search-scraper",
+      "input": {
+        "categories": [
+          "#chaybo"
+        ],
+        "locations": [
+          "Vietnam"
+        ],
+        "searchType": "posts",
+        "resultsLimit": 1
+      },
+      "name": "facebook-hashtag-0",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.333",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "PicrDM9u9MhDK6KgL",
+          "build_id": "bmN9WC7wmtqUiEM9w",
+          "dataset_ids": {
+            "default": "e4XvRe35kwNUVxhkG"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-09-23T13:58:33.720Z",
+            "startedAt": "2026-09-23T13:58:33.720Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat charge for starting an Actor run."
+                },
+                "page-profile": {
+                  "eventTitle": "Page or profile",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Page or profile pushed into the dataset (Outdated)."
+                },
+                "google-result": {
+                  "eventTitle": "Google result",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Facebook page pushed into the dataset from a Google search. Applies to the Pages (Google) search type only."
+                },
+                "facebook-result": {
+                  "eventTitle": "Facebook result",
+                  "eventPriceUsd": 0.006,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Page, profile, post, or reel pushed into the dataset from a Facebook search."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.024,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Facebook",
+      "task": "profile-details",
+      "actor": "apify~facebook-pages-scraper",
+      "input": {
+        "startUrls": [
+          {
+            "url": "https://www.facebook.com/nike/"
+          }
+        ]
+      },
+      "name": "facebook-profile-details",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.518",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "M4trZGXPz53jM9gct",
+          "build_id": "vSxHUU0Ke5kTo2x25",
+          "dataset_ids": {
+            "default": "0gZKAtXUzl5hPdbOX"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-09-01T14:09:34.206Z",
+            "startedAt": "2026-09-01T14:09:34.206Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "page": {
+                  "eventTitle": "Page (Standby API)",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Single Facebook page returned in a Standby API response."
+                },
+                "apify-default-dataset-item": {
+                  "eventTitle": "Page",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Single page in the default dataset."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": null,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "platform": "Facebook",
+      "task": "profile-posts",
+      "actor": "apify~facebook-posts-scraper",
+      "input": {
+        "startUrls": [
+          {
+            "url": "https://www.facebook.com/nike/"
+          }
+        ],
+        "resultsLimit": 1
+      },
+      "name": "facebook-profile-posts",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.398",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "Zu6y7NauuQE6IZGp3",
+          "build_id": "nxJsZURfrXN0YklPh",
+          "dataset_ids": {
+            "default": "0ZdA35kYBSF9B0arY"
+          },
+          "actual_usd": 0,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-03-11T14:56:37.208Z",
+            "startedAt": "2026-03-11T14:56:37.208Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "post": {
+                  "eventTitle": "Post",
+                  "eventPriceUsd": 0.005,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each post written to the dataset."
+                },
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat charge for starting an Actor run."
+                },
+                "filter-applied": {
+                  "eventTitle": "Add-on: Date filter",
+                  "eventPriceUsd": 0.002,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost per post scraped with a date filter."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0062,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    },
+    {
+      "name": "tiktok-profiles-0",
+      "verified": false,
+      "reason": "Scout provider returned HTTP 400",
+      "code": "PROVIDER_ERROR"
+    },
+    {
+      "name": "tiktok-hashtag-0",
+      "verified": false,
+      "reason": "Scout provider returned HTTP 400",
+      "code": "PROVIDER_ERROR"
+    },
+    {
+      "name": "tiktok-profile-details",
+      "verified": false,
+      "reason": "Scout provider returned HTTP 400",
+      "code": "PROVIDER_ERROR"
+    },
+    {
+      "name": "tiktok-profile-posts",
+      "verified": false,
+      "reason": "Scout provider returned HTTP 400",
+      "code": "PROVIDER_ERROR"
+    },
+    {
+      "platform": "Facebook",
+      "task": "communities",
+      "actor": "parseforge~facebook-groups-search-scraper",
+      "input": {
+        "searchQueries": [
+          "Saigon run club"
+        ],
+        "maxItems": 1,
+        "proxyConfiguration": {
+          "useApifyProxy": true,
+          "apifyProxyGroups": [
+            "RESIDENTIAL"
+          ]
+        }
+      },
+      "name": "facebook-group-search",
+      "verified": true,
+      "reasons": [],
+      "build": "0.1.4",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "fyKnCLfPkCHIBSaFW",
+          "build_id": "JcjSroyxlv69chdKJ",
+          "dataset_ids": {
+            "default": "AD8NaQ3t3nGP2Rl4c"
+          },
+          "actual_usd": 0.004,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-09-29T18:14:59.625Z",
+            "startedAt": "2026-09-29T18:14:59.625Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result-item": {
+                  "eventTitle": "Result item",
+                  "eventPriceUsd": 0.004,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Charged once per result delivered to the dataset."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    }
+  ]
+}

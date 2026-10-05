@@ -1,0 +1,60 @@
+{
+  "recordedAt": "2026-10-05T12:26:27.967Z",
+  "sessionId": "0030c099-4b7f-4b65-826e-aeae7ee8d2c7",
+  "status": "complete",
+  "result": {
+    "success": true,
+    "partial": true,
+    "counts": {
+      "failed": 1,
+      "excluded": 0,
+      "inserted": 0,
+      "duplicate": 0,
+      "refreshed": 0
+    },
+    "warnings": [
+      "Instagram: Scout budget exhausted."
+    ]
+  },
+  "sessionWarnings": [
+    "Waiting for the worker queue to recover."
+  ],
+  "runs": [
+    {
+      "runId": "qk5g1eGW1W9SOWpNT",
+      "storedState": "running",
+      "providerState": "SUCCEEDED",
+      "chargedUsd": 0.0027,
+      "build": "0.0.797",
+      "window": "2026-09-05T12:22:52.888Z",
+      "taskKey": "4705fffaa0287efac6de1ef199b33fd9f89ad32e4ae0d4e5f2229ff28ef2ceff"
+    },
+    {
+      "runId": "K5ZyfUIVJooxxvcPI",
+      "storedState": "running",
+      "providerState": "SUCCEEDED",
+      "chargedUsd": 0.0027,
+      "build": "0.0.797",
+      "window": "2026-09-05T12:23:02.785Z",
+      "taskKey": "c3d01f1e7adbae956180e1edc3bfa3b1f16c009a033a76216af6443a56cb2444"
+    },
+    {
+      "runId": "0ONUssGv0dAfc99UC",
+      "storedState": "running",
+      "providerState": "SUCCEEDED",
+      "chargedUsd": 0.0027,
+      "build": "0.0.797",
+      "window": "2026-09-05T12:23:17.457Z",
+      "taskKey": "ca5c36cf2ec40284bfd431e47dee919786064a66d6f0470f0aee74d37313669d"
+    },
+    {
+      "runId": "zM8wIPSuc0m33XB8D",
+      "storedState": "running",
+      "providerState": "SUCCEEDED",
+      "chargedUsd": 0.0027,
+      "build": "0.0.797",
+      "window": "2026-09-05T12:23:36.428Z",
+      "taskKey": "c0b23bb7dbe751a196c0b279cb29273720cb877c3a09103906222a0be83eafa3"
+    }
+  ]
+}

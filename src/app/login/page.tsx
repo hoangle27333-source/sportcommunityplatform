@@ -32,7 +32,7 @@ export default async function LoginPage({
             </svg>
           </span>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">
-            Content Automation Hub
+            Sport Influencer Hub
           </h1>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">

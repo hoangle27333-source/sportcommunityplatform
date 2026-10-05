@@ -1,6 +1,9 @@
 "use client";
+import { useSearchParams, useRouter } from "next/navigation";
+import { ScoutTaskLauncher } from "../scout-task-launcher";
+import { scoutFetch } from "@/lib/apify/scout-client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { PlatformHeader } from "../platform-header";
 import { KolsTableView } from "../tabs/kols-table-view";
@@ -14,9 +17,7 @@ import {
   ReportModal,
 } from "../action-modals";
 import { ExcelUploadModal } from "../excel-upload-modal";
-import { KolPostScoutModal } from "../kol-post-scout-modal";
 import { BatchActionBar } from "../batch-action-bar";
-import { DiscoveryScoutModal } from "../discovery-scout-modal";
 import { AddChannelModal, MergeEntityModal } from "../channel-modals";
 import type { DashboardData, KOL } from "../types";
 
@@ -30,6 +31,12 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
 
   // Modals state
   const [selectedKolFor360, setSelectedKolFor360] = useState<KOL | null>(null);
+  const query = useSearchParams(); const router = useRouter();
+  const resultRecordId = query.get('recordId');
+  useEffect(() => {
+    if (resultRecordId) setSelectedKolFor360(initialData.kols.find(record => record.id === resultRecordId) || null);
+  }, [resultRecordId, initialData]);
+
   const [scoutTargetKol, setScoutTargetKol] = useState<KOL | null>(null);
   const [growthKol, setGrowthKol] = useState<KOL | null>(null);
   const [diffKol, setDiffKol] = useState<KOL | null>(null);
@@ -44,7 +51,7 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
   const [mergeTargetKols, setMergeTargetKols] = useState<KOL[]>([]);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
 
-  // Batch Selection & Discovery Scout State
+  // Batch Selection & Find Profiles State
   const [selectedKolIds, setSelectedKolIds] = useState<string[]>([]);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [isBatchRescouting, setIsBatchRescouting] = useState(false);
@@ -78,33 +85,8 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
     setSelectedKolIds([]);
   };
 
-  const handleBatchRescout = async () => {
-    if (selectedKolIds.length === 0) return;
-    setIsBatchRescouting(true);
-    try {
-      const res = await fetch("/api/sport-hub/batch-action", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "kol",
-          action: "rescout",
-          ids: selectedKolIds,
-        }),
-      });
-      const result = await res.json().catch(() => null);
-      if (result?.success) {
-        toast.success(result.message || `Successfully synced live data for ${selectedKolIds.length} creators!`);
-        await handleRefresh();
-        setSelectedKolIds([]);
-      } else {
-        toast.error(result?.error || "Failed to batch sync live metrics");
-      }
-    } catch {
-      toast.error("Network error during batch sync");
-    } finally {
-      setIsBatchRescouting(false);
-    }
-  };
+  const [refreshOpen, setRefreshOpen] = useState(false);
+  const handleBatchRescout = async () => { if (selectedKolIds.length) setRefreshOpen(true); };
 
   const handleConfirmBatchDelete = async () => {
     if (selectedKolIds.length === 0) return;
@@ -158,6 +140,8 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
       setLoading(false);
     }
   };
+  useEffect(() => { const refresh = () => { void handleRefresh(); }; window.addEventListener('sport-hub-data-changed', refresh); return () => window.removeEventListener('sport-hub-data-changed', refresh); }, []);
+
 
   const handleUpdateKol = (updatedKol: any) => {
     toast.success(`Updated details for KOL "${updatedKol.name}"!`);
@@ -306,6 +290,7 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
         />
       </main>
 
+      {refreshOpen && <ScoutTaskLauncher context={{ intent: "refresh", mode: "entity", entityType: "kol", ids: selectedKolIds, source: "/kols" }} subjects={data.kols} onClose={() => setRefreshOpen(false)} onSuccess={handleRefresh} />}
       {/* ─── MODALS ─── */}
       {/* 1. Base Full-Screen 360 Dossier Modal */}
       {selectedKolFor360 && (
@@ -314,7 +299,7 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
           kol={selectedKolFor360}
           posts={data.posts}
           reports={data.reports}
-          onClose={() => setSelectedKolFor360(null)}
+          onClose={() => { setSelectedKolFor360(null); if (resultRecordId) router.replace("/kols", { scroll: false }); }}
           onOpenReport={(kol) => {
             setReportTargetKol(kol);
             setIsReportModalOpen(true);
@@ -346,12 +331,7 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
         onSuccess={handleRefresh}
       />
 
-      <KolPostScoutModal
-        isOpen={!!scoutTargetKol}
-        kol={scoutTargetKol}
-        onClose={() => setScoutTargetKol(null)}
-        onSuccess={handleRefresh}
-      />
+      {scoutTargetKol && <ScoutTaskLauncher key={scoutTargetKol.id} context={{ intent: "content", mode: "entity", entityType: "kol", ids: [scoutTargetKol.id], source: "/kols" }} entity={scoutTargetKol} onClose={() => setScoutTargetKol(null)} onSuccess={handleRefresh} />}
 
       {growthKol && (
         <KolGrowthModal
@@ -402,22 +382,18 @@ export function KolsPageView({ initialData }: KolsPageViewProps) {
         itemTypeLabel="creators"
         onSelectAll={() => setSelectedKolIds(data.kols.map((k) => k.id))}
         onClearSelection={handleClearSelection}
+        rescoutRequiresConfirmation={false}
         onBatchRescout={handleBatchRescout}
         onBatchDelete={handleConfirmBatchDelete}
         onBatchMerge={() => handleOpenMerge()}
         mergeButtonLabel="Merge Profiles"
         loadingRescout={isBatchRescouting}
         loadingDelete={isBatchDeleting}
-        rescoutButtonLabel="Sync Live Data"
+        rescoutButtonLabel="Refresh Data"
       />
 
-      {/* 4. Dedicated Discovery Scout Modal */}
-      <DiscoveryScoutModal
-        isOpen={isDiscoveryScoutOpen}
-        onClose={() => setIsDiscoveryScoutOpen(false)}
-        defaultTargetType="Sports KOLs & Influencers"
-        onScoutSuccess={handleRefresh}
-      />
+      {/* 4. Dedicated Find Profiles Modal */}
+      {isDiscoveryScoutOpen && <ScoutTaskLauncher key={"profiles"} context={{ intent: "profiles", mode: "search", entityType: "kol", source: "/kols" }} onClose={() => setIsDiscoveryScoutOpen(false)} onSuccess={handleRefresh} />}
 
       {/* 5. Add Social Channel Modal */}
       {channelTargetKol && (

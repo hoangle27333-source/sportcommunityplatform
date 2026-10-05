@@ -4,31 +4,21 @@ import { writeFile } from "node:fs/promises";
 import {
   QUEUE_NAMES,
   createRedisConnection,
-  scheduleRepeatable,
 } from "@/lib/queue";
-import { createPublishWorker } from "./processors/publish";
-import { createAnalyticsSyncWorker } from "./processors/analytics-sync";
-import { createContentGenWorker } from "./processors/content-gen";
-import { createEngagementWorker } from "./processors/engagement";
-import { createRemixWorker } from "./processors/remix";
-import { createPlaywrightWorker } from "./processors/playwright";
+import { createSocialScoutWorker } from "./processors/social-scout";
 import { shouldRunQueue } from "./config";
 import { observeQueue, type QueueObserver } from "./observability";
 
 /**
- * BullMQ worker entrypoint (SPEC §2, §5, §6, §7, §8).
- *
- * Registers every queue processor and the repeatable analytics-sync cron, then
- * keeps a long-running process alive for the `worker` container.
+ * BullMQ worker entrypoint for Sport Influencer Hub.
+ * Manages the socialScout queue for Apify scouting runs.
  */
 
-const logger = pino({ name: "worker" });
+const logger = pino({ name: "scout-worker" });
 const HEARTBEAT_FILE = process.env.WORKER_HEARTBEAT_FILE ?? "/tmp/worker-heartbeat";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
-// Health/liveness connection so we surface Redis connectivity in the logs even
-// before a job arrives. Each Worker manages its own blocking connection.
-const connection = createRedisConnection();
+const connection = createRedisConnection(undefined, QUEUE_NAMES.socialScout);
 connection.on("connect", () => logger.info("redis connected"));
 connection.on("error", (err) => logger.error({ err }, "redis error"));
 
@@ -37,58 +27,20 @@ const observers: QueueObserver[] = [];
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 function registerWorkers() {
-  if (shouldRunQueue(QUEUE_NAMES.publish)) {
-    workers.push(createPublishWorker());
-    observers.push(observeQueue(QUEUE_NAMES.publish));
-  }
-  if (shouldRunQueue(QUEUE_NAMES.analyticsSync)) {
-    workers.push(createAnalyticsSyncWorker());
-    observers.push(observeQueue(QUEUE_NAMES.analyticsSync));
-  }
-  if (shouldRunQueue(QUEUE_NAMES.contentGen)) {
-    workers.push(createContentGenWorker());
-    observers.push(observeQueue(QUEUE_NAMES.contentGen));
-  }
-  if (shouldRunQueue(QUEUE_NAMES.engagement)) {
-    workers.push(createEngagementWorker());
-    observers.push(observeQueue(QUEUE_NAMES.engagement));
-  }
-  if (shouldRunQueue(QUEUE_NAMES.remix)) {
-    workers.push(createRemixWorker());
-    observers.push(observeQueue(QUEUE_NAMES.remix));
-  }
-  if (shouldRunQueue(QUEUE_NAMES.playwright)) {
-    workers.push(createPlaywrightWorker());
-    observers.push(observeQueue(QUEUE_NAMES.playwright));
+  if (shouldRunQueue(QUEUE_NAMES.socialScout)) {
+    workers.push(createSocialScoutWorker());
+    observers.push(observeQueue(QUEUE_NAMES.socialScout));
   }
   logger.info({ queues: workers.map((w) => w.name) }, "workers registered");
 }
 
-/**
- * Repeatable jobs. Analytics sync every 6h (SPEC §6). BullMQ dedupes the
- * schedule by pattern+name, so registering on every boot is idempotent.
- */
-async function registerCron() {
-  if (!shouldRunQueue(QUEUE_NAMES.analyticsSync)) return;
-  const pattern = process.env.ANALYTICS_SYNC_CRON ?? "0 */6 * * *";
-  await scheduleRepeatable(
-    QUEUE_NAMES.analyticsSync,
-    "scheduled-sync",
-    pattern,
-    {},
-  );
-  logger.info({ pattern }, "analytics-sync cron registered");
-}
-
 registerWorkers();
-registerCron().catch((err) =>
-  logger.error({ err }, "failed to register cron jobs"),
-);
+
 void writeHeartbeat();
 heartbeatTimer = setInterval(() => {
   void writeHeartbeat();
 }, HEARTBEAT_INTERVAL_MS);
-logger.info("worker started");
+logger.info("scout worker started");
 
 async function writeHeartbeat() {
   await writeFile(
@@ -101,10 +53,8 @@ async function writeHeartbeat() {
   );
 }
 
-// Keep the process alive until a signal arrives, draining workers cleanly so
-// in-flight jobs finish (or are re-queued) rather than being lost.
 async function shutdown(signal: string) {
-  logger.info({ signal }, "shutting down worker");
+  logger.info({ signal }, "shutting down scout worker");
   try {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     await Promise.all(observers.map((observer) => observer.close()));

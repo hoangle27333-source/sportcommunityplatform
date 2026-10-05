@@ -1,0 +1,211 @@
+{
+  "observedAt": "2026-10-05T13:50:49.210Z",
+  "migration": "20261005010000_tiktok_run_budget.sql",
+  "migrationSha256": "7cca06c05ff00b23a64f0e7039da72ca0ff3406076f6dc1cc853ceaf41377d49",
+  "appliedVia": "Supabase SQL Editor on authorized Chrome Hoang profile",
+  "settings": {
+    "id": true,
+    "session_usd": 1,
+    "daily_usd": 10,
+    "verification_usd": 5,
+    "run_usd": 0.25,
+    "enabled": true,
+    "tiktok_run_usd": 0.5
+  },
+  "verification": {
+    "actualUsd": 0.15555000000000002,
+    "heldUsd": 0,
+    "reservationRecords": 45
+  },
+  "capabilities": [
+    {
+      "key": "apify~instagram-scraper:profiles:user",
+      "actor": "apify~instagram-scraper",
+      "build": "0.0.796",
+      "verified": true,
+      "verifiedAt": "2026-10-05T11:54:13.052+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~instagram-scraper:hashtag:posts",
+      "actor": "apify~instagram-scraper",
+      "build": "0.0.796",
+      "verified": true,
+      "verifiedAt": "2026-10-05T11:54:24.836+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~instagram-scraper:profile-posts:posts",
+      "actor": "apify~instagram-scraper",
+      "build": "0.0.797",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:04:16.584+00:00",
+      "batch": false,
+      "dateFilter": true
+    },
+    {
+      "key": "parseforge~facebook-groups-search-scraper:communities:default",
+      "actor": "parseforge~facebook-groups-search-scraper",
+      "build": "0.1.4",
+      "verified": true,
+      "verifiedAt": "2026-10-05T11:56:21.546+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-search-scraper:profiles:profiles",
+      "actor": "apify~facebook-search-scraper",
+      "build": "0.0.333",
+      "verified": true,
+      "verifiedAt": "2026-10-05T11:55:08.811+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-search-scraper:profiles:pages",
+      "actor": "apify~facebook-search-scraper",
+      "build": "0.0.333",
+      "verified": true,
+      "verifiedAt": "2026-10-05T11:55:20.636+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-search-scraper:hashtag:posts",
+      "actor": "apify~facebook-search-scraper",
+      "build": "0.0.333",
+      "verified": true,
+      "verifiedAt": "2026-10-05T11:55:31.523+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-posts-scraper:profile-posts:default",
+      "actor": "apify~facebook-posts-scraper",
+      "build": "0.0.398",
+      "verified": true,
+      "verifiedAt": "2026-10-05T11:55:54.411+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~instagram-scraper:comments:comments",
+      "actor": "apify~instagram-scraper",
+      "build": "0.0.796",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:00:17.19+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-comments-scraper:comments:default",
+      "actor": "apify~facebook-comments-scraper",
+      "build": "0.0.368",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:00:41.059+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~instagram-scraper:communities:user",
+      "actor": "apify~instagram-scraper",
+      "build": "0.0.797",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:01:37.543+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-search-scraper:communities:pages",
+      "actor": "apify~facebook-search-scraper",
+      "build": "0.0.333",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:01:50.949+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-search-scraper:keyword:posts",
+      "actor": "apify~facebook-search-scraper",
+      "build": "0.0.333",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:02:04.672+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~facebook-pages-scraper:profile-details:default",
+      "actor": "apify~facebook-pages-scraper",
+      "build": "0.0.518",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:03:41.52+00:00",
+      "batch": true,
+      "dateFilter": false
+    },
+    {
+      "key": "clockworks~tiktok-scraper:keyword:default",
+      "actor": "clockworks~tiktok-scraper",
+      "build": "0.0.612",
+      "verified": false,
+      "verifiedAt": null,
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "apify~instagram-scraper:profile-details:details",
+      "actor": "apify~instagram-scraper",
+      "build": "0.0.797",
+      "verified": true,
+      "verifiedAt": "2026-10-05T12:13:06.333+00:00",
+      "batch": true,
+      "dateFilter": false
+    },
+    {
+      "key": "clockworks~tiktok-scraper:profile-details:default",
+      "actor": "clockworks~tiktok-scraper",
+      "build": "0.0.612",
+      "verified": true,
+      "verifiedAt": "2026-10-05T13:36:26.259+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "clockworks~tiktok-scraper:profiles:default",
+      "actor": "clockworks~tiktok-scraper",
+      "build": "0.0.612",
+      "verified": true,
+      "verifiedAt": "2026-10-05T13:37:40.133+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "clockworks~tiktok-scraper:hashtag:default",
+      "actor": "clockworks~tiktok-scraper",
+      "build": "0.0.612",
+      "verified": true,
+      "verifiedAt": "2026-10-05T13:37:58.124+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "clockworks~tiktok-scraper:profile-posts:default",
+      "actor": "clockworks~tiktok-scraper",
+      "build": "0.0.612",
+      "verified": true,
+      "verifiedAt": "2026-10-05T13:38:41.913+00:00",
+      "batch": false,
+      "dateFilter": false
+    },
+    {
+      "key": "clockworks~tiktok-comments-scraper:comments:default",
+      "actor": "clockworks~tiktok-comments-scraper",
+      "build": "0.0.468",
+      "verified": true,
+      "verifiedAt": "2026-10-05T13:41:16.182+00:00",
+      "batch": false,
+      "dateFilter": false
+    }
+  ]
+}

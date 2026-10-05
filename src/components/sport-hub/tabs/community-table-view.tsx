@@ -261,7 +261,7 @@ export function CommunityTableView({
               title="Launch AI & Apify Scout for Communities"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Discovery Scout</span>
+              <span>Find Profiles</span>
             </button>
           )}
 
@@ -593,7 +593,7 @@ export function CommunityTableView({
                           </td>
                           <td className="py-2 px-3 text-right font-bold text-slate-900 whitespace-nowrap text-xs">
                             <span title={aggregates.hasMultipleChannels ? `Total across ${aggregates.channelCount} channels` : undefined}>
-                              {formatNumber(aggregates.totalMembers)}
+                              {comm.missingMetrics?.includes("members") ? "Unknown" : formatNumber(aggregates.totalMembers)}
                             </span>
                           </td>
                         <td className="py-2 px-3 whitespace-nowrap">
@@ -648,14 +648,14 @@ export function CommunityTableView({
                               </ActionTooltip>
                             )}
 
-                            {/* Scout Discussions */}
+                            {/* Collect Posts */}
                             {onScoutCommunityPosts && (
-                              <ActionTooltip label="Scout Discussions">
+                              <ActionTooltip label="Collect Posts">
                                 <button
                                   type="button"
                                   onClick={() => onScoutCommunityPosts(comm)}
                                   className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center border border-indigo-200 hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Scout Discussions"
+                                  title="Collect Posts"
                                 >
                                   <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
                                 </button>
@@ -895,7 +895,7 @@ export function CommunityTableView({
                       <div>
                         <div className="text-[10px] text-slate-500 font-medium">Total Members</div>
                         <div className="text-xs font-bold text-slate-900 mt-0.5">
-                          {formatNumber(aggregates.totalMembers)}
+                          {comm.missingMetrics?.includes("members") ? "Unknown" : formatNumber(aggregates.totalMembers)}
                         </div>
                       </div>
                       <div>
@@ -942,7 +942,7 @@ export function CommunityTableView({
                         type="button"
                         onClick={() => onScoutCommunityPosts(comm)}
                         className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer"
-                        title="Scout Discussions"
+                        title="Collect Posts"
                       >
                         <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
                         <span className="hidden sm:inline">Scout</span>

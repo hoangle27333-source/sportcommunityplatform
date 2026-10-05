@@ -1,0 +1,243 @@
+{
+  "success": true,
+  "sessionId": "00000000-0000-0000-0000-000000000006",
+  "criteria": {
+    "keyword": "badminton",
+    "platform": "Facebook",
+    "targetType": "Individual KOLs",
+    "geography": "Nationwide",
+    "limit": 5
+  },
+  "candidates": [
+    {
+      "username": "pfbid0oySSt5NZFJxofyTKCQTVszFvc8TVy5MU8Zg1suZ1tr6Ky2gKZbyJMw1J8PtsQBA9l",
+      "name": "Henry Badminton",
+      "bio": "Lives in Ho Chi Minh City, Vietnam",
+      "url": "https://facebook.com/people/Henry-Badminton/pfbid0oySSt5NZFJxofyTKCQTVszFvc8TVy5MU8Zg1suZ1tr6Ky2gKZbyJMw1J8PtsQBA9l",
+      "platform": "Facebook",
+      "followers": null,
+      "avgViews": null,
+      "likes": null,
+      "comments": null,
+      "er": null,
+      "provenance": {
+        "platform": "Facebook",
+        "fetchedAt": "2026-10-05T10:22:51Z",
+        "profileUrl": "https://facebook.com/people/Henry-Badminton/pfbid0oySSt5NZFJxofyTKCQTVszFvc8TVy5MU8Zg1suZ1tr6Ky2gKZbyJMw1J8PtsQBA9l"
+      },
+      "derivedMetrics": {
+        "viewsSample": 0,
+        "erSample": 0,
+        "formula": "mean(likes + comments) / followers * 100"
+      },
+      "avatarUrl": "",
+      "category": "",
+      "entityType": "",
+      "location": "",
+      "posts": [],
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": true,
+      "verifiedGeography": "Nationwide",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Henry Badminton",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "candidateId": "00000000-0000-0000-0000-000000000001",
+      "accountKey": "Facebook:https://facebook.com/people/Henry-Badminton/pfbid0oySSt5NZFJxofyTKCQTVszFvc8TVy5MU8Zg1suZ1tr6Ky2gKZbyJMw1J8PtsQBA9l",
+      "isExisting": true,
+      "existingId": "069ecaf0-4aa4-4f97-9e09-352bf0c192af"
+    },
+    {
+      "username": "pfbid0Y3ju7upm6kPd9XhTk4iBr375pcNg8ECCFDAE1RzXck79ffAP455T7FzYK8os2WoMl",
+      "name": "Bơ Badminton",
+      "bio": "Lives in Ho Chi Minh City, Vietnam",
+      "url": "https://facebook.com/people/B%C6%A1-Badminton/pfbid0Y3ju7upm6kPd9XhTk4iBr375pcNg8ECCFDAE1RzXck79ffAP455T7FzYK8os2WoMl",
+      "platform": "Facebook",
+      "followers": null,
+      "avgViews": null,
+      "likes": null,
+      "comments": null,
+      "er": null,
+      "provenance": {
+        "platform": "Facebook",
+        "fetchedAt": "2026-10-05T10:22:51Z",
+        "profileUrl": "https://facebook.com/people/B%C6%A1-Badminton/pfbid0Y3ju7upm6kPd9XhTk4iBr375pcNg8ECCFDAE1RzXck79ffAP455T7FzYK8os2WoMl"
+      },
+      "derivedMetrics": {
+        "viewsSample": 0,
+        "erSample": 0,
+        "formula": "mean(likes + comments) / followers * 100"
+      },
+      "avatarUrl": "",
+      "category": "",
+      "entityType": "",
+      "location": "",
+      "posts": [],
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": true,
+      "verifiedGeography": "Nationwide",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Bơ Badminton",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "candidateId": "00000000-0000-0000-0000-000000000002",
+      "accountKey": "Facebook:https://facebook.com/people/B%C6%A1-Badminton/pfbid0Y3ju7upm6kPd9XhTk4iBr375pcNg8ECCFDAE1RzXck79ffAP455T7FzYK8os2WoMl",
+      "isExisting": false
+    },
+    {
+      "username": "pfbid0HQrGaaGat5nw8fn3CQtQiZM9apygCcPj89A549792o5BKH7oUYc8ETPXwJR9Wr7Ul",
+      "name": "CV Badminton",
+      "bio": "Lives in Hanoi, Vietnam",
+      "url": "https://facebook.com/people/CV-Badminton/pfbid0HQrGaaGat5nw8fn3CQtQiZM9apygCcPj89A549792o5BKH7oUYc8ETPXwJR9Wr7Ul",
+      "platform": "Facebook",
+      "followers": null,
+      "avgViews": null,
+      "likes": null,
+      "comments": null,
+      "er": null,
+      "provenance": {
+        "platform": "Facebook",
+        "fetchedAt": "2026-10-05T10:22:51Z",
+        "profileUrl": "https://facebook.com/people/CV-Badminton/pfbid0HQrGaaGat5nw8fn3CQtQiZM9apygCcPj89A549792o5BKH7oUYc8ETPXwJR9Wr7Ul"
+      },
+      "derivedMetrics": {
+        "viewsSample": 0,
+        "erSample": 0,
+        "formula": "mean(likes + comments) / followers * 100"
+      },
+      "avatarUrl": "",
+      "category": "",
+      "entityType": "",
+      "location": "",
+      "posts": [],
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": true,
+      "verifiedGeography": "Nationwide",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "CV Badminton",
+        "Lives in Hanoi, Vietnam"
+      ],
+      "candidateId": "00000000-0000-0000-0000-000000000003",
+      "accountKey": "Facebook:https://facebook.com/people/CV-Badminton/pfbid0HQrGaaGat5nw8fn3CQtQiZM9apygCcPj89A549792o5BKH7oUYc8ETPXwJR9Wr7Ul",
+      "isExisting": false
+    },
+    {
+      "username": "pfbid0UBRTQPxaPNT1Ksadb1XenAho1fWkrD8b7MPqM5BcG3kc9ygJaP87pRwgF9ZAP3USl",
+      "name": "Loan Badminton",
+      "bio": "Lives in Da Nang, Vietnam",
+      "url": "https://facebook.com/people/Loan-Badminton/pfbid0UBRTQPxaPNT1Ksadb1XenAho1fWkrD8b7MPqM5BcG3kc9ygJaP87pRwgF9ZAP3USl",
+      "platform": "Facebook",
+      "followers": null,
+      "avgViews": null,
+      "likes": null,
+      "comments": null,
+      "er": null,
+      "provenance": {
+        "platform": "Facebook",
+        "fetchedAt": "2026-10-05T10:22:51Z",
+        "profileUrl": "https://facebook.com/people/Loan-Badminton/pfbid0UBRTQPxaPNT1Ksadb1XenAho1fWkrD8b7MPqM5BcG3kc9ygJaP87pRwgF9ZAP3USl"
+      },
+      "derivedMetrics": {
+        "viewsSample": 0,
+        "erSample": 0,
+        "formula": "mean(likes + comments) / followers * 100"
+      },
+      "avatarUrl": "",
+      "category": "",
+      "entityType": "",
+      "location": "",
+      "posts": [],
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": true,
+      "verifiedGeography": "Nationwide",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Loan Badminton",
+        "Lives in Da Nang, Vietnam"
+      ],
+      "candidateId": "00000000-0000-0000-0000-000000000004",
+      "accountKey": "Facebook:https://facebook.com/people/Loan-Badminton/pfbid0UBRTQPxaPNT1Ksadb1XenAho1fWkrD8b7MPqM5BcG3kc9ygJaP87pRwgF9ZAP3USl",
+      "isExisting": false
+    },
+    {
+      "username": "Vuxbadminton",
+      "name": "Vux Badminton",
+      "bio": "Lives in Hanoi, Vietnam",
+      "url": "https://facebook.com/Vuxbadminton",
+      "platform": "Facebook",
+      "followers": null,
+      "avgViews": null,
+      "likes": null,
+      "comments": null,
+      "er": null,
+      "provenance": {
+        "platform": "Facebook",
+        "fetchedAt": "2026-10-05T10:22:51Z",
+        "profileUrl": "https://facebook.com/Vuxbadminton"
+      },
+      "derivedMetrics": {
+        "viewsSample": 0,
+        "erSample": 0,
+        "formula": "mean(likes + comments) / followers * 100"
+      },
+      "avatarUrl": "",
+      "category": "",
+      "entityType": "",
+      "location": "",
+      "posts": [],
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": true,
+      "verifiedGeography": "Nationwide",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Vux Badminton",
+        "Lives in Hanoi, Vietnam"
+      ],
+      "candidateId": "00000000-0000-0000-0000-000000000005",
+      "accountKey": "Facebook:https://facebook.com/Vuxbadminton",
+      "isExisting": false
+    }
+  ],
+  "diagnostics": {
+    "providerCount": 15,
+    "requestedCount": 5,
+    "excludedCount": 0,
+    "returnedCount": 5
+  },
+  "newCount": 4,
+  "partial": false,
+  "warnings": []
+}

@@ -1,0 +1,38 @@
+{
+  "recordedAt": "2026-10-05T12:24:32.229Z",
+  "sessionId": "0030c099-4b7f-4b65-826e-aeae7ee8d2c7",
+  "queue": "isolated local Redis worker; production queue unavailable",
+  "status": "complete",
+  "counts": {
+    "failed": 1,
+    "excluded": 0,
+    "inserted": 0,
+    "duplicate": 0,
+    "refreshed": 0
+  },
+  "warnings": [
+    "Waiting for the worker queue to recover."
+  ],
+  "runs": [
+    {
+      "provider_run_id": "qk5g1eGW1W9SOWpNT",
+      "state": "running",
+      "actual_usd": null
+    },
+    {
+      "provider_run_id": "zM8wIPSuc0m33XB8D",
+      "state": "running",
+      "actual_usd": null
+    },
+    {
+      "provider_run_id": "K5ZyfUIVJooxxvcPI",
+      "state": "running",
+      "actual_usd": null
+    },
+    {
+      "provider_run_id": "0ONUssGv0dAfc99UC",
+      "state": "running",
+      "actual_usd": null
+    }
+  ]
+}

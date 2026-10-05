@@ -1,0 +1,1 @@
+PASS: migration, shared/duplicate claims, concurrent worker/import/dataset leases, concurrent daily budget, settlement, verification cap, role revocation, session caps, timezone/day reset, monotonic watermarks and RLS/RPC denial.

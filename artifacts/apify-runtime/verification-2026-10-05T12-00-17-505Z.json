@@ -1,0 +1,66 @@
+{
+  "verifiedAt": "2026-10-05T12:00:17.505Z",
+  "checks": [
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "Instagram",
+      "task": "comments",
+      "actor": "apify~instagram-scraper",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/p/Dd9Etk7R91I/"
+        ],
+        "resultsType": "comments",
+        "resultsLimit": 20
+      },
+      "name": "instagram-comments",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.796",
+      "count": 15,
+      "parsed": 15,
+      "runs": [
+        {
+          "provider_run_id": "gJIqZgtdA2J7XVYqC",
+          "build_id": "EU82CClFsIaPWKvDo",
+          "dataset_ids": {
+            "default": "YLIiFVgz2c1d4VW72"
+          },
+          "actual_usd": 0.0405,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-02-20T12:24:59.754Z",
+            "startedAt": "2026-02-20T12:24:59.754Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "Result",
+                  "eventPriceUsd": 0.0027,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each result written to the dataset"
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0027,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    }
+  ]
+}

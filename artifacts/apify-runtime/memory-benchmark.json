@@ -1,0 +1,76 @@
+{
+  "observedAt": "2026-10-05T12:21:21.286Z",
+  "comparable": true,
+  "samples": [
+    {
+      "build": "0.0.797",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/nike/"
+        ],
+        "resultsType": "details",
+        "resultsLimit": 1
+      },
+      "memory": "Actor default",
+      "runId": "QddNi8JwQW8lcY7df",
+      "actualUsd": 0.0027,
+      "configuredMemoryMb": 128,
+      "elapsedSeconds": 18.277,
+      "peakMemoryBytes": 66875392,
+      "averageMemoryBytes": 63879728.53122312,
+      "profiles": 1,
+      "coverage": {
+        "followers": 1,
+        "avgViews": 1,
+        "er": 1
+      }
+    },
+    {
+      "build": "0.0.797",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/nike/"
+        ],
+        "resultsType": "details",
+        "resultsLimit": 1
+      },
+      "memory": 512,
+      "runId": "tbaaghNmezGAW7tvF",
+      "actualUsd": 0,
+      "configuredMemoryMb": 512,
+      "elapsedSeconds": 5.301,
+      "peakMemoryBytes": 64831488,
+      "averageMemoryBytes": 62176328.521246456,
+      "profiles": 1,
+      "coverage": {
+        "followers": 1,
+        "avgViews": 1,
+        "er": 1
+      }
+    },
+    {
+      "build": "0.0.797",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/nike/"
+        ],
+        "resultsType": "details",
+        "resultsLimit": 1
+      },
+      "memory": 1024,
+      "runId": "52v8yz9dF69bwZz7t",
+      "actualUsd": 0,
+      "configuredMemoryMb": 1024,
+      "elapsedSeconds": 6.379,
+      "peakMemoryBytes": 96161792,
+      "averageMemoryBytes": 77194460.57913323,
+      "profiles": 1,
+      "coverage": {
+        "followers": 1,
+        "avgViews": 1,
+        "er": 1
+      }
+    }
+  ],
+  "decision": "Keep Actor default memory. This small sample does not demonstrate cost savings; live observations are not a controlled precision/recall benchmark."
+}

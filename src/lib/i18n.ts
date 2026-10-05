@@ -4,6 +4,8 @@
  */
 
 export const I18N_MAP: Record<string, string> = {
+  "Không rõ": "Unknown",
+  "Unknown": "Unknown",
   // Partnership & CRM Statuses
   "Đang hợp tác tích cực": "Active Partnership",
   "Đang hợp tác": "In Collaboration",
@@ -88,12 +90,12 @@ export const I18N_MAP: Record<string, string> = {
 
   // Post & Content Statuses
   "Đã duyệt nội dung": "Approved",
-  "Mới scout (Chưa duyệt)": "New Scout",
+  "Mới scout (Chưa duyệt)": "New Scout (Unverified)",
   "Đã liên hệ tác giả": "Contacted Author",
   "Lưu tham khảo ý tưởng / Trend": "Idea Reference",
   "Đã liên hệ, đang chờ báo giá chi tiết": "Pending Quote",
   "Lưu tham khảo để liên hệ hợp tác khi có giải đấu": "Saved for Tournament",
-  "Mới scout": "New Scout",
+  "Mới scout": "New Scout (Unverified)",
   "Mới scout (Chưa liên hệ)": "New Scout",
   "Đang chờ duyệt": "Pending Review",
   "Đã xuất bản": "Published",

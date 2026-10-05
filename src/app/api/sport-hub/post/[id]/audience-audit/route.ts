@@ -1,3 +1,4 @@
+import { scoutAccess, scoutReadAccess } from "@/lib/apify/sessions";
 import { NextRequest, NextResponse } from "next/server";
 import { getLatestPostAudienceAudit, runPostAudienceAudit } from "@/lib/sport-hub/audience-audit";
 
@@ -8,6 +9,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
+    await scoutReadAccess();
     const { id } = await ctx.params;
     const data = await getLatestPostAudienceAudit(id);
     if (!data) {
@@ -20,13 +22,14 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || "Failed to load post audit" },
-      { status: 500 }
+      { status: err.status || 500 }
     );
   }
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
+    await scoutAccess();
     const { id } = await ctx.params;
     let body: { force?: boolean; heuristicsOnly?: boolean } = {};
     try {
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || "Failed to audit post" },
-      { status: 500 }
+      { status: err.status || 500 }
     );
   }
 }

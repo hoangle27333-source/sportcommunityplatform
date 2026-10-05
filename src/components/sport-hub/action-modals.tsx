@@ -1,5 +1,8 @@
 "use client";
 
+import { DiscoveryScoutModal } from "./discovery-scout-modal";
+import { ScoutDialogFrame } from "./scout-dialog-frame";
+import { UrlInspector, type InspectedDetails } from "./url-inspector";
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
@@ -45,277 +48,8 @@ export interface ScoutModalProps {
   defaultTargetType?: string;
 }
 
-export function ScoutModal({
-  isOpen,
-  onClose,
-  onSuccess,
-  defaultTargetType,
-}: ScoutModalProps) {
-  const [keyword, setKeyword] = useState("");
-  const [targetType, setTargetType] = useState(
-    defaultTargetType || "Individual KOLs"
-  );
-  const [platform, setPlatform] = useState(
-    defaultTargetType?.includes("Communit") ? "Facebook" : "Instagram"
-  );
-  const [limit, setLimit] = useState(5);
-  const [geography, setGeography] = useState("Nationwide");
-  const [notes, setNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [currentUser, setCurrentUser] = useState<string>("");
-
-  useEffect(() => {
-    if (isOpen) {
-      const supabase = createClient();
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user) {
-          supabase
-            .from("profiles")
-            .select("name")
-            .eq("id", user.id)
-            .single()
-            .then(({ data: prof }) => {
-              setCurrentUser(prof?.name || user.user_metadata?.name || user.email?.split("@")[0] || "Team Member");
-            });
-        }
-      });
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (defaultTargetType) {
-      setTargetType(defaultTargetType);
-      if (defaultTargetType.includes("Communit")) {
-        setPlatform("Facebook");
-      }
-    }
-  }, [defaultTargetType, isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!keyword.trim()) {
-      toast.error("Please enter a search keyword to scout!");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/sport-hub/scout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          keyword,
-          targetType,
-          platform,
-          limit,
-          geography,
-          notes,
-          runImmediate: true,
-        }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        toast.success("Apify scout triggered! Results are syncing directly into Supabase.");
-        onSuccess();
-        onClose();
-        setKeyword("");
-        setNotes("");
-      } else {
-        toast.error(result.error || "Failed to dispatch scout request");
-      }
-    } catch {
-      toast.error("Server connection error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-lg w-full overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base leading-tight">
-                Auto Scout Request (Apify Engine)
-              </h3>
-              <p className="text-xs text-blue-100 mt-0.5">
-                Launch Apify cloud scraper and sync directly into Supabase
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Search Keyword <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. pickleball hanoi, tennis saigon, marathon runner..."
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">
-              Tip: Sport discipline + City (e.g.{" "}
-              <span className="font-semibold text-slate-600">
-                pickleball vietnam
-              </span>
-              )
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Target Entity
-              </label>
-              <select
-                value={targetType}
-                onChange={(e) => setTargetType(e.target.value)}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="Individual KOLs">Individual KOLs</option>
-                <option value="Communities & Clubs">Communities & Clubs</option>
-                <option value="Viral Posts & Reels">Viral Posts & Reels</option>
-                <option value="Athletes / Coaches">Athletes / Coaches</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Platform
-              </label>
-              <select
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="Instagram">Instagram</option>
-                <option value="Facebook">Facebook</option>
-                <option value="Threads">Threads</option>
-                <option value="TikTok">TikTok</option>
-                <option value="YouTube">YouTube</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Number of Profiles
-              </label>
-              <select
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value={5}>5 Profiles (Fast)</option>
-                <option value={10}>10 Profiles</option>
-                <option value={20}>20 Profiles</option>
-                <option value={50}>50 Profiles (Deep Scout)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Target Region
-              </label>
-              <select
-                value={geography}
-                onChange={(e) => setGeography(e.target.value)}
-                className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="Nationwide">Nationwide</option>
-                <option value="Hanoi">Hanoi</option>
-                <option value="Ho Chi Minh City">Ho Chi Minh City</option>
-                <option value="Da Nang">Da Nang</option>
-                <option value="Northern Region">Northern Region</option>
-                <option value="Southern Region">Southern Region</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Additional Notes (Optional)
-            </label>
-            <textarea
-              rows={2}
-              placeholder="Specific follower criteria, engagement thresholds, or content guidelines..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-start space-x-2 text-[11px] text-blue-800">
-            <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <span>
-              The request will trigger <strong>Apify Cloud Actors</strong> directly.
-              Extracted profiles, metrics, and viral reels are written into Supabase PostgreSQL in real-time.
-            </span>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
-            <div className="text-[11px] text-slate-500 font-medium truncate">
-              {currentUser ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                  <span>Attributed to: <strong className="text-slate-800">{currentUser}</strong></span>
-                </span>
-              ) : null}
-            </div>
-
-            <div className="flex items-center space-x-2 shrink-0">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition shadow-md shadow-blue-200 flex items-center space-x-1.5 disabled:opacity-50"
-              >
-                {submitting ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Launching Apify...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Launch Apify Scout</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+export function ScoutModal({ isOpen, onClose, onSuccess, defaultTargetType }: ScoutModalProps) {
+  return <DiscoveryScoutModal isOpen={isOpen} onClose={onClose} onSuccess={onSuccess} defaultTargetType={defaultTargetType?.includes("Communit") ? "Communities & Clubs" : "Individual KOLs"} />;
 }
 
 // ==========================================
@@ -718,7 +452,10 @@ export function ReportModal({
 export interface AddKolModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (result?: any) => void;
+  initialUrl?: string;
+  keepResultOpen?: boolean;
+  inspectSessionId?: string;
 }
 
 export const SPORT_OPTIONS = [
@@ -732,75 +469,36 @@ export const SPORT_OPTIONS = [
   "Others",
 ];
 
-export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
+export function AddKolModal({ isOpen, onClose, onSuccess, initialUrl = "", keepResultOpen, inspectSessionId }: AddKolModalProps) {
   const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
-  const [selectedSports, setSelectedSports] = useState<string[]>(["Pickleball"]);
-  const [tier, setTier] = useState("Micro (10k - 50k)");
+  const [selectedSports, setSelectedSports] = useState<string[]>([]);
+  const [tier, setTier] = useState("Unknown");
   const [platform, setPlatform] = useState("Facebook");
-  const [geography, setGeography] = useState("Nationwide");
-  const [followers, setFollowers] = useState(25000);
-  const [avgViews, setAvgViews] = useState(10000);
-  const [er, setEr] = useState(4.5);
+  const [geography, setGeography] = useState("Unknown");
+  const [followers, setFollowers] = useState<number | string>("");
+  const [avgViews, setAvgViews] = useState<number | string>("");
+  const [er, setEr] = useState<number | string>("");
   const [quotation, setQuotation] = useState(15000000);
-  const [status, setStatus] = useState("Active Partnership");
+  const [status, setStatus] = useState("New Scout (Unverified)");
   const [profileUrl, setProfileUrl] = useState("");
   const [contact, setContact] = useState("");
   const [bio, setBio] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // URL Auto-scout state
-  const [scoutUrl, setScoutUrl] = useState("");
-  const [isScoutingUrl, setIsScoutingUrl] = useState(false);
-  const [scoutStatusMsg, setScoutStatusMsg] = useState("");
-  const scoutInputRef = React.useRef<HTMLInputElement>(null);
-
-  if (!isOpen) return null;
-
-  const handleScoutProfileUrl = async () => {
-    const targetUrl = (scoutUrl || scoutInputRef.current?.value || "").trim();
-    if (!targetUrl) {
-      toast.error("Please enter a profile link to scout (e.g. TikTok, Instagram, Facebook)");
-      return;
-    }
-    setIsScoutingUrl(true);
-    setScoutStatusMsg("Scouting social profile & computing creator metrics...");
-    try {
-      const res = await fetch("/api/sport-hub/scout/inspect-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl, type: "kol" }),
-      });
-      const result = await res.json();
-      if (result.success && result.data) {
-        const d = result.data;
-        if (d.name) setName(d.name);
-        if (d.sport && Array.isArray(d.sport) && d.sport.length > 0) setSelectedSports(d.sport);
-        if (d.tier) setTier(d.tier);
-        if (d.platform) setPlatform(d.platform);
-        if (d.geography) setGeography(d.geography);
-        if (typeof d.followers === "number") setFollowers(d.followers);
-        if (typeof d.avgViews === "number") setAvgViews(d.avgViews);
-        if (typeof d.er === "number") setEr(d.er);
-        if (typeof d.quotation === "number" && isAdmin) setQuotation(d.quotation);
-        if (d.status) setStatus(d.status);
-        if (d.contact) setContact(d.contact);
-        if (d.bio) setBio(d.bio);
-        setProfileUrl(targetUrl);
-        setScoutUrl(targetUrl);
-        setScoutStatusMsg("Profile inspected & autofilled! Review and adjust details below.");
-        toast.success("Profile scouted! Review the details below before submitting.");
-      } else {
-        toast.error(result.error || "Could not scout profile URL");
-        setScoutStatusMsg("");
-      }
-    } catch {
-      toast.error("Failed to connect to scout inspector");
-      setScoutStatusMsg("");
-    } finally {
-      setIsScoutingUrl(false);
-    }
+  const [inspection, setInspection] = useState<InspectedDetails | null>(null);
+  const applyDetails = (d: InspectedDetails) => {
+    setInspection(d);
+    setName(d.name || "");
+    if (d.sport?.length) setSelectedSports(d.sport);
+    if (d.tier) setTier(d.tier);
+    if (d.platform) setPlatform(d.platform);
+    if (d.geography) setGeography(d.geography);
+    setFollowers(d.followers ?? ""); setAvgViews(d.avgViews ?? ""); setEr(d.er ?? "");
+    if (d.bio) setBio(d.bio);
+    setProfileUrl(d.url || initialUrl); setStatus("New Scout (Unverified)");
   };
+  if (!isOpen) return null;
 
   const toggleSport = (sport: string) => {
     if (selectedSports.includes(sport)) {
@@ -827,14 +525,16 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
         body: JSON.stringify({
           type: "kol",
           data: {
+            inspectSessionId: inspection?.inspectSessionId,
+            missingMetrics: [...(followers === "" ? ["followers"] : []), ...(avgViews === "" ? ["avgViews"] : []), ...(er === "" ? ["er"] : [])],
             name,
             sport: selectedSports,
             tier,
             platform,
             geography,
-            followers,
-            avgViews,
-            er,
+            followers: followers === "" ? null : Number(followers),
+            avgViews: avgViews === "" ? null : Number(avgViews),
+            er: er === "" ? null : Number(er),
             quotation: isAdmin ? quotation : 0,
             status,
             profileUrl,
@@ -844,15 +544,14 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
         }),
       });
       const result = await res.json();
-      if (result.success) {
+      if (res.ok && result.success) {
         toast.success("KOL profile added successfully to Supabase!");
-        onSuccess();
-        onClose();
+        onSuccess(result);
+        if (!keepResultOpen) onClose();
         setName("");
         setProfileUrl("");
         setBio("");
-        setScoutUrl("");
-        setScoutStatusMsg("");
+        setInspection(null);
       } else {
         toast.error(result.error || "Failed to create KOL profile");
       }
@@ -864,88 +563,10 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-slate-800 to-indigo-950 text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white">
-              <UserPlus className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base leading-tight">
-                Add New Sports KOL Profile
-              </h3>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Paste link to auto-scout or fill manually directly into Supabase
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <ScoutDialogFrame title="Add KOL Profile" description="Inspect a link, review the draft and save. Missing metrics remain Unknown." onClose={onClose}>
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Quick Auto-fill from URL banner */}
-          <div className="p-3.5 bg-gradient-to-r from-indigo-50/80 via-blue-50/60 to-slate-50 border border-indigo-100/80 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-1.5 text-xs font-bold text-indigo-950">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Auto-fill from Social Profile URL</span>
-              </div>
-              <span className="text-[10px] font-medium text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full">
-                TikTok, Instagram, Facebook, YouTube
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <LinkIcon className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  ref={scoutInputRef}
-                  type="url"
-                  placeholder="Paste TikTok, Instagram, Facebook or YouTube profile link..."
-                  value={scoutUrl}
-                  onChange={(e) => setScoutUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleScoutProfileUrl();
-                    }
-                  }}
-                  className="w-full text-xs pl-8 pr-3 py-2 rounded-lg border border-indigo-200 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleScoutProfileUrl}
-                disabled={isScoutingUrl}
-                className="px-3.5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition flex items-center space-x-1.5 disabled:opacity-50 shrink-0 shadow-sm shadow-indigo-200"
-              >
-                {isScoutingUrl ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Scouting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Scout & Fill</span>
-                  </>
-                )}
-              </button>
-            </div>
-            {scoutStatusMsg && (
-              <p className="text-[11px] text-indigo-700 flex items-center space-x-1 font-medium animate-in fade-in">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>{scoutStatusMsg}</span>
-              </p>
-            )}
-          </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <UrlInspector destination="kol" initialUrl={initialUrl} sessionId={inspectSessionId} onDetails={applyDetails} />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -997,6 +618,7 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
               >
                 <option value="Nano (< 10k)">Nano (&lt; 10k)</option>
+                <option value="Unknown">Unknown</option>
                 <option value="Micro (10k - 50k)">Micro (10k - 50k)</option>
                 <option value="Macro (50k - 200k)">Macro (50k - 200k)</option>
                 <option value="Mega (> 200k)">Mega (&gt; 200k)</option>
@@ -1029,6 +651,7 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
                 onChange={(e) => setGeography(e.target.value)}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
               >
+                <option value="Unknown">Unknown</option>
                 <option value="Nationwide">Nationwide</option>
                 <option value="Hanoi">Hanoi</option>
                 <option value="Ho Chi Minh City">Ho Chi Minh City</option>
@@ -1047,8 +670,9 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 value={followers}
-                onChange={(e) => setFollowers(Number(e.target.value))}
+                onChange={(e) => setFollowers(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -1058,8 +682,9 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 value={avgViews}
-                onChange={(e) => setAvgViews(Number(e.target.value))}
+                onChange={(e) => setAvgViews(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -1069,9 +694,10 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 step="0.1"
                 value={er}
-                onChange={(e) => setEr(Number(e.target.value))}
+                onChange={(e) => setEr(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -1090,6 +716,7 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
               {isAdmin ? (
                 <input
                   type="number"
+                placeholder="Unknown"
                   value={quotation}
                   onChange={(e) => setQuotation(Number(e.target.value))}
                   className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1111,6 +738,7 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
                 onChange={(e) => setStatus(e.target.value)}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
               >
+                <option value="New Scout (Unverified)">New Scout (Unverified)</option>
                 <option value="Active Partnership">Active Partnership</option>
                 <option value="Newly Scouted (Potential)">Newly Scouted (Potential)</option>
                 <option value="Contacted">Contacted</option>
@@ -1181,14 +809,13 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
               ) : (
                 <>
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>Save KOL to Supabase</span>
+                  <span>Save Profile</span>
                 </>
               )}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </ScoutDialogFrame>
   );
 }
 
@@ -1198,7 +825,10 @@ export function AddKolModal({ isOpen, onClose, onSuccess }: AddKolModalProps) {
 export interface AddCommunityModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (result?: any) => void;
+  initialUrl?: string;
+  keepResultOpen?: boolean;
+  inspectSessionId?: string;
 }
 
 export const COMMUNITY_SPORTS = [
@@ -1223,79 +853,39 @@ export const COMMUNITY_PURPOSES = [
 export function AddCommunityModal({
   isOpen,
   onClose,
-  onSuccess,
+  onSuccess, initialUrl = "", keepResultOpen, inspectSessionId,
 }: AddCommunityModalProps) {
   const { isAdmin } = useCurrentUser();
   const [name, setName] = useState("");
-  const [selectedSports, setSelectedSports] = useState<string[]>(["Pickleball"]);
-  const [geography, setGeography] = useState("Nationwide");
-  const [members, setMembers] = useState(10000);
+  const [selectedSports, setSelectedSports] = useState<string[]>([]);
+  const [geography, setGeography] = useState("Unknown");
+  const [members, setMembers] = useState<number | string>("");
   const [platform, setPlatform] = useState("Facebook Group");
-  const [activityLevel, setActivityLevel] = useState(
-    "Very Active (> 20 posts/day)"
-  );
-  const [privacy, setPrivacy] = useState("Public");
+  const [activityLevel, setActivityLevel] = useState("Unknown");
+  const [privacy, setPrivacy] = useState("Unknown");
   const [selectedPurposes, setSelectedPurposes] = useState<string[]>([
     "Match Finding & Socializing",
     "Amateur Tournaments",
   ]);
   const [adminContact, setAdminContact] = useState("");
   const [pricePerPin, setPricePerPin] = useState(2000000);
-  const [status, setStatus] = useState("Active Partnership");
+  const [status, setStatus] = useState("New Scout (Unverified)");
   const [groupUrl, setGroupUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // URL Auto-scout state
-  const [scoutUrl, setScoutUrl] = useState("");
-  const [isScoutingUrl, setIsScoutingUrl] = useState(false);
-  const [scoutStatusMsg, setScoutStatusMsg] = useState("");
-  const scoutInputRef = React.useRef<HTMLInputElement>(null);
-
+  const [inspection, setInspection] = useState<InspectedDetails | null>(null);
+  const applyDetails = (d: InspectedDetails) => {
+    setInspection(d);
+    setName(d.name || "");
+    if (d.sport?.length) setSelectedSports(d.sport);
+    if (d.platform) setPlatform(d.platform);
+    if (d.geography) setGeography(d.geography);
+    setMembers(d.members ?? d.followers ?? "");
+    setGroupUrl(d.url || initialUrl); setStatus("New Scout (Unverified)"); setActivityLevel(d.activityLevel || "Unknown"); setPrivacy(d.privacy || "Unknown");
+  };
   if (!isOpen) return null;
 
-  const handleScoutCommunityUrl = async () => {
-    const targetUrl = (scoutUrl || scoutInputRef.current?.value || "").trim();
-    if (!targetUrl) {
-      toast.error("Please enter a group link to scout (e.g. Facebook Group, Strava Club, Zalo)");
-      return;
-    }
-    setIsScoutingUrl(true);
-    setScoutStatusMsg("Scouting group metadata & estimating community engagement...");
-    try {
-      const res = await fetch("/api/sport-hub/scout/inspect-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl, type: "community" }),
-      });
-      const result = await res.json();
-      if (result.success && result.data) {
-        const d = result.data;
-        if (d.name) setName(d.name);
-        if (d.sport && Array.isArray(d.sport) && d.sport.length > 0) setSelectedSports(d.sport);
-        if (d.platform) setPlatform(d.platform);
-        if (d.geography) setGeography(d.geography);
-        if (typeof d.members === "number") setMembers(d.members);
-        if (d.activityLevel) setActivityLevel(d.activityLevel);
-        if (d.privacy) setPrivacy(d.privacy);
-        if (d.purpose && Array.isArray(d.purpose) && d.purpose.length > 0) setSelectedPurposes(d.purpose);
-        if (d.adminContact) setAdminContact(d.adminContact);
-        if (typeof d.pricePerPin === "number" && isAdmin) setPricePerPin(d.pricePerPin);
-        if (d.status) setStatus(d.status);
-        setGroupUrl(targetUrl);
-        setScoutUrl(targetUrl);
-        setScoutStatusMsg("Community inspected & autofilled! Review and adjust details below.");
-        toast.success("Community scouted! Review the details below before submitting.");
-      } else {
-        toast.error(result.error || "Could not scout community URL");
-        setScoutStatusMsg("");
-      }
-    } catch {
-      toast.error("Failed to connect to scout inspector");
-      setScoutStatusMsg("");
-    } finally {
-      setIsScoutingUrl(false);
-    }
-  };
+
 
   const toggleSport = (sport: string) => {
     if (selectedSports.includes(sport)) {
@@ -1332,10 +922,12 @@ export function AddCommunityModal({
         body: JSON.stringify({
           type: "community",
           data: {
+            inspectSessionId: inspection?.inspectSessionId,
+            missingMetrics: [...(members === "" ? ["members"] : [])],
             name,
             sport: selectedSports,
             geography,
-            members,
+            members: members === "" ? null : Number(members),
             platform,
             activityLevel,
             privacy,
@@ -1348,15 +940,14 @@ export function AddCommunityModal({
         }),
       });
       const result = await res.json();
-      if (result.success) {
+      if (res.ok && result.success) {
         toast.success("Community / Club added successfully to Supabase!");
-        onSuccess();
-        onClose();
+        onSuccess(result);
+        if (!keepResultOpen) onClose();
         setName("");
         setGroupUrl("");
         setAdminContact("");
-        setScoutUrl("");
-        setScoutStatusMsg("");
+        setInspection(null);
       } else {
         toast.error(result.error || "Failed to create community");
       }
@@ -1368,88 +959,10 @@ export function AddCommunityModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-800 to-slate-900 text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white">
-              <Users className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base leading-tight">
-                Add New Sports Community & Club
-              </h3>
-              <p className="text-xs text-purple-200 mt-0.5">
-                Paste link to auto-scout or fill manually directly into Supabase
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <ScoutDialogFrame title="Add Community" description="Inspect a link, review the draft and save. Missing metrics remain Unknown." onClose={onClose}>
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Quick Auto-fill from URL banner */}
-          <div className="p-3.5 bg-gradient-to-r from-purple-50/80 via-indigo-50/60 to-slate-50 border border-purple-100/80 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-1.5 text-xs font-bold text-purple-950">
-                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                <span>Auto-fill from Community / Group URL</span>
-              </div>
-              <span className="text-[10px] font-medium text-purple-600 bg-purple-100/70 px-2 py-0.5 rounded-full">
-                Facebook Group, Strava, Telegram, Zalo
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <LinkIcon className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  ref={scoutInputRef}
-                  type="url"
-                  placeholder="Paste Facebook Group, Strava Club, or community link..."
-                  value={scoutUrl}
-                  onChange={(e) => setScoutUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleScoutCommunityUrl();
-                    }
-                  }}
-                  className="w-full text-xs pl-8 pr-3 py-2 rounded-lg border border-purple-200 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleScoutCommunityUrl}
-                disabled={isScoutingUrl}
-                className="px-3.5 py-2 text-xs font-bold bg-purple-700 hover:bg-purple-800 text-white rounded-lg transition flex items-center space-x-1.5 disabled:opacity-50 shrink-0 shadow-sm shadow-purple-200"
-              >
-                {isScoutingUrl ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Scouting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Scout & Fill</span>
-                  </>
-                )}
-              </button>
-            </div>
-            {scoutStatusMsg && (
-              <p className="text-[11px] text-purple-700 flex items-center space-x-1 font-medium animate-in fade-in">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>{scoutStatusMsg}</span>
-              </p>
-            )}
-          </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <UrlInspector destination="community" initialUrl={initialUrl} sessionId={inspectSessionId} onDetails={applyDetails} />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -1501,6 +1014,9 @@ export function AddCommunityModal({
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
               >
                 <option value="Facebook Group">Facebook Group</option>
+                <option value="Facebook">Facebook Page</option>
+                <option value="Instagram">Instagram</option>
+                <option value="TikTok">TikTok</option>
                 <option value="Zalo Community">Zalo Community</option>
                 <option value="Strava Club">Strava Club</option>
                 <option value="Telegram">Telegram</option>
@@ -1517,6 +1033,7 @@ export function AddCommunityModal({
                 onChange={(e) => setGeography(e.target.value)}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
               >
+                <option value="Unknown">Unknown</option>
                 <option value="Nationwide">Nationwide</option>
                 <option value="Hanoi">Hanoi</option>
                 <option value="Ho Chi Minh City">Ho Chi Minh City</option>
@@ -1533,8 +1050,9 @@ export function AddCommunityModal({
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 value={members}
-                onChange={(e) => setMembers(Number(e.target.value))}
+                onChange={(e) => setMembers(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
@@ -1550,6 +1068,7 @@ export function AddCommunityModal({
                 onChange={(e) => setActivityLevel(e.target.value)}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
               >
+                <option value="Unknown">Unknown</option>
                 <option value="Very Active (> 20 posts/day)">
                   Very Active (&gt; 20 posts/day)
                 </option>
@@ -1571,6 +1090,7 @@ export function AddCommunityModal({
                 onChange={(e) => setPrivacy(e.target.value)}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
               >
+                <option value="Unknown">Unknown</option>
                 <option value="Public">Public</option>
                 <option value="Private">Private</option>
               </select>
@@ -1628,6 +1148,7 @@ export function AddCommunityModal({
               {isAdmin ? (
                 <input
                   type="number"
+                placeholder="Unknown"
                   value={pricePerPin}
                   onChange={(e) => setPricePerPin(Number(e.target.value))}
                   className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -1649,6 +1170,7 @@ export function AddCommunityModal({
                 onChange={(e) => setStatus(e.target.value)}
                 className="w-full text-xs px-3 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
               >
+                <option value="New Scout (Unverified)">New Scout (Unverified)</option>
                 <option value="Active Partnership">Active Partnership</option>
                 <option value="Potential">Potential</option>
                 <option value="Paused">Paused</option>
@@ -1692,14 +1214,13 @@ export function AddCommunityModal({
               ) : (
                 <>
                   <Users className="w-3.5 h-3.5" />
-                  <span>Save Community to Supabase</span>
+                  <span>Save Community</span>
                 </>
               )}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </ScoutDialogFrame>
   );
 }
 
@@ -3279,76 +2800,38 @@ export function DeleteConfirmModal({
 export interface AddPostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (result?: any) => void;
+  initialUrl?: string;
+  keepResultOpen?: boolean;
+  inspectSessionId?: string;
 }
 
-export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) {
+export function AddPostModal({ isOpen, onClose, onSuccess, initialUrl = "", keepResultOpen, inspectSessionId }: AddPostModalProps) {
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [platform, setPlatform] = useState("TikTok Video");
   const [sport, setSport] = useState("Pickleball");
   const [postUrl, setPostUrl] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
-  const [views, setViews] = useState(50000);
-  const [likes, setLikes] = useState(2500);
-  const [comments, setComments] = useState(120);
-  const [er, setEr] = useState(5.2);
+  const [views, setViews] = useState<number | string>("");
+  const [likes, setLikes] = useState<number | string>("");
+  const [comments, setComments] = useState<number | string>("");
+  const [er, setEr] = useState<number | string>("");
   const [viralTier, setViralTier] = useState("High Engagement (10k - 100k views)");
   const [hashtags, setHashtags] = useState("#pickleball #sports");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // URL Auto-scout state
-  const [scoutUrl, setScoutUrl] = useState("");
-  const [isScoutingUrl, setIsScoutingUrl] = useState(false);
-  const [scoutStatusMsg, setScoutStatusMsg] = useState("");
-  const scoutInputRef = React.useRef<HTMLInputElement>(null);
-
-  if (!isOpen) return null;
-
-  const handleScoutPostUrl = async () => {
-    const targetUrl = (scoutUrl || scoutInputRef.current?.value || "").trim();
-    if (!targetUrl) {
-      toast.error("Please enter a post or video link to scout (e.g. TikTok, Reels, YouTube)");
-      return;
-    }
-    setIsScoutingUrl(true);
-    setScoutStatusMsg("Scouting social video metadata & viral engagement metrics...");
-    try {
-      const res = await fetch("/api/sport-hub/scout/inspect-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl, type: "post" }),
-      });
-      const result = await res.json();
-      if (result.success && result.data) {
-        const d = result.data;
-        if (d.title) setTitle(d.title);
-        if (d.author) setAuthor(d.author);
-        if (d.platform) setPlatform(d.platform);
-        if (d.sport) setSport(d.sport);
-        if (typeof d.views === "number") setViews(d.views);
-        if (typeof d.likes === "number") setLikes(d.likes);
-        if (typeof d.comments === "number") setComments(d.comments);
-        if (typeof d.er === "number") setEr(d.er);
-        if (d.viralTier) setViralTier(d.viralTier);
-        if (d.hashtags) setHashtags(d.hashtags);
-        if (d.thumbnailUrl) setThumbnailUrl(d.thumbnailUrl);
-        setPostUrl(targetUrl);
-        setScoutUrl(targetUrl);
-        setScoutStatusMsg("Post inspected & autofilled! Review and adjust details below.");
-        toast.success("Post scouted! Review the details below before submitting.");
-      } else {
-        toast.error(result.error || "Could not scout post URL");
-        setScoutStatusMsg("");
-      }
-    } catch {
-      toast.error("Failed to connect to scout inspector");
-      setScoutStatusMsg("");
-    } finally {
-      setIsScoutingUrl(false);
-    }
+  const [inspection, setInspection] = useState<InspectedDetails | null>(null);
+  const applyDetails = (d: InspectedDetails) => {
+    setInspection(d);
+    if (d.title) setTitle(d.title); if (d.author) setAuthor(d.author);
+    if (d.platform) setPlatform(d.platform); if (d.sport) setSport(d.sport);
+    setViews(d.views ?? ""); setLikes(d.likes ?? ""); setComments(d.comments ?? ""); setEr(d.er ?? "");
+    setViralTier(d.viralTier || "Unknown"); if (d.hashtags) setHashtags(d.hashtags);
+    if (d.thumbnailUrl) setThumbnailUrl(d.thumbnailUrl); setPostUrl(d.url || initialUrl);
   };
+  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3365,16 +2848,17 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
         body: JSON.stringify({
           type: "post",
           data: {
+            missingMetrics: [...(views === "" ? ["views"] : []), ...(likes === "" ? ["likes"] : []), ...(comments === "" ? ["comments"] : []), ...(er === "" ? ["er"] : [])],
             title,
             author,
             platform,
             sport,
             postUrl,
             thumbnailUrl,
-            views,
-            likes,
-            comments,
-            er,
+            views: views === "" ? null : Number(views),
+            likes: likes === "" ? null : Number(likes),
+            comments: comments === "" ? null : Number(comments),
+            er: er === "" ? null : Number(er),
             viralTier,
             hashtags,
             notes,
@@ -3382,17 +2866,16 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
         }),
       });
       const result = await res.json();
-      if (result.success) {
+      if (res.ok && result.success) {
         toast.success("Viral post added successfully to Supabase!");
-        onSuccess();
-        onClose();
+        onSuccess(result);
+        if (!keepResultOpen) onClose();
         setTitle("");
         setAuthor("");
         setPostUrl("");
         setThumbnailUrl("");
         setNotes("");
-        setScoutUrl("");
-        setScoutStatusMsg("");
+        setInspection(null);
       } else {
         toast.error(result.error || "Failed to create post record");
       }
@@ -3404,88 +2887,10 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-rose-600 via-pink-600 to-indigo-900 text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white">
-              <Film className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base leading-tight">
-                Track New Viral Sport Post
-              </h3>
-              <p className="text-xs text-rose-100 mt-0.5">
-                Paste video link to auto-scout or fill manually into Supabase
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <ScoutDialogFrame title="Add Post" description="Inspect a link, review the draft and save. Missing metrics remain Unknown." onClose={onClose}>
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Quick Auto-fill from URL banner */}
-          <div className="p-3.5 bg-gradient-to-r from-rose-50/80 via-pink-50/60 to-slate-50 border border-rose-100/80 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-1.5 text-xs font-bold text-rose-950">
-                <Sparkles className="w-3.5 h-3.5 text-rose-600" />
-                <span>Auto-fill from Video / Post URL</span>
-              </div>
-              <span className="text-[10px] font-medium text-rose-600 bg-rose-100/70 px-2 py-0.5 rounded-full">
-                TikTok, Reels, Shorts, Facebook
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <LinkIcon className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  ref={scoutInputRef}
-                  type="url"
-                  placeholder="Paste TikTok video, Instagram Reel, YouTube Shorts link..."
-                  value={scoutUrl}
-                  onChange={(e) => setScoutUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleScoutPostUrl();
-                    }
-                  }}
-                  className="w-full text-xs pl-8 pr-3 py-2 rounded-lg border border-rose-200 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleScoutPostUrl}
-                disabled={isScoutingUrl}
-                className="px-3.5 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition flex items-center space-x-1.5 disabled:opacity-50 shrink-0 shadow-sm shadow-rose-200"
-              >
-                {isScoutingUrl ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Scouting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Scout & Fill</span>
-                  </>
-                )}
-              </button>
-            </div>
-            {scoutStatusMsg && (
-              <p className="text-[11px] text-rose-700 flex items-center space-x-1 font-medium animate-in fade-in">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>{scoutStatusMsg}</span>
-              </p>
-            )}
-          </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <UrlInspector destination="post" initialUrl={initialUrl} sessionId={inspectSessionId} onDetails={applyDetails} />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -3580,8 +2985,9 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 value={views}
-                onChange={(e) => setViews(Number(e.target.value))}
+                onChange={(e) => setViews(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
@@ -3591,8 +2997,9 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 value={likes}
-                onChange={(e) => setLikes(Number(e.target.value))}
+                onChange={(e) => setLikes(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
@@ -3602,8 +3009,9 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 value={comments}
-                onChange={(e) => setComments(Number(e.target.value))}
+                onChange={(e) => setComments(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
@@ -3613,9 +3021,10 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
               </label>
               <input
                 type="number"
+                placeholder="Unknown"
                 step="0.1"
                 value={er}
-                onChange={(e) => setEr(Number(e.target.value))}
+                onChange={(e) => setEr(e.target.value === "" ? "" : Number(e.target.value))}
                 className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
@@ -3696,14 +3105,13 @@ export function AddPostModal({ isOpen, onClose, onSuccess }: AddPostModalProps) 
               ) : (
                 <>
                   <Film className="w-3.5 h-3.5" />
-                  <span>Save Post to Supabase</span>
+                  <span>Save Post</span>
                 </>
               )}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </ScoutDialogFrame>
   );
 }
 

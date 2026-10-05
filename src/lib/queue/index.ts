@@ -11,6 +11,7 @@ import IORedis, { type RedisOptions } from "ioredis";
 
 export const QUEUE_NAMES = {
   publish: "publish",
+  socialScout: "social-scout",
   analyticsSync: "analytics-sync",
   contentGen: "content-gen",
   videoRender: "video-render",
@@ -24,27 +25,18 @@ export const QUEUE_NAMES = {
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
-const RAILWAY_REDIS_FALLBACK = "redis://default:spnaHoyhqyOMfPTkThHhjTHRuqrkRhpd@altaria.proxy.rlwy.net:27502";
-
-export function getRedisUrl(): string {
-  const envUrl = process.env.REDIS_URL?.trim();
-  // Trên Vercel (cloud), localhost không truy cập được -> dùng fallback Railway nếu chưa cấu hình URL ngoài
-  if (process.env.VERCEL) {
-    if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
-      return envUrl;
-    }
-    return RAILWAY_REDIS_FALLBACK;
-  }
-  // Môi trường local / localhost: luôn ưu tiên env REDIS_URL hoặc mặc định localhost:6379
-  return envUrl || "redis://localhost:6379";
+export function getRedisUrl(queueName?: QueueName): string {
+  const envUrl=(queueName === QUEUE_NAMES.socialScout ? process.env.SOCIAL_SCOUT_REDIS_URL?.trim() : undefined) || process.env.REDIS_URL?.trim();
+  if(process.env.VERCEL && (!envUrl || /localhost|127\.0\.0\.1/.test(envUrl)))throw new Error('Configure an external REDIS_URL for the deployed worker queue.');
+  return envUrl || 'redis://127.0.0.1:6379';
 }
 
 /**
  * BullMQ requires `maxRetriesPerRequest: null` on its blocking connection.
  * Reuse a single connection per process for producers.
  */
-export function createRedisConnection(opts?: RedisOptions): IORedis {
-  return new IORedis(getRedisUrl(), {
+export function createRedisConnection(opts?: RedisOptions, queueName?: QueueName): IORedis {
+  return new IORedis(getRedisUrl(queueName), {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     connectTimeout: 10000,
@@ -53,8 +45,13 @@ export function createRedisConnection(opts?: RedisOptions): IORedis {
 }
 
 let sharedConnection: IORedis | null = null;
+let scoutConnection: IORedis | null = null;
 
-function getSharedConnection(): IORedis {
+function getSharedConnection(queueName?: QueueName): IORedis {
+  if (queueName === QUEUE_NAMES.socialScout) {
+    if (!scoutConnection) scoutConnection = createRedisConnection(undefined, queueName);
+    return scoutConnection;
+  }
   if (!sharedConnection) sharedConnection = createRedisConnection();
   return sharedConnection;
 }
@@ -74,7 +71,7 @@ export function getQueue(name: QueueName): Queue {
   let q = queues.get(name);
   if (!q) {
     q = new Queue(name, {
-      connection: getSharedConnection(),
+      connection: getSharedConnection(name),
       defaultJobOptions: DEFAULT_JOB_OPTIONS,
     });
     queues.set(name, q);
@@ -93,22 +90,21 @@ export async function enqueue(
   opts?: JobsOptions,
 ) {
   const q = getQueue(queueName);
-  const client = getSharedConnection();
+  const client = getSharedConnection(queueName);
   try {
-    if (client.status !== "ready" && client.status !== "connect") {
-      await Promise.race([
-        new Promise((resolve, reject) => {
-          client.once("ready", resolve);
-          client.once("error", reject);
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Redis connection timeout")), 3000),
-        ),
-      ]);
+    if (client.status !== "ready") {
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => { clearTimeout(timer); client.off("ready", ready); client.off("error", failed); };
+        const ready = () => { cleanup(); resolve(); };
+        const failed = () => { cleanup(); reject(new Error("Redis connection unavailable")); };
+        const timer = setTimeout(failed, 3000);
+        client.once("ready", ready);
+        client.once("error", failed);
+      });
     }
   } catch (e) {
     throw new Error(
-      `Hệ thống hàng đợi (Redis) không phản hồi (${(e as Error).message}). Hãy kiểm tra kết nối Redis (REDIS_URL=${getRedisUrl()}).`,
+      'The queue is unavailable. Check the Redis configuration.',
     );
   }
 
@@ -137,8 +133,7 @@ export async function scheduleRepeatable<T>(
 export async function closeQueues(): Promise<void> {
   await Promise.all([...queues.values()].map((q) => q.close()));
   queues.clear();
-  if (sharedConnection) {
-    await sharedConnection.quit();
-    sharedConnection = null;
-  }
+  await Promise.all([sharedConnection, scoutConnection].filter((connection): connection is IORedis => !!connection).map(connection => connection.quit()));
+  sharedConnection = null;
+  scoutConnection = null;
 }

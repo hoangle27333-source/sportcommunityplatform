@@ -1,0 +1,10 @@
+/** Production reservation-only verification; never calls an Actor or modifies policy. */
+import assert from 'node:assert/strict';
+import {writeFile} from 'node:fs/promises';
+import {createAdminClient} from '../../src/lib/supabase/admin';
+const db=createAdminClient();const owner=await db.from('profiles').select('id').eq('role','admin').limit(1).single();if(owner.error)throw owner.error;
+const s=await db.from('scout_sessions').insert({owner_id:owner.data.id,kind:'verification',verification:true,runtime_version:2,params:{fixture:'tiktok-reservation-only'}}).select('id').single();if(s.error)throw s.error;
+const ids:string[]=[];let passed=false;
+try{for(let i=0;i<2;i++){const r: any=await db.rpc('reserve_scout_run',{p_session:s.data.id,p_key:`tiktok-cap-${i}`,p_cache:`tiktok-cap-${s.data.id}-${i}`,p_actor:'fixture-no-provider',p_platform:'TikTok',p_task:'verification',p_build:'fixture',p_input:{}});if(r.error)throw r.error;ids.push(r.data.run.id);assert.equal(Number(r.data.run.reserved_usd),.5);}const denied: any=await db.rpc('reserve_scout_run',{p_session:s.data.id,p_key:'third',p_cache:`tiktok-cap-${s.data.id}-third`,p_actor:'fixture-no-provider',p_platform:'TikTok',p_task:'verification',p_build:'fixture',p_input:{}});assert.match(denied.error?.message || '',/BUDGET_EXHAUSTED/);passed=true;await writeFile('artifacts/apify-runtime/tiktok-remote-budget-receipt.json',JSON.stringify({observedAt:new Date().toISOString(),sessionId:s.data.id,reservationCaps:[.5,.5],sessionCap:1,thirdReservationDenied:true,paidRunsStarted:0,policyModified:false},null,2)+'\n');}
+finally{for(const id of ids){const r=await db.rpc('settle_scout_run',{p_run:id,p_state:'verification-no-provider',p_amount:0,p_pricing:null,p_usage:null,p_events:null});if(r.error)throw r.error;}const u=await db.from('scout_sessions').update({status:passed?'complete':'failed',result:{success:passed,reservationOnly:true}}).eq('id',s.data.id);if(u.error)throw u.error;}
+console.log('PASS: production TikTok .50 reservations, shared 1.00 session cap, third reservation denied; no Actor started; all fixture holds settled.');

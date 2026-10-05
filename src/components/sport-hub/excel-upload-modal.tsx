@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentUser } from "@/lib/auth/use-current-user";
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -27,6 +28,8 @@ export function ExcelUploadModal({
   onSuccess,
   defaultType = "kol",
 }: ExcelUploadModalProps) {
+  const { isAdmin } = useCurrentUser();
+  const [gmvImport, setGmvImport] = useState(false);
   const [uploadType, setUploadType] = useState<"kol" | "community">(defaultType);
   const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [fileName, setFileName] = useState("");
@@ -67,7 +70,7 @@ export function ExcelUploadModal({
       const res = await fetch("/api/sport-hub/upload-batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: uploadType, rows: parsedRows }),
+        body: JSON.stringify({ type: gmvImport ? "gmv" : uploadType, records: parsedRows }),
       });
 
       const result = await res.json();
@@ -131,11 +134,11 @@ export function ExcelUploadModal({
                 className="inline-flex items-center space-x-1 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-2.5 py-1 rounded border border-blue-200"
               >
                 <Download className="w-3 h-3" />
-                <span>Template .XLSX</span>
+                <span>{gmvImport ? "Creator Template .XLSX" : "Template .XLSX"}</span>
               </a>
               <a
                 href={
-                  uploadType === "kol"
+                  gmvImport ? "/templates/Monthly_GMV.csv" : uploadType === "kol"
                     ? "/templates/Mau_Import_KOLs.csv"
                     : "/templates/Mau_Import_Communities.csv"
                 }
@@ -175,6 +178,7 @@ export function ExcelUploadModal({
               type="button"
               onClick={() => {
                 setUploadType("community");
+                setGmvImport(false);
                 setParsedRows([]);
                 setFileName("");
               }}
@@ -195,6 +199,7 @@ export function ExcelUploadModal({
           </div>
         </div>
 
+        {isAdmin && uploadType === "kol" && <div className="text-xs space-y-1"><label><input type="checkbox" checked={gmvImport} onChange={e => { setGmvImport(e.target.checked); setParsedRows([]); setFileName(""); }} /> Import Monthly GMV for Existing Creators</label>{gmvImport && <p>Columns: KOL ID (or exact unique KOL Name), GMV (VND), GMV Month (YYYY-MM), GMV Source, optional GMV Notes. This updates GMV only.</p>}</div>}
         {/* Step 2: Drag and drop */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">

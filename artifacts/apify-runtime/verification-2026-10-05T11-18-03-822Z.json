@@ -1,0 +1,10 @@
+{
+  "verifiedAt": "2026-10-05T11:18:03.822Z",
+  "checks": [
+    {
+      "verified": false,
+      "blocked": true,
+      "reason": "Runtime migration is unavailable. No paid verification was started."
+    }
+  ]
+}

@@ -46,6 +46,9 @@ export interface KOL {
   avgViews: number;
   er: number;
   quotation: number;
+  gmv?: { amount: number; month: string; source: string } | null;
+  missingMetrics?: string[];
+  scoutProvenance?: {fetchedAt?:string;runId?:string} | null;
   status: string;
   info: string;
   profileUrl: string;
@@ -115,7 +118,7 @@ export function KolsTableView({
   const [platformFilter, setPlatformFilter] = useState("all");
   const [geoFilter, setGeoFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState<"followers" | "views" | "er" | "price" | "name">("followers");
+  const [sortBy, setSortBy] = useState<"followers" | "views" | "er" | "price" | "gmv" | "name">("followers");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [expandedKolIds, setExpandedKolIds] = useState<string[]>([]);
 
@@ -194,7 +197,10 @@ export function KolsTableView({
       let valA: any = a.followers;
       let valB: any = b.followers;
 
-      if (sortBy === "views") {
+      if (sortBy === "gmv") {
+        if (a.gmv == null || b.gmv == null) return a.gmv == null ? (b.gmv == null ? 0 : 1) : -1;
+        valA = a.gmv.amount; valB = b.gmv.amount;
+      } else if (sortBy === "views") {
         valA = a.avgViews;
         valB = b.avgViews;
       } else if (sortBy === "er") {
@@ -223,8 +229,8 @@ export function KolsTableView({
     return (sortedKols.reduce((sum, k) => sum + (k.er || 0), 0) / sortedKols.length).toFixed(1);
   }, [sortedKols]);
 
-  const toggleSort = (field: "followers" | "views" | "er" | "price" | "name") => {
-    if (field === "price" && !isAdmin) return;
+  const toggleSort = (field: "followers" | "views" | "er" | "price" | "gmv" | "name") => {
+    if ((field === "price" || field === "gmv") && !isAdmin) return;
     if (sortBy === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     } else {
@@ -263,7 +269,7 @@ export function KolsTableView({
   return (
     <div className="space-y-6">
       {/* ─── HEADER & ACTIONS (SINGLE ROW COMPACT) ─── */}
-      <div className="bg-white px-5 py-3 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-4 flex-nowrap">
+      <div className="bg-white px-5 py-3 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center space-x-3 min-w-0">
           <span className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-base shrink-0">
             👤
@@ -282,7 +288,7 @@ export function KolsTableView({
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* View Mode Switcher */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
             <button
@@ -332,7 +338,7 @@ export function KolsTableView({
               title="Scout & discover new sports creators from social networks"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Discovery Scout</span>
+              <span>Find Profiles</span>
             </button>
           )}
 
@@ -522,7 +528,7 @@ export function KolsTableView({
                       <span>Total Followers</span>
                       <ColumnInfoTooltip
                         title="Total Followers"
-                        description="Combined verified audience reach aggregated across all active connected social channels."
+                        description="Stored audience counts across connected channels. Check observation provenance for verification."
                         formula="Sum(Channel Followers)"
                         align="right"
                       />
@@ -537,7 +543,7 @@ export function KolsTableView({
                       <span>Avg Views</span>
                       <ColumnInfoTooltip
                         title="Average Views"
-                        description="Blended average video / reel views per publication across active video channels over the last 90 days."
+                        description="Stored view metrics. Verified sync uses only posts with observed views; sample size and freshness vary."
                         formula="Sum(Avg Views per Active Channel)"
                         align="right"
                       />
@@ -552,13 +558,14 @@ export function KolsTableView({
                       <span>ER (%)</span>
                       <ColumnInfoTooltip
                         title="Engagement Rate (ER %)"
-                        description="Audience-weighted blended interaction rate measuring audience likes, comments, and shares relative to views."
-                        formula="((Likes + Comments + Shares) / Total Views) × 100"
+                        description="Verified sync uses complete likes and comments observations relative to the observed follower count. Legacy channel metrics may use a different formula."
+                        formula="Verified sync: mean(Likes + Comments) / Followers × 100"
                         align="right"
                       />
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
+                  <th onClick={() => toggleSort("gmv")} className="py-2 px-3 text-right cursor-pointer">GMV (VND) {isAdmin ? <ArrowUpDown className="inline w-3 h-3" /> : <Lock className="inline w-3 h-3" />}</th>
                   <th
                     onClick={() => toggleSort("price")}
                     className={`py-2 px-3 text-right ${
@@ -718,7 +725,7 @@ export function KolsTableView({
                               className="font-bold text-slate-900 text-xs"
                               title={aggregates.hasMultipleChannels ? `Total reach across ${aggregates.channelCount} channels` : undefined}
                             >
-                              {formatNumber(aggregates.totalFollowers)}
+                              {kol.missingMetrics?.includes("followers") ? "Unknown" : formatNumber(aggregates.totalFollowers)}<span className="block text-[9px] text-slate-400" title={kol.scoutProvenance?.fetchedAt || 'Historical metrics have no provider observation.'}>{kol.scoutProvenance?.runId ? 'Observed' : 'Unverified'}</span>
                             </span>
                           </td>
 
@@ -728,7 +735,7 @@ export function KolsTableView({
                               className="font-semibold text-slate-800 text-xs"
                               title={aggregates.hasMultipleChannels && aggregates.totalAvgViews > 0 ? `Combined across ${aggregates.channelCount} channels` : undefined}
                             >
-                              {aggregates.totalAvgViews > 0 ? formatNumber(aggregates.totalAvgViews) : "—"}
+                              {kol.missingMetrics?.includes("avgViews") ? "Unknown" : formatNumber(aggregates.totalAvgViews)}
                             </span>
                           </td>
 
@@ -738,10 +745,11 @@ export function KolsTableView({
                               className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full text-[10px] border border-emerald-200"
                               title={aggregates.hasMultipleChannels ? "Audience-weighted blended engagement rate" : undefined}
                             >
-                              {aggregates.blendedEr}%
+                              {kol.missingMetrics?.includes("er") ? "Unknown" : `${aggregates.blendedEr}%`}
                             </span>
                           </td>
 
+                          <td className="py-2 px-3 text-right whitespace-nowrap">{isAdmin ? (kol.gmv ? <><span className="font-bold text-xs">{formatNumber(kol.gmv.amount)} VND</span><span className="block text-[10px] text-slate-500">{kol.gmv.month}</span></> : "—") : <span className="text-xs text-slate-400">Admin Only</span>}</td>
                           {/* Rate Card */}
                           <td className="py-2 px-3 text-right whitespace-nowrap">
                             {isAdmin ? (
@@ -857,7 +865,7 @@ export function KolsTableView({
                         {/* ─── INLINE EXPANDABLE CHANNEL BREAKDOWN DRAWER ─── */}
                         {isExpanded && (
                           <tr className="bg-slate-50/70">
-                            <td colSpan={12} className="p-0">
+                            <td colSpan={13} className="p-0">
                               <KolChannelDrawer
                                 kol={{
                                   ...kol,
@@ -878,7 +886,7 @@ export function KolsTableView({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={12} className="py-12 text-center text-slate-400">
+                    <td colSpan={13} className="py-12 text-center text-slate-400">
                       No creator profiles match the selected filters.
                     </td>
                   </tr>
@@ -1015,7 +1023,7 @@ export function KolsTableView({
                           {aggregates.hasMultipleChannels ? "Total Reach" : "Followers"}
                         </div>
                         <div className="text-xs font-bold text-slate-900 mt-0.5">
-                          {formatNumber(aggregates.totalFollowers)}
+                          {kol.missingMetrics?.includes("followers") ? "Unknown" : formatNumber(aggregates.totalFollowers)}<span className="block text-[9px] text-slate-400" title={kol.scoutProvenance?.fetchedAt || 'Historical metrics have no provider observation.'}>{kol.scoutProvenance?.runId ? 'Observed' : 'Unverified'}</span>
                         </div>
                       </div>
                       <div>
@@ -1023,7 +1031,7 @@ export function KolsTableView({
                           {aggregates.hasMultipleChannels ? "Comb. Views" : "Avg Views"}
                         </div>
                         <div className="text-xs font-bold text-slate-900 mt-0.5">
-                          {aggregates.totalAvgViews > 0 ? formatNumber(aggregates.totalAvgViews) : "—"}
+                          {kol.missingMetrics?.includes("avgViews") ? "Unknown" : formatNumber(aggregates.totalAvgViews)}
                         </div>
                       </div>
                       <div>
@@ -1031,11 +1039,12 @@ export function KolsTableView({
                           {aggregates.hasMultipleChannels ? "Blended ER" : "ER (%)"}
                         </div>
                         <div className="text-xs font-bold text-emerald-600 mt-0.5">
-                          {aggregates.blendedEr}%
+                          {kol.missingMetrics?.includes("er") ? "Unknown" : `${aggregates.blendedEr}%`}
                         </div>
                       </div>
                     </div>
 
+                    <div className="text-xs mb-3"><span className="text-slate-500">GMV (VND): </span>{isAdmin ? (kol.gmv ? `${formatNumber(kol.gmv.amount)} VND · ${kol.gmv.month}` : "—") : "Admin Only"}</div>
                     {/* Price & Status */}
                     <div className="flex items-center justify-between text-xs mb-3">
                       <div>

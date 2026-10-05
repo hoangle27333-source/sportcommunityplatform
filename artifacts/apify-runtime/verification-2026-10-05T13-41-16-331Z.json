@@ -1,0 +1,71 @@
+{
+  "verifiedAt": "2026-10-05T13:41:16.331Z",
+  "checks": [
+    {
+      "name": "instagram-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "facebook-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "TikTok",
+      "task": "comments",
+      "actor": "clockworks~tiktok-comments-scraper",
+      "input": {
+        "postURLs": [
+          "https://www.tiktok.com/@nike/video/7692971814238113054"
+        ],
+        "commentsPerPost": 20
+      },
+      "name": "tiktok-comments",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.468",
+      "count": 7,
+      "parsed": 7,
+      "runs": [
+        {
+          "provider_run_id": "kQI0Vm7S1GHTm9ssy",
+          "build_id": "jfWbfMthC4jpgNhhg",
+          "dataset_ids": {
+            "default": "EtxITibrVCYoIh9Tc"
+          },
+          "actual_usd": 0.00875,
+          "reserved_usd": 0.5,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-03-18T10:24:20.131Z",
+            "startedAt": "2026-03-18T10:24:20.131Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "comment",
+                  "eventPriceUsd": 0.00125,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Single comment in the default dataset."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": null,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false,
+      "supportsDateFilter": false
+    }
+  ]
+}

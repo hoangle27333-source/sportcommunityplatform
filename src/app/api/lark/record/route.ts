@@ -9,9 +9,15 @@ import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 
 export const dynamic = "force-dynamic";
 
-const LARK_OPTION_MAP: Record<string, string> = {
+const LARK_OPTION_MAP: Record<string, string | null> = {
+  // Missing observations must not create unsupported single-select options.
+  "Unknown": null,
+  "Facebook": "Facebook",
+  "Instagram": "Instagram",
+  "TikTok": "TikTok",
   // Statuses
   "Active Partnership": "Đang hợp tác tích cực",
+  "New Scout (Unverified)": "Mới scout",
   "Newly Scouted (Potential)": "Mới scout (Tiềm năng)",
   "Potential": "Tiềm năng",
   "Contacted": "Đã liên hệ",
@@ -77,10 +83,10 @@ const LARK_OPTION_MAP: Record<string, string> = {
   "Cycling": "Đạp xe",
 };
 
-function normalizeOption(val: string | undefined, fallback: string): string {
+function normalizeOption(val: string | undefined, fallback: string): string | null {
   if (!val) return fallback;
   const trimmed = val.trim();
-  return LARK_OPTION_MAP[trimmed] || trimmed;
+  return trimmed in LARK_OPTION_MAP ? LARK_OPTION_MAP[trimmed] : trimmed;
 }
 
 function normalizeArray(
@@ -88,7 +94,7 @@ function normalizeArray(
   fallback: string[]
 ): string[] {
   if (!vals || !Array.isArray(vals) || vals.length === 0) return fallback;
-  return vals.map((v) => LARK_OPTION_MAP[v.trim()] || v.trim());
+  return vals.map((v) => v.trim() in LARK_OPTION_MAP ? LARK_OPTION_MAP[v.trim()] : v.trim()).filter((v): v is string => v !== null);
 }
 
 export async function POST(req: NextRequest) {
@@ -280,6 +286,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    fields = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null));
     const res = await batchInsertRecords(tableId, [fields]);
 
     return NextResponse.json({
@@ -432,6 +439,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    fields = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null));
     const res = await updateRecord(tableId, id, fields);
 
     return NextResponse.json({

@@ -1,0 +1,73 @@
+{
+  "verifiedAt": "2026-10-04T11:07:50.462Z",
+  "checks": [
+    {
+      "name": "instagram-profiles",
+      "runId": "ehPlyoHiqicCLmYD0",
+      "status": "SUCCEEDED",
+      "count": 1,
+      "parsed": 1,
+      "verified": true,
+      "sampleKeys": [
+        "searchTerm",
+        "searchSource",
+        "inputUrl",
+        "id",
+        "username",
+        "url",
+        "fullName",
+        "biography",
+        "externalUrls",
+        "externalUrl",
+        "externalUrlShimmed",
+        "followersCount",
+        "followsCount",
+        "isBusinessAccount",
+        "businessCategoryName",
+        "private",
+        "verified",
+        "profilePicUrl",
+        "profilePicUrlHD",
+        "facebookPage",
+        "latestIgtvVideos",
+        "postsCount",
+        "latestPosts",
+        "fbid"
+      ]
+    },
+    {
+      "name": "instagram-hashtag",
+      "runId": "4pDHTkXO6VESSytzY",
+      "status": "SUCCEEDED",
+      "count": 1,
+      "parsed": 1,
+      "verified": true,
+      "sampleKeys": [
+        "inputUrl",
+        "id",
+        "type",
+        "shortCode",
+        "caption",
+        "hashtags",
+        "mentions",
+        "url",
+        "commentsCount",
+        "firstComment",
+        "latestComments",
+        "dimensionsHeight",
+        "dimensionsWidth",
+        "displayUrl",
+        "images",
+        "likesCount",
+        "timestamp",
+        "childPosts",
+        "ownerFullName",
+        "ownerUsername",
+        "ownerId",
+        "productType",
+        "paidPartnership",
+        "musicInfo"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "startedAt": "2026-10-05T13:35:18.053Z",
+  "environment": "production",
+  "kolId": "f5ddbaa3-825d-4726-8a2f-adc73d2ad43b",
+  "name": "Hana Giang Anh",
+  "profileImports": 0,
+  "steps": [
+    {
+      "kind": "sync",
+      "sessionId": "02bd288f-b364-4adb-8848-f9e2f65dfde0",
+      "status": "complete",
+      "counts": {
+        "failed": 0,
+        "refreshed": 1
+      },
+      "warnings": [],
+      "failed": []
+    },
+    {
+      "kind": "kol-posts",
+      "sessionId": "c925c202-b6a8-49ab-9097-d0ae46a7bff2",
+      "status": "complete",
+      "counts": {
+        "failed": 0,
+        "excluded": 2,
+        "inserted": 8,
+        "duplicate": 0,
+        "refreshed": 0
+      },
+      "warnings": []
+    },
+    {
+      "kind": "comments",
+      "sessionId": "f8a12d4a-b7d1-453b-b5c0-ebb8dab0d1ca",
+      "status": "complete",
+      "counts": {
+        "failed": 0,
+        "comments": 2,
+        "completedPosts": 1
+      },
+      "warnings": []
+    }
+  ],
+  "lockedFields": [],
+  "sync": {
+    "originalNamePreserved": true,
+    "bioReviewPreserved": true,
+    "lockedFieldsPreserved": true,
+    "observationRunId": "iGRS8QGPChEjSNFlI",
+    "missingMetrics": []
+  },
+  "commentPreview": {
+    "selectedPostIds": [
+      "ce3423d5-5e25-4ee0-a4bc-119c8cc97db1"
+    ],
+    "budgetCeilingUsd": 0.25
+  },
+  "comments": {
+    "count": 2,
+    "evidenceIds": [
+      "0721afef-5c9b-4e77-9d14-ffc6cc491976",
+      "953d2140-a5c8-4b09-9e87-e7ed5ae5cb29"
+    ],
+    "provenancePresent": true
+  },
+  "audit": {
+    "auditId": "8b2a24e9-5a27-4f66-87ce-7cc05be7cd22",
+    "commentsScanned": 2,
+    "realAudienceRate": 100,
+    "seedingRiskLevel": "Low",
+    "persistedReload": true,
+    "noScraping": true,
+    "analyzer": "stored evidence / heuristicsOnly"
+  },
+  "status": "passed",
+  "finishedAt": "2026-10-05T13:37:05.387Z"
+}

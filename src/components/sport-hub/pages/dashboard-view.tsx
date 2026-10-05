@@ -1,6 +1,7 @@
 "use client";
+import { ScoutTaskLauncher } from "../scout-task-launcher";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -38,8 +39,6 @@ import {
   AddCommunityModal,
   AddProjectModal,
 } from "../action-modals";
-import { MarketTrendScoutModal } from "../market-trend-scout-modal";
-import { KolPostScoutModal } from "../kol-post-scout-modal";
 import { ExcelUploadModal } from "../excel-upload-modal";
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
 import type { DashboardData, KOL, Post, Report, Community, Project } from "../types";
@@ -92,6 +91,8 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       setLoading(false);
     }
   };
+  useEffect(() => { const refresh = () => { void handleRefresh(); }; window.addEventListener('sport-hub-data-changed', refresh); return () => window.removeEventListener('sport-hub-data-changed', refresh); }, []);
+
 
   // Top 5 Creators Leaderboard
   const topCreators = useMemo(() => {
@@ -732,7 +733,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                         <div>
                           <span className="text-[10px] text-slate-400 block">Views</span>
                           <span className="text-xs font-bold text-slate-900">
-                            {formatNumber(p.views)}
+                            {p.missingMetrics?.includes("views") ? "Unknown" : formatNumber(p.views)}
                           </span>
                         </div>
                         {p.postUrl && p.postUrl !== "#" && (
@@ -764,7 +765,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                 className="flex-1 py-2 bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white text-xs font-bold rounded-lg transition text-center flex items-center justify-center space-x-1 cursor-pointer"
               >
                 <Flame className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
-                <span>Scout Trends</span>
+                <span>Find Content</span>
               </button>
               <Link
                 href="/trending"
@@ -778,18 +779,9 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       </main>
 
       {/* ─── MODALS ─── */}
-      <MarketTrendScoutModal
-        isOpen={isScoutModalOpen}
-        onClose={() => setIsScoutModalOpen(false)}
-        onSuccess={handleRefresh}
-      />
+      {isScoutModalOpen && <ScoutTaskLauncher context={{ intent: "content", mode: "search", entityType: "kol", source: "/" }} onClose={() => setIsScoutModalOpen(false)} onSuccess={handleRefresh} />}
 
-      <KolPostScoutModal
-        isOpen={!!scoutTargetKol}
-        kol={scoutTargetKol}
-        onClose={() => setScoutTargetKol(null)}
-        onSuccess={handleRefresh}
-      />
+      {scoutTargetKol && <ScoutTaskLauncher context={{ intent: "content", mode: "entity", entityType: "kol", source: "/", ids: [scoutTargetKol.id] }} entity={scoutTargetKol} key={scoutTargetKol.id} onClose={() => setScoutTargetKol(null)} onSuccess={handleRefresh} />}
 
       <ReportModal
         isOpen={isReportModalOpen}

@@ -1,0 +1,86 @@
+{
+  "verifiedAt": "2026-10-05T12:03:41.667Z",
+  "checks": [
+    {
+      "name": "instagram-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "facebook-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "Facebook",
+      "task": "profile-details",
+      "actor": "apify~facebook-pages-scraper",
+      "input": {
+        "startUrls": [
+          {
+            "url": "https://www.facebook.com/nike/"
+          },
+          {
+            "url": "https://www.facebook.com/adidas/"
+          }
+        ]
+      },
+      "name": "facebook-profile-details",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.518",
+      "count": 2,
+      "parsed": 2,
+      "runs": [
+        {
+          "provider_run_id": "wuyys0bcIgQ32mj7L",
+          "build_id": "vSxHUU0Ke5kTo2x25",
+          "dataset_ids": {
+            "default": "j4YAw0tydtlYjMkt2"
+          },
+          "actual_usd": 0.012,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-09-01T14:09:34.206Z",
+            "startedAt": "2026-09-01T14:09:34.206Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "page": {
+                  "eventTitle": "Page (Standby API)",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Single Facebook page returned in a Standby API response."
+                },
+                "apify-default-dataset-item": {
+                  "eventTitle": "Page",
+                  "eventPriceUsd": 0.012,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Single page in the default dataset."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": null,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": true,
+      "supportsDateFilter": false
+    }
+  ]
+}

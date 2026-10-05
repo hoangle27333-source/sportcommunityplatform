@@ -19,6 +19,7 @@ export interface BatchActionBarProps {
   totalCount?: number;
   itemTypeLabel?: string;
   rescoutButtonLabel?: string;
+  rescoutRequiresConfirmation?: boolean;
   onClearSelection: () => void;
   onSelectAll?: () => void;
   onBatchRescout?: () => Promise<void> | void;
@@ -33,7 +34,8 @@ export function BatchActionBar({
   selectedCount,
   totalCount,
   itemTypeLabel = "items",
-  rescoutButtonLabel = "Sync Live Data",
+  rescoutButtonLabel = "Refresh Data",
+  rescoutRequiresConfirmation = true,
   onClearSelection,
   onSelectAll,
   onBatchRescout,
@@ -94,14 +96,14 @@ export function BatchActionBar({
 
         {/* Action Buttons */}
         <div className="flex items-center space-x-2">
-          {/* Sync Live Data / Re-Scout */}
+          {/* Refresh Data / Re-Scout */}
           {onBatchRescout && (
             <button
               type="button"
               disabled={loadingRescout || loadingDelete}
-              onClick={() => setIsRescoutModalOpen(true)}
+              onClick={() => { if (rescoutRequiresConfirmation) setIsRescoutModalOpen(true); else void onBatchRescout?.(); }}
               className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
-              title="Re-scrape & fetch latest live follower counts, views, ER, and post metrics"
+              title="Refresh observed metrics for the selected accounts"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${
@@ -111,7 +113,7 @@ export function BatchActionBar({
               <span className="hidden sm:inline">
                 {loadingRescout ? "Syncing..." : rescoutButtonLabel}
               </span>
-              <span className="sm:hidden">Sync</span>
+              <span className="sm:hidden">{rescoutButtonLabel === "Recalculate Metrics" ? "Recalculate" : "Refresh"}</span>
             </button>
           )}
 

@@ -44,7 +44,9 @@ export async function requireUser(): Promise<AuthedUser> {
     .eq("id", user.id)
     .single<{ role: AppRole }>();
 
-  return { user, role: profile?.role ?? "viewer", db };
+  const effectiveRole = profile?.role || "viewer";
+
+  return { user, role: effectiveRole, db };
 }
 
 /** Require the user to have at least editor privileges (editor or admin). */

@@ -1,0 +1,13 @@
+
+> content-automation-hub@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /Users/Apple/Documents/Vibe Code/Sport Booking Platform
+
+
+ Test Files  25 passed (25)
+      Tests  265 passed (265)
+   Start at  20:07:21
+   Duration  602ms (transform 1.35s, setup 0ms, import 2.86s, tests 200ms, environment 1ms)
+

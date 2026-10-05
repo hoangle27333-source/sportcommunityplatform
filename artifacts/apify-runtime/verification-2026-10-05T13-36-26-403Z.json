@@ -1,0 +1,143 @@
+{
+  "verifiedAt": "2026-10-05T13:36:26.403Z",
+  "checks": [
+    {
+      "name": "instagram-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "facebook-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "TikTok",
+      "task": "profile-details",
+      "actor": "clockworks~tiktok-scraper",
+      "input": {
+        "profiles": [
+          "nike"
+        ],
+        "resultsPerPage": 1
+      },
+      "name": "tiktok-profile-details",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.612",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "PbtFqosOHjHO2qEaj",
+          "build_id": "QhAKiAb8PUzsUW2rr",
+          "dataset_ids": {
+            "default": "4I17p3KAtHNYI0S0a"
+          },
+          "actual_usd": 0.0047,
+          "reserved_usd": 0.5,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-08-18T07:19:07.761Z",
+            "startedAt": "2026-08-18T07:19:07.761Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "Result",
+                  "eventPriceUsd": 0.0037,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Cost per result returned."
+                },
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat fee for starting an Actor run."
+                },
+                "filter-applied": {
+                  "eventTitle": "Add-on: Date filter",
+                  "eventPriceUsd": 0.0013,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost when date filtering is used."
+                },
+                "video-download": {
+                  "eventTitle": "Add-on: video download",
+                  "eventPriceUsd": 0.0013,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost when downloading video is enabled."
+                },
+                "ai-video-summary": {
+                  "eventTitle": "Add-on: AI Summary",
+                  "eventPriceUsd": 0.0013,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost for AI summary of a video per second."
+                },
+                "ai-video-description": {
+                  "eventTitle": "Add-on: AI Description",
+                  "eventPriceUsd": 0.0013,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost for timestamped AI description of a video per second."
+                },
+                "comment-dataset-item": {
+                  "eventTitle": "Add-on: Comment",
+                  "eventPriceUsd": 0.00125,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost per comment returned."
+                },
+                "scrape-as-in-country": {
+                  "eventTitle": "Add-on: Scrape as in country",
+                  "eventPriceUsd": 0.0013,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost for scraping as if in a specific country."
+                },
+                "transcription-minute": {
+                  "eventTitle": "Add-on: Transcript",
+                  "eventPriceUsd": 0.048,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost charged per started minute per video."
+                },
+                "follower-dataset-item": {
+                  "eventTitle": "Add-on: Follower / Following",
+                  "eventPriceUsd": 0.004,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost per follower / following profile returned."
+                },
+                "popularity-filter-applied": {
+                  "eventTitle": "Add-on: Popularity filter",
+                  "eventPriceUsd": 0.0013,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost when filtering by popularity is used."
+                },
+                "mobile-filter-sorting-applied": {
+                  "eventTitle": "Add-on: Search video sorting",
+                  "eventPriceUsd": 0.0013,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost for scraping the sorted videos."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "notifiedAboutChangeAt": "2026-08-19T08:06:30.611Z",
+            "minimalMaxTotalChargeUsd": 0.5,
+            "isPriceChangeNotificationSuppressed": false
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false,
+      "supportsDateFilter": false
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "verifiedAt": "2026-10-05T12:01:12.970Z",
+  "checks": [
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "Facebook",
+      "task": "profile-posts",
+      "actor": "apify~facebook-groups-scraper",
+      "input": {
+        "startUrls": [
+          {
+            "url": "https://www.facebook.com/groups/sundayrunningclub/"
+          }
+        ],
+        "resultsLimit": 1
+      },
+      "name": "facebook-group-feed",
+      "verified": false,
+      "reasons": [
+        "No valid output observed."
+      ],
+      "build": "0.0.380",
+      "count": 1,
+      "parsed": 0,
+      "runs": [
+        {
+          "provider_run_id": "VK8tEih6igFsEFAsE",
+          "build_id": "IO1ddPJhdq5pfM7fz",
+          "dataset_ids": {
+            "default": "WYFSCwpuLyOt0nIz5"
+          },
+          "actual_usd": 0.001,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-03-04T11:07:15.242Z",
+            "startedAt": "2026-03-04T11:07:15.242Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "post": {
+                  "eventTitle": "Post",
+                  "eventPriceUsd": 0.005,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each post written to the dataset."
+                },
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat charge for starting an Actor run."
+                },
+                "filter-applied": {
+                  "eventTitle": "Add-on: Date filter",
+                  "eventPriceUsd": 0.002,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost per post scraped with a date filter."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0033,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false
+    }
+  ]
+}

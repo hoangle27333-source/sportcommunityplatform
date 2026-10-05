@@ -297,11 +297,15 @@ export function getKolAggregates(kol: KOL): KolAggregates {
   const totalFollowers = channels.reduce((sum, ch) => sum + (ch.followers || 0), 0) || kol.followers || 0;
   const totalAvgViews = channels.reduce((sum, ch) => sum + (ch.avgViews || 0), 0) || kol.avgViews || 0;
 
-  // Weighted ER based on followers share
-  let blendedEr = kol.er || 0;
-  if (totalFollowers > 0) {
-    const weightedSum = channels.reduce((sum, ch) => sum + (ch.er || 0) * (ch.followers || 0), 0);
-    blendedEr = +(weightedSum / totalFollowers).toFixed(1);
+  // Observations sharing the verified formula can be combined. Legacy ER stays
+  // in its own compatibility path and never becomes a verified denominator.
+  const observed=channels.filter(ch=>ch.scoutProvenance?.runId && ch.scoutProvenance.derived?.formula==='mean(likes + comments) / followers * 100' && ch.scoutProvenance.derived?.er!=null && !ch.missingMetrics?.includes('er') && (ch.followers || 0)>0);
+  let blendedEr=kol.er ?? 0;
+  if(observed.length) {
+    const denominator=observed.reduce((sum,ch)=>sum+(ch.followers || 0),0);
+    blendedEr=Number((observed.reduce((sum,ch)=>sum+(ch.er ?? 0)*(ch.followers || 0),0)/denominator).toFixed(2));
+  } else if(!kol.scoutProvenance && totalFollowers>0) {
+    blendedEr=Number((channels.reduce((sum,ch)=>sum+(ch.er ?? 0)*(ch.followers || 0),0)/totalFollowers).toFixed(1));
   }
 
   const primaryChannel = channels.find((ch) => ch.isPrimary) || channels[0];

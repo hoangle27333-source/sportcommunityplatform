@@ -4,6 +4,7 @@ export type WorkerGroup = "all" | "core" | "remix" | "playwright";
 
 const DEFAULT_CONCURRENCY: Record<QueueName, number> = {
   publish: 3,
+  "social-scout": 1,
   "analytics-sync": 2,
   "content-gen": 2,
   "video-render": 1,
@@ -15,6 +16,7 @@ const DEFAULT_CONCURRENCY: Record<QueueName, number> = {
 
 const CONCURRENCY_ENV: Record<QueueName, string> = {
   publish: "WORKER_CONCURRENCY_PUBLISH",
+  "social-scout": "WORKER_CONCURRENCY_SOCIAL_SCOUT",
   "analytics-sync": "WORKER_CONCURRENCY_ANALYTICS",
   "content-gen": "WORKER_CONCURRENCY_CONTENT_GEN",
   "video-render": "WORKER_CONCURRENCY_VIDEO_RENDER",

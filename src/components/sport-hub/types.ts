@@ -1,4 +1,6 @@
 export interface KOLChannel {
+  scoutProvenance?:{runId?:string;derived?:{formula?:string;er?:number|null;erSample?:number}};
+  missingMetrics?:string[];
   id?: string;
   platform: "TikTok" | "Instagram" | "Facebook" | "YouTube" | "Threads" | string;
   handle: string;
@@ -22,6 +24,9 @@ export interface KOL {
   avgViews: number;
   er: number;
   quotation: number;
+  gmv?: { amount: number; month: string; source: string } | null;
+  missingMetrics?: string[];
+  scoutProvenance?: {source?:string;fetchedAt?:string;runId?:string;derived?:{formula?:string;viewsSample?:number;erSample?:number}} | null;
   status: string;
   info: string;
   profileUrl: string;
@@ -58,27 +63,7 @@ export interface PartnerBrandItem {
   logoUrl?: string;
 }
 
-export interface KolAudienceAudit {
-  id?: string;
-  kolId?: string;
-  auditId?: string;
-  auditedAt?: string;
-  totalPostsScanned: number;
-  totalCommentsScanned: number;
-  realAudienceRate: number; // e.g. 85.7 (%)
-  seedingRate: number;      // e.g. 14.3 (%)
-  seedingRiskLevel: "Low" | "Moderate" | "High";
-  topTagDistribution: TagDistributionItem[];
-  sponsoredContentRate: number; // e.g. 71.4 (%)
-  commercialSaturation: "Low Commercial" | "Balanced" | "Heavy Commercial";
-  bookedCategories: BookedCategoryItem[];
-  partnerBrands: PartnerBrandItem[];
-  sampleComments?: {
-    organic: string[];
-    seeding: string[];
-  };
-  auditSummary?: string;
-}
+export type KolAudienceAudit = import('@/lib/sport-hub/audience-audit-types').AudienceAuditResult & {id?:string;kolId?:string};
 
 export interface CommunityChannel {
   id?: string;
@@ -93,6 +78,8 @@ export interface CommunityChannel {
 }
 
 export interface Community {
+  missingMetrics?: string[];
+  scoutProvenance?: {source?:string;fetchedAt?:string;runId?:string;derived?:{formula?:string;viewsSample?:number;erSample?:number}} | null;
   id: string;
   name: string;
   sport: string[];
@@ -121,6 +108,8 @@ export interface Post {
   views: number;
   er: number;
   postUrl: string;
+  missingMetrics?: string[];
+  scoutProvenance?: {source?:string;fetchedAt?:string;runId?:string;derived?:{formula?:string;viewsSample?:number;erSample?:number}} | null;
   viralGrade: string;
   status: string;
   isSponsored?: boolean;

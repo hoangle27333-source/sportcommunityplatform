@@ -1,0 +1,37 @@
+{
+  "environment": "production",
+  "startedAt": "2026-10-05T13:45:20.724Z",
+  "kolId": "afe0f2d8-f6ac-4d2c-9b1f-785ff44a28d1",
+  "name": "Đỗ Kim Phúc",
+  "sessionId": "38010e40-4528-400b-815b-d19c12cb074a",
+  "lockedFields": [
+    "quotation",
+    "contact_info"
+  ],
+  "profileImports": 0,
+  "status": "failed",
+  "counts": {
+    "failed": 1,
+    "refreshed": 0
+  },
+  "failed": [
+    {
+      "id": "afe0f2d8-f6ac-4d2c-9b1f-785ff44a28d1",
+      "code": "SCHEMA_MISMATCH",
+      "error": "Provider output could not be validated."
+    }
+  ],
+  "schemaRejectionProtectedCrm": true,
+  "providerRuns": [
+    {
+      "task": "profile-details",
+      "state": "schema-mismatch",
+      "warnings": [
+        "Provider item unavailable"
+      ],
+      "actual_usd": 0.0047,
+      "provider_run_id": "5IwTHYQn3zQeM0tIh"
+    }
+  ],
+  "note": "Real profile output rejected before CRM persistence. Successful locked-field behavior remains covered by focused regression tests."
+}

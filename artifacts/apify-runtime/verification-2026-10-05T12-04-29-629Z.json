@@ -1,0 +1,93 @@
+{
+  "verifiedAt": "2026-10-05T12:04:29.629Z",
+  "checks": [
+    {
+      "name": "instagram-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "facebook-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "Facebook",
+      "task": "profile-posts",
+      "actor": "apify~facebook-posts-scraper",
+      "input": {
+        "startUrls": [
+          {
+            "url": "https://www.facebook.com/nike/"
+          }
+        ],
+        "resultsLimit": 1,
+        "onlyPostsNewerThan": "2026-09-05T12:04:17.070Z"
+      },
+      "name": "facebook-profile-posts",
+      "verified": false,
+      "reasons": [
+        "No valid output observed."
+      ],
+      "build": "0.0.398",
+      "count": 0,
+      "parsed": 0,
+      "runs": [
+        {
+          "provider_run_id": "kGQxCVR72VzvbVyoG",
+          "build_id": "nxJsZURfrXN0YklPh",
+          "dataset_ids": {
+            "default": "Trlx1guE4qF9rmszj"
+          },
+          "actual_usd": 0.001,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-03-11T14:56:37.208Z",
+            "startedAt": "2026-03-11T14:56:37.208Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "post": {
+                  "eventTitle": "Post",
+                  "eventPriceUsd": 0.005,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each post written to the dataset."
+                },
+                "actor-start": {
+                  "eventTitle": "Actor start",
+                  "eventPriceUsd": 0.001,
+                  "isOneTimeEvent": true,
+                  "eventDescription": "Flat charge for starting an Actor run."
+                },
+                "filter-applied": {
+                  "eventTitle": "Add-on: Date filter",
+                  "eventPriceUsd": 0.002,
+                  "isOneTimeEvent": false,
+                  "eventDescription": "Extra cost per post scraped with a date filter."
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0062,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": false,
+      "supportsDateFilter": true
+    }
+  ]
+}

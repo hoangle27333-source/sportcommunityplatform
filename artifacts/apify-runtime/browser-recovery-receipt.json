@@ -1,0 +1,30 @@
+{
+  "recordedAt": "2026-10-05T13:00:27.628Z",
+  "sessionId": "887d611c-68bd-4a10-af2e-b05fb56aaeaf",
+  "status": "complete",
+  "workflow": "Authenticated Chrome Hoang: Fetch Verified Details \u2192 Complete \u2192 browser reload \u2192 Activity \u2192 View Results \u2192 Review in Add Form \u2192 reload restores saved evidence",
+  "mobileViewport": {
+    "width": 400,
+    "height": 665
+  },
+  "resultName": "Nike",
+  "providerObservationAt": "2026-10-05T12:12:59.560Z",
+  "sessionCreatedAt": "2026-10-05T12:55:56.968386+00:00",
+  "sessionRuns": [],
+  "crmImports": 0,
+  "screenshots": [
+    "inspect-reload-proof.png",
+    "inspect-mobile-proof.png",
+    "inspect-review-proof.png"
+  ],
+  "limitations": [
+    "No production CRM writes; sync/comment persistence checked with isolated in-memory regression fixtures.",
+    "Role denial and budget exhaustion UI not fully exercised in this browser session."
+  ],
+  "reviewDefaults": {
+    "tier": "Unknown",
+    "geography": "Unknown",
+    "sports": [],
+    "status": "New Scout (Unverified)"
+  }
+}

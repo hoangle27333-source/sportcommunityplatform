@@ -1,4 +1,5 @@
 "use client";
+import { UrlInspector } from "./url-inspector";
 
 import React, { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
@@ -44,8 +45,6 @@ export function AddChannelModal({
   entity,
   onSuccess,
 }: AddChannelModalProps) {
-  const [scoutUrl, setScoutUrl] = useState("");
-  const [isScouting, setIsScouting] = useState(false);
   const [platform, setPlatform] = useState("TikTok");
   const [handle, setHandle] = useState("");
   const [url, setUrl] = useState("");
@@ -54,10 +53,10 @@ export function AddChannelModal({
   const [er, setEr] = useState<number | string>("");
   const [isPrimary, setIsPrimary] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [inspectSessionId, setInspectSessionId] = useState<string>();
 
   useEffect(() => {
     if (isOpen) {
-      setScoutUrl("");
       setPlatform(entityType === "kol" ? "TikTok" : "Facebook Group");
       setHandle("");
       setUrl("");
@@ -65,6 +64,7 @@ export function AddChannelModal({
       setAvgViews("");
       setEr("");
       setIsPrimary(false);
+      setInspectSessionId(undefined);
     }
   }, [isOpen, entityType]);
 
@@ -78,50 +78,6 @@ export function AddChannelModal({
   const newReach = Number(followers) || 0;
   const projectedTotalReach = currentAudience + newReach;
 
-  // Auto-scout channel info from link
-  const handleScoutUrl = async () => {
-    const trimmed = scoutUrl.trim();
-    if (!trimmed) {
-      toast.error("Please enter a valid channel profile link");
-      return;
-    }
-
-    setIsScouting(true);
-    try {
-      const res = await fetch("/api/sport-hub/scout/inspect-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: trimmed,
-          type: entityType === "kol" ? "kol" : "community",
-        }),
-      });
-      const data = await res.json();
-
-      if (data.success && data.scouted) {
-        const s = data.scouted;
-        if (s.platform) setPlatform(s.platform);
-        if (s.handle) setHandle(s.handle);
-        else if (s.name) setHandle(s.name);
-        setUrl(trimmed);
-        if (s.followers) setFollowers(s.followers);
-        if (s.members) setFollowers(s.members);
-        if (s.avgViews) setAvgViews(s.avgViews);
-        if (s.er) setEr(s.er);
-
-        toast.success(`Scouted ${s.platform || "channel"} details successfully!`);
-      } else {
-        toast.error(data.error || "Unable to inspect URL automatically. Please fill manually.");
-        setUrl(trimmed);
-      }
-    } catch {
-      toast.error("Network error during URL inspection. Please enter channel details manually.");
-      setUrl(trimmed);
-    } finally {
-      setIsScouting(false);
-    }
-  };
-
   const handleSaveChannel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) {
@@ -132,6 +88,8 @@ export function AddChannelModal({
     setIsSaving(true);
     try {
       const channelPayload: any = {
+        inspectSessionId,
+        missingMetrics: [...(followers === "" ? [entityType === "community" ? "members" : "followers"] : []), ...(avgViews === "" ? ["avgViews"] : []), ...(er === "" ? ["er"] : [])],
         platform,
         handle: handle.trim() || entity.name,
         name: handle.trim() || entity.name,
@@ -200,53 +158,7 @@ export function AddChannelModal({
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
-          {/* URL Auto-Scout Banner */}
-          <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-50/80 to-purple-50/80 border border-indigo-100 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-indigo-900 flex items-center space-x-1.5">
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                <span>Auto-Fill from Channel URL</span>
-              </span>
-              <span className="text-[10px] text-indigo-500 font-medium">
-                TikTok · YouTube · FB · IG · Strava · Zalo
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="relative flex-1">
-                <Link2 className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <input
-                  type="url"
-                  value={scoutUrl}
-                  onChange={(e) => setScoutUrl(e.target.value)}
-                  placeholder={
-                    entityType === "kol"
-                      ? "https://youtube.com/@channel or https://tiktok.com/@..."
-                      : "https://facebook.com/groups/... or https://strava.com/clubs/..."
-                  }
-                  className="w-full pl-9 pr-3 py-2 bg-white rounded-lg border border-indigo-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-              <button
-                type="button"
-                disabled={isScouting}
-                onClick={handleScoutUrl}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-semibold rounded-lg transition flex items-center space-x-1.5 shadow-xs disabled:opacity-50 cursor-pointer shrink-0"
-              >
-                {isScouting ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Scouting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Inspect</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
+          <UrlInspector key={entity.id} destination={entityType} onDetails={d => { setInspectSessionId(d.inspectSessionId); if (d.name) setHandle(d.username || d.name); if (d.url) setUrl(d.url); if (d.platform) setPlatform(d.platform); setFollowers(d.followers ?? d.members ?? ""); setAvgViews(d.avgViews ?? ""); setEr(d.er ?? ""); }} />
           {/* Form Fields */}
           <form id="add-channel-form" onSubmit={handleSaveChannel} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

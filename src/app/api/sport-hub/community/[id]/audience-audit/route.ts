@@ -1,3 +1,4 @@
+import { scoutAccess, scoutReadAccess } from "@/lib/apify/sessions";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getLatestCommunityAudienceAudit,
@@ -11,6 +12,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
+    await scoutReadAccess();
     const { id } = await ctx.params;
     const data = await getLatestCommunityAudienceAudit(id);
     if (!data) {
@@ -23,13 +25,14 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || "Failed to load community audit" },
-      { status: 500 }
+      { status: err.status || 500 }
     );
   }
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
+    await scoutAccess();
     const { id } = await ctx.params;
     let body: { force?: boolean; postLimit?: number; heuristicsOnly?: boolean } = {};
     try {
@@ -46,7 +49,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || "Failed to audit community" },
-      { status: 500 }
+      { status: err.status || 500 }
     );
   }
 }

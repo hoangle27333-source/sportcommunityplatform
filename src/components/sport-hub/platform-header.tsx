@@ -26,6 +26,7 @@ export interface PlatformHeaderProps {
 }
 
 export const NAV_ITEMS = [
+  { href: "/scout", label: "Scout", icon: Users },
   {
     href: "/",
     label: "Dashboard",
@@ -117,17 +118,17 @@ export function PlatformHeader({ onRefresh, loading = false }: PlatformHeaderPro
           <div className="flex items-center space-x-3 shrink-0">
             <Link
               href="/"
-              className="flex items-center space-x-2.5 group"
+              className="flex min-w-0 items-center space-x-2.5 group"
               title="Sports Creator CRM & 360° Panoramic Evaluation"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white text-base font-bold shadow-xs shadow-blue-500/20 group-hover:scale-105 transition">
+              <div className="w-8 h-8 shrink-0 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white text-base font-bold shadow-xs shadow-blue-500/20 group-hover:scale-105 transition">
                 ⚡
               </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none whitespace-nowrap">
+              <div className="flex min-w-0 items-center space-x-2">
+                <span className="truncate text-xs sm:text-base font-black text-slate-900 tracking-tight leading-none whitespace-nowrap">
                   SPORT INFLUENCER HUB
                 </span>
-                <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                <span className="hidden xl:inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   <span>Live</span>
                 </span>
@@ -158,7 +159,7 @@ export function PlatformHeader({ onRefresh, loading = false }: PlatformHeaderPro
           </nav>
 
           {/* Right Action & Controls (Single Line) */}
-          <div className="flex items-center space-x-2.5">
+          <div className="flex shrink-0 items-center space-x-2.5">
             {/* User Account Menu */}
             {currentUser ? (
               <div className="relative" ref={dropdownRef}>

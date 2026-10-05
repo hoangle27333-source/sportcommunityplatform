@@ -1,0 +1,13 @@
+{
+  "appliedAt": "2026-10-05T11:56:28.008459+00:00",
+  "project": "xfqwxehetbjofoaygeqj",
+  "migration": "supabase/migrations/20261005000000_apify_runtime.sql",
+  "sha256": "d37bbd54006de4e130ce4da632f3c71b1a1b91665285693517b5dbba16cbc164",
+  "transport": "authenticated Supabase SQL Editor in requested Chrome profile",
+  "transaction": "BEGIN migration NOTIFY pgrst reload schema COMMIT",
+  "migrationHistory": "supabase_migrations.schema_migrations absent; no historical versions invented",
+  "prerequisites": "remote required-column query returned zero missing rows",
+  "result": "Success. No rows returned",
+  "remoteAccessReceipt": "remote-access-receipt.json",
+  "screenshot": "migration-browser-success.png"
+}

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro, Fira_Code } from "next/font/google";
+import {ScoutProgressPanel} from "@/components/sport-hub/scout-progress-panel";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import "./globals.css";
@@ -52,6 +53,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           {children}
+          <ScoutProgressPanel />
         </AuthProvider>
         <Toaster
           position="bottom-right"

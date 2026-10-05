@@ -1,25 +1,11 @@
-/**
- * Apify Direct Integration Engine for Sport Influencer Hub
- * Scrapes Instagram, Facebook & TikTok and saves directly into Supabase PostgreSQL
- */
-
+import {ACTOR_CONTRACTS} from './registry';
+import {providerPlans} from './providers';
 import { createAdminClient } from "@/lib/supabase/admin";
-
-export function getApifyToken(): string {
-  return (
-    process.env.APIFY_TOKEN ||
-    process.env.NEXT_PUBLIC_APIFY_TOKEN ||
-    ""
-  );
-}
-
-export const APIFY_CONFIG = {
-  get token() {
-    return getApifyToken();
-  },
-  actorId: "apify~instagram-scraper",
-  baseUrl: "https://api.apify.com/v2",
-};
+import { quotas, roundRobin, retrievalWindow, advanceWatermark } from "./collection";
+import { channelUrl } from "./tasks";
+import { randomUUID } from "node:crypto";
+import { assessProfile, canonicalUrl, platformMatches, urlKind, contextKey, normalized, tokens, hashtagMatch, type Classification } from "./discovery-quality";
+import { scrape, parseProfile, parsePost, ScoutError, type SocialProfile, type SocialPost, PendingScout } from "./providers";
 
 export function detectSportNiche(text: string): string[] {
   const t = (text || "").toLowerCase();
@@ -30,6 +16,7 @@ export function detectSportNiche(text: string): string[] {
     tennis: "Tennis",
     "chạy bộ": "Chạy bộ / Marathon",
     marathon: "Chạy bộ / Marathon",
+    run: "Chạy bộ / Marathon",
     runner: "Chạy bộ / Marathon",
     running: "Chạy bộ / Marathon",
     trail: "Chạy bộ / Marathon",
@@ -52,7 +39,7 @@ export function detectSportNiche(text: string): string[] {
   };
 
   for (const [kw, sport] of Object.entries(mapping)) {
-    if (t.includes(kw) && !sports.includes(sport)) {
+    if ((` ${normalized(t)} `).includes(` ${normalized(kw)} `) && !sports.includes(sport)) {
       sports.push(sport);
     }
   }
@@ -91,1486 +78,271 @@ export function buildProfileUrl(platform: string, username: string, originalUrl?
   return originalUrl || "";
 }
 
-export interface ScrapedSocialItem {
-  username: string;
-  name: string;
-  bio: string;
-  url: string;
-  followers: number;
-  avgViews: number;
-  likes: number;
-  comments: number;
-  er: number;
-  avatarUrl?: string;
-  posts?: {
-    caption: string;
-    url: string;
-    views: number;
-    likes: number;
-    comments: number;
-  }[];
+export type DiscoveryCandidate = Omit<SocialProfile, 'provenance'> & ReturnType<typeof assessProfile> & { candidateId: string; accountKey: string; isExisting: boolean; existingId?: string; provenance: Partial<NonNullable<SocialProfile['provenance']>> & { platform: string; fetchedAt: string; profileUrl: string } };
+function check(error: any) { if (error) throw error; }
+function cleanTarget(target: string) { return ['Communities & Clubs', 'Cộng đồng / Group'].includes(target) ? 'Communities & Clubs' : 'Individual KOLs'; }
+export async function previewDiscoveryCandidates(params: { keyword: string; targetType?: string; platform?: string; limit?: number; geography?: string; sessionId: string }) {
+  const db = createAdminClient(); const platform = params.platform || 'Instagram'; const target = cleanTarget(params.targetType || ''); const geography = params.geography || 'Nationwide';
+
+  const { data: existing, error } = await db.from(target === 'Communities & Clubs' ? 'communities' : 'kols').select('*'); check(error);
+  const { data: feedback, error: feedbackError } = await db.from('scout_feedback').select('*').order('created_at', { ascending: false }); check(feedbackError);
+  const candidates: DiscoveryCandidate[] = []; const seen = new Set<string>();
+  const warnings:string[]=[];
+  const providerResults = new Set<string>();
+  const plans=providerPlans(platform,target==='Communities & Clubs' ? 'communities' : 'profiles',params.keyword,params.limit || 5,geography);
+  const canExpand=plans.every(plan=>ACTOR_CONTRACTS[plan.actor]?.canExpand);
+  for(const batch of [...new Set((canExpand ? [1,2,3] : [1]).map(n=>Math.min((params.limit || 5)*n,60)))]) {
+  let raw:any[];
+  try { raw=await scrape(params.sessionId,platform,target==='Communities & Clubs' ? 'communities' : 'profiles',params.keyword,batch,geography); }
+  catch(e:any) { if(e instanceof PendingScout || !candidates.length) throw e; warnings.push(e.message); break; }
+  for (const row of raw) providerResults.add(JSON.stringify(row));
+  const authorUrls=[...new Set(raw.filter(r=>!parseProfile(r,platform)).map(r=>parsePost(r,platform)?.authorUrl).filter(Boolean))].filter(url=>!seen.has(`${platform}:${url}`)) as string[];
+  const hydrated:SocialProfile[]=[];
+  for(let i=0;i<authorUrls.length;i+=10) { const urls=authorUrls.slice(i,i+10); const rows=await scrape(params.sessionId,platform,'profile-details',urls[0],1,'',{urls}); hydrated.push(...rows.map(r=>parseProfile(r,platform)).filter(Boolean) as SocialProfile[]); }
+  for (const row of raw) {
+    let profile = parseProfile(row, platform);
+    // A post-only search hit cannot impersonate a profile: hydrate its author.
+    if (!profile) {
+      const post = parsePost(row, platform);
+      if (post?.authorUrl) {
+        profile = hydrated.find(p => p.url === post.authorUrl) || null;
+      }
+    }
+    if (!profile) continue;
+    const accountKey = `${platform}:${profile.url}`; if (seen.has(accountKey)) continue; seen.add(accountKey);
+    const assessment = assessProfile(profile, params.keyword, geography, target);
+    const applicable = (feedback || []).filter(f => f.account_key === accountKey);
+    const classificationFeedback = applicable.find(f => f.classification && ['Correct Classification', 'Wrong Entity Type'].includes(f.reason));
+    if (classificationFeedback) {
+      assessment.classification = classificationFeedback.classification;
+      assessment.reviewState = !assessment.relevant ? 'Excluded' : assessment.classification === 'Unknown' || !assessment.locationMatch ? 'Needs Review' : 'Matched';
+      if (assessment.classification !== 'Unknown' && assessment.classification !== (target === 'Communities & Clubs' ? 'Community' : 'Individual')) assessment.reviewState = 'Excluded';
+      assessment.reasons.push('Entity type confirmed by team review');
+    }
+    const contextual = applicable.find(f => f.context_key === contextKey(params.keyword, geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason));
+    if (contextual) { assessment.reviewState = 'Excluded'; assessment.reasons.push(`Team feedback: ${contextual.reason}`); }
+    const match = existing?.find(e => e.scout_identity === accountKey || canonicalUrl(e.profile_url || e.group_url || '') === profile!.url);
+    candidates.push({ ...profile, ...assessment, candidateId: randomUUID(), accountKey, isExisting: !!match, existingId: match?.id, provenance: { platform, ...profile.provenance, fetchedAt: profile.provenance?.fetchedAt || new Date().toISOString(), profileUrl: profile.url } });
+  }
+  if(candidates.filter(c=>c.reviewState!=='Excluded').length >= (params.limit || 5)) break;
+  }
+  const visible = candidates.filter(c => c.reviewState !== 'Excluded').sort((a, b) => Number(b.reviewState === 'Matched') - Number(a.reviewState === 'Matched')).slice(0, params.limit || 5);
+  const requestedCount = params.limit || 5;
+  const diagnostics = { requestedCount, providerCount: providerResults.size, uniqueProfileCount: candidates.length, excludedCount: candidates.filter(c => c.reviewState === 'Excluded').length, returnedCount: visible.length };
+  if (visible.length < requestedCount) warnings.push(`Only ${visible.length} of ${requestedCount} requested profiles passed discovery checks (${diagnostics.providerCount} provider results, ${diagnostics.excludedCount} excluded). Try a broader keyword or another location.`);
+  const { error: saveError } = await db.from('scout_sessions').update({ candidates: visible }).eq('id', params.sessionId); check(saveError);
+  return { success: true, sessionId: params.sessionId, criteria: { keyword: params.keyword, targetType: target, platform, geography, limit: requestedCount }, candidates: visible, effectiveQuery: params.keyword, totalFound: visible.length, newCount: visible.filter(c => !c.isExisting).length, existingCount: visible.filter(c => c.isExisting).length, excludedCount: diagnostics.excludedCount, diagnostics,partial:warnings.length>0,warnings };
 }
-
-/**
- * Dynamic Query Diversification:
- * When a base niche query (e.g. "pickleball") has already accumulated multiple records in the CRM,
- * automatically rotate sub-niche modifiers (coach, rookie, club, hanoi, saigon) to explore deeper
- * into the social graph and avoid repeatedly scraping the exact same top celebrity accounts.
- */
-export function getSmartDiversifiedQuery(
-  baseQuery: string,
-  existingMatchesCount: number,
-  platform = "Instagram"
-): { effectiveQuery: string; modifierApplied?: string } {
-  const clean = baseQuery.trim();
-  if (existingMatchesCount < 2) {
-    return { effectiveQuery: clean };
-  }
-
-  const modifiers = [
-    "coach",
-    "club phong trào",
-    "athlete",
-    "vietnam",
-    "hanoi",
-    "saigon",
-    "rookie",
-    "review",
-  ];
-
-  const modIndex = (existingMatchesCount - 2) % modifiers.length;
-  const mod = modifiers[modIndex];
-
-  if (clean.toLowerCase().includes(mod.toLowerCase())) {
-    return { effectiveQuery: clean };
-  }
-
-  const effectiveQuery = `${clean} ${mod}`;
-  console.log(
-    `[Smart Discovery] Diversifying query from "${clean}" -> "${effectiveQuery}" (${existingMatchesCount} existing matches in database)`
-  );
-  return { effectiveQuery, modifierApplied: mod };
-}
-
-/**
- * Execute Apify Actor and wait for dataset results
- */
-export async function runApifyScout(
-  query: string,
-  limit = 5,
-  platform = "Instagram",
-  existingHandles?: Set<string>
-): Promise<ScrapedSocialItem[]> {
-  const token = getApifyToken();
-  if (!token) {
-    console.warn("[Apify Scout] No token found, using high-fidelity fallback items");
-    return generateFallbackItems(query, limit, platform, existingHandles);
-  }
-
-  console.log(`[Apify Scout] Launching scrape for query: "${query}" (limit: ${limit}, platform: ${platform})`);
-
+export async function ingestSelectedCandidates(params: { sessionId: string; selected: { candidateId: string; classification?: Classification; relevant?: boolean; locationConfirmed?: boolean }[]; actorId: string; }) {
+  const db = createAdminClient(); const { data: session, error } = await db.from('scout_sessions').select('*').eq('id', params.sessionId).eq('owner_id', params.actorId).single(); if (error || !session) throw new ScoutError('Preview not found', 'NOT_FOUND', 404);
+  if (session.kind !== 'preview' || session.status !== 'complete') throw new ScoutError('Discovery preview is not ready', 'INVALID_PREVIEW', 400);
+  if (!params.selected.length || new Set(params.selected.map(s => s.candidateId)).size !== params.selected.length) throw new ScoutError('Select unique candidates to import', 'INVALID_SELECTION', 400);
+  const importToken=randomUUID();
+  const {data:claimed,error:claimError}=await db.from('scout_sessions').update({import_token:importToken,import_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',params.sessionId).or(`import_lease_until.is.null,import_lease_until.lt.${new Date().toISOString()}`).select('id').maybeSingle();check(claimError);
+  if(!claimed)throw new ScoutError('This preview is already being imported. Retry after the current import finishes.','IMPORT_IN_PROGRESS',409);
+  const heartbeat=setInterval(()=>void db.from('scout_sessions').update({import_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',params.sessionId).eq('import_token',importToken).then(({error})=>{if(error)console.error('[social-scout] Import lease renewal failed',error.code);}),30000);
   try {
-    // Step 1: Start Actor Run with search limit and fast profile/post options
-    const runPayload = {
-      search: query,
-      searchType: "user",
-      searchLimit: Math.min(limit, 8),
-      resultsLimit: Math.min(limit, 8),
-    };
-
-    const startRes = await fetch(
-      `${APIFY_CONFIG.baseUrl}/acts/${APIFY_CONFIG.actorId}/runs?token=${token}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(runPayload),
-      }
-    );
-
-    const startData = await startRes.json();
-    if (!startRes.ok || !startData?.data?.id) {
-      console.warn("[Apify Scout] Actor start failed or rate limited:", startData);
-      return generateFallbackItems(query, limit, platform, existingHandles);
-    }
-
-    const runId = startData.data.id;
-    const datasetId = startData.data.defaultDatasetId;
-    console.log(`[Apify Scout] Run started: ${runId}, Dataset: ${datasetId}`);
-
-    // Step 2: Poll for completion (up to 32 seconds to ensure fast UI response)
-    const startTime = Date.now();
-    const maxTimeoutMs = 32000;
-    let status = startData.data.status;
-
-    while (Date.now() - startTime < maxTimeoutMs) {
-      await new Promise((resolve) => setTimeout(resolve, 3500));
-
-      const pollRes = await fetch(
-        `${APIFY_CONFIG.baseUrl}/actor-runs/${runId}?token=${token}`
-      );
-      if (!pollRes.ok) break;
-
-      const pollData = await pollRes.json();
-      status = pollData?.data?.status;
-      console.log(`[Apify Scout] Status: ${status} (${Math.round((Date.now() - startTime) / 1000)}s)`);
-
-      if (["SUCCEEDED", "TIMED-OUT", "ABORTED", "FAILED"].includes(status)) {
-        break;
-      }
-    }
-
-    // Step 3: Fetch Dataset Items
-    const datasetRes = await fetch(
-      `${APIFY_CONFIG.baseUrl}/datasets/${datasetId}/items?token=${token}`
-    );
-
-    if (!datasetRes.ok) {
-      console.warn("[Apify Scout] Failed to fetch dataset:", datasetRes.statusText);
-      return generateFallbackItems(query, limit, platform, existingHandles);
-    }
-
-    const rawItems = await datasetRes.json();
-    if (!Array.isArray(rawItems) || rawItems.length === 0) {
-      console.log("[Apify Scout] No items returned from dataset within window, generating parsed profiles...");
-      return generateFallbackItems(query, limit, platform, existingHandles);
-    }
-
-    const seen = new Set<string>();
-    const parsedItems: ScrapedSocialItem[] = [];
-
-    for (const it of rawItems) {
-      const u = (it.ownerUsername || it.username || "").toLowerCase().trim().replace(/^@/, "");
-      if (u && !seen.has(u) && u !== "none") {
-        seen.add(u);
-        const isExisting = existingHandles ? existingHandles.has(u) : false;
-
-        const name = it.ownerFullName || it.fullName || u;
-        const bio = it.caption || it.biography || "";
-        const followers = Number(it.followersCount) || Math.floor(Math.random() * 50000) + 12000;
-        const views = Number(it.videoViewCount) || Math.floor(Math.random() * 80000) + 20000;
-        const likes = Number(it.likesCount) || Math.floor(Math.random() * 2000) + 400;
-        const comments = Number(it.commentsCount) || Math.floor(Math.random() * 80) + 15;
-        const er = Number(((likes + comments) / (followers || 10000) * 100).toFixed(2));
-
-        // Two-Tier Resource Optimization:
-        // If this account already exists in database, skip parsing child posts or extra media
-        // to save processing overhead and database storage
-        const posts = isExisting
-          ? []
-          : [
-              {
-                caption: (it.caption || `${name} check-in thi đấu thể thao #${query}`).slice(0, 300),
-                url: it.url || `https://instagram.com/${u}`,
-                views,
-                likes,
-                comments,
-              },
-            ];
-
-        parsedItems.push({
-          username: u,
-          name,
-          bio: bio.slice(0, 500),
-          url: it.url || `https://instagram.com/${u}`,
-          followers,
-          avgViews: views,
-          likes,
-          comments,
-          er: er > 0 ? er : 3.8,
-          avatarUrl: it.profilePicUrl || "",
-          posts,
-        });
-      }
-      if (parsedItems.length >= limit) break;
-    }
-
-    return parsedItems.length > 0
-      ? parsedItems
-      : generateFallbackItems(query, limit, platform, existingHandles);
-  } catch (err) {
-    console.error("[Apify Scout] Scraping encountered error, using fallback:", err);
-    return generateFallbackItems(query, limit, platform, existingHandles);
-  }
-}
-
-/**
- * Generate high-quality realistic fallback items when Apify queue is delayed or limited
- */
-function generateFallbackItems(
-  query: string,
-  limit: number,
-  platform: string,
-  existingHandles?: Set<string>
-): ScrapedSocialItem[] {
-  const detectedSports = detectSportNiche(query);
-  const primarySport = detectedSports[0] || "Thể thao";
-  const timestamp = Date.now().toString().slice(-4);
-  const cleanKeyword = query.replace(/vietnam|viet nam/gi, "").trim() || primarySport;
-
-  const creatorsPool = [
-    {
-      name: `HLV ${cleanKeyword} Trọng Hoàng`,
-      handle: `hoang.${primarySport.toLowerCase().replace(/[^a-z0-9]/g, "")}_coach`,
-      bio: `VĐV & Huấn luyện viên ${primarySport} chuyên nghiệp | Đam mê truyền lửa thể thao phong trào #vietnam #${primarySport.toLowerCase()}`,
-      followers: 48000,
-      views: 56000,
-      likes: 2300,
-      comments: 78,
-      er: 4.95,
-    },
-    {
-      name: `Thu Hằng Runner & ${primarySport}`,
-      handle: `thuhang.${primarySport.toLowerCase().replace(/[^a-z0-9]/g, "")}_vn`,
-      bio: `Marathoner & ${primarySport} enthusiast. Chia sẻ chế độ dinh dưỡng, giáo án tập luyện và động lực mỗi ngày!`,
-      followers: 29500,
-      views: 38000,
-      likes: 1650,
-      comments: 54,
-      er: 5.76,
-    },
-    {
-      name: `Quốc Bảo Pro ${primarySport}`,
-      handle: `quocbao.${primarySport.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
-      bio: `Chuyên gia kỹ thuật ${primarySport} | Review trang thiết bị, vợt & giày thể thao chính hãng #review #thethao`,
-      followers: 67000,
-      views: 92000,
-      likes: 3800,
-      comments: 142,
-      er: 5.88,
-    },
-    {
-      name: `Minh Anh Sports Life`,
-      handle: `minhanh.sportslife`,
-      bio: `Lối sống năng động, đam mê ${primarySport} & chạy bộ đường dài | Đại sứ thương hiệu thể thao phong trào`,
-      followers: 18500,
-      views: 26000,
-      likes: 1100,
-      comments: 46,
-      er: 6.2,
-    },
-    {
-      name: `CLB ${primarySport} Phong Trào Toàn Quốc`,
-      handle: `${primarySport.toLowerCase().replace(/[^a-z0-9]/g, "")}_club_vietnam`,
-      bio: `Cộng đồng kết nối giao lưu ${primarySport} Hà Nội, Đà Nẵng & Sài Gòn. Lịch thi đấu, tìm partner giao hữu cuối tuần.`,
-      followers: 34000,
-      views: 45000,
-      likes: 1950,
-      comments: 85,
-      er: 5.98,
-    },
-    {
-      name: `Đức Huy ${primarySport} Academy`,
-      handle: `duchuy.${primarySport.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
-      bio: `Học viện đào tạo ${primarySport} trẻ em & người lớn. Hướng dẫn kỹ năng từ cơ bản đến nâng cao.`,
-      followers: 41000,
-      views: 61000,
-      likes: 2600,
-      comments: 92,
-      er: 6.56,
-    },
-  ];
-
-  const pool = creatorsPool.slice(0, Math.max(limit, 2));
-
-  return pool.map((t, idx) => {
-    let uniqueHandle = `${t.handle}_${timestamp}_${idx + 1}`;
-    if (existingHandles && existingHandles.has(uniqueHandle)) {
-      uniqueHandle = `${t.handle}_${Math.floor(Math.random() * 9000 + 1000)}_${idx + 1}`;
-    }
-
-    const baseDomain = platform.toLowerCase().includes("face")
-      ? "facebook.com"
-      : platform.toLowerCase().includes("tik")
-      ? "tiktok.com"
-      : "instagram.com";
-
-    return {
-      username: uniqueHandle,
-      name: t.name,
-      bio: t.bio,
-      url: `https://${baseDomain}/${uniqueHandle}`,
-      followers: t.followers + Math.floor(Math.random() * 5000) - 2000,
-      avgViews: t.views + Math.floor(Math.random() * 8000) - 3000,
-      likes: t.likes + Math.floor(Math.random() * 300) - 100,
-      comments: t.comments + Math.floor(Math.random() * 15) - 5,
-      er: t.er,
-      avatarUrl: "",
-      posts: [
-        {
-          caption: `Buổi tập luyện và giao lưu ${primarySport} tràn đầy năng lượng tuần này! #${primarySport.toLowerCase()} #thethao #vietnam`,
-          url: `https://${baseDomain}/p/${uniqueHandle}_post1`,
-          views: t.views,
-          likes: t.likes,
-          comments: t.comments,
-        },
-      ],
-    };
+  const expected = cleanTarget(session.params.targetType) === 'Communities & Clubs' ? 'Community' : 'Individual';
+  const { data: latestFeedback, error: feedbackError } = await db.from('scout_feedback').select('*').order('created_at', { ascending: false }); check(feedbackError);
+  const selected: DiscoveryCandidate[] = params.selected.map(s => {
+    const c: DiscoveryCandidate | undefined = session.candidates.find((c: DiscoveryCandidate) => c.candidateId === s.candidateId);
+    if (!c || c.reviewState === 'Excluded') throw new ScoutError('Candidate is not in this preview', 'INVALID_SELECTION', 400);
+    if (!platformMatches(c.platform, c.url) || urlKind(c.url) !== (expected === 'Community' && c.url.includes('/groups/') ? 'group' : 'profile') || c.accountKey !== `${c.platform}:${canonicalUrl(c.url)}`) throw new ScoutError('This preview contains an invalid profile URL. Search again before importing.', 'INVALID_PROFILE_URL', 409);
+    const feedback = (latestFeedback || []).filter(f => f.account_key === c.accountKey);
+    const typeCorrection = feedback.find(f => f.classification && ['Wrong Entity Type', 'Correct Classification'].includes(f.reason));
+    if (typeCorrection && typeCorrection.classification !== c.classification || feedback.some(f => f.context_key === contextKey(session.params.keyword, session.params.geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason))) throw new ScoutError('Team feedback invalidated this candidate. Search again before importing.', 'PREVIEW_STALE', 409);
+    if (c.reviewState === 'Needs Review' && (s.classification !== expected || s.relevant !== true || s.locationConfirmed !== true)) throw new ScoutError('Confirm entity type, relevance and location before importing Needs Review candidates', 'REVIEW_REQUIRED', 400);
+    if (c.reviewState === 'Matched' && c.classification !== expected) throw new ScoutError('Candidate has the wrong entity type', 'WRONG_TYPE', 400);
+    return c;
   });
+  const decisions = { ...(session.review_decisions || {}) };
+  for (const s of params.selected) decisions[s.candidateId] = { ...s, actorId: params.actorId, confirmedAt: new Date().toISOString() };
+  const { error: reviewError } = await db.from('scout_sessions').update({ review_decisions: decisions }).eq('id', params.sessionId).eq('owner_id', params.actorId); check(reviewError);
+  let insertedKols = 0, updatedKols = 0, insertedCommunities = 0, updatedCommunities = 0, insertedPosts = 0;
+  const table = expected === 'Community' ? 'communities' : 'kols';
+  for (const c of selected) {
+    const { data: records, error: readError } = await db.from(table).select('*'); check(readError);
+    const existing = records?.find(r => r.scout_identity === c.accountKey || r.id === c.existingId || canonicalUrl(r.profile_url || r.group_url || '') === c.url);
+    const metrics: Record<string, any> = {};
+    if (expected === 'Community') metrics.scout_missing_metrics = c.followers === null ? ['members'] : [];
+    if (c.followers !== null) metrics[expected === 'Community' ? 'members_count' : 'followers'] = c.followers;
+    if (expected === 'Individual') {
+      if (c.avgViews !== null) metrics.avg_views = c.avgViews;
+      if (c.er !== null) metrics.er = c.er;
+      metrics.scout_missing_metrics = ['followers', 'avgViews', 'er'].filter(k => (c as any)[k] === null);
+      metrics.last_scouted_at = new Date().toISOString();
+    }
+    let entityId = existing?.id;
+    if (existing) {
+      if (expected === 'Community' && c.followers === null) metrics.scout_missing_metrics = existing.scout_missing_metrics || [];
+      if (expected === 'Individual') metrics.scout_missing_metrics = (existing.scout_missing_metrics || []).filter((k: string) => (c as any)[k] === null);
+      const payload: any = { ...metrics, scout_identity: c.accountKey,scout_provenance:c.provenance };
+      for(const field of existing.user_locked_fields || []) { const mapped:Record<string,string>={avgViews:'avg_views',followers:'followers',er:'er'}; delete payload[mapped[field] || field]; }
+      if (expected === 'Individual') {
+        const changes: any = {}; const locked = new Set(existing.user_locked_fields || []);
+        if (c.bio && c.bio !== existing.bio && !locked.has('bio')) changes.bio = { current: existing.bio, scouted: c.bio };
+        if (Object.keys(changes).length) payload.pending_scout_diff = { scoutedAt: new Date().toISOString(), changes };
+      }
+      const { error: updateError } = await db.from(table).update(payload).eq('id', existing.id); check(updateError);
+      if (expected === 'Individual') updatedKols++; else updatedCommunities++;
+    } else {
+      const payload = expected === 'Community' ? { name: c.name, sports: detectSportNiche(`${c.name} ${c.bio}`), geography: c.verifiedGeography || 'Unknown', platform: c.url.includes('/groups/') ? 'Facebook Group' : c.platform, group_url: c.url, activity_level: 'Unknown', privacy: 'Unknown', purposes: [], price_per_pin: 0, status: 'New Scout (Unverified)' } : { name: c.name, sports: detectSportNiche(`${c.name} ${c.bio}`), geography: c.verifiedGeography || 'Unknown', platform: c.platform, profile_url: c.url, bio: c.bio, avatar_url: c.avatarUrl, tier: c.followers === null ? 'Unknown' : calculateTier(c.followers), quotation: 0, status: 'New Scout (Unverified)' };
+      const { data: inserted, error: insertError } = await db.from(table).insert({ ...payload, ...metrics, scout_identity: c.accountKey,scout_provenance:c.provenance }).select('id').single(); check(insertError); if (!inserted) throw new Error('Database did not return the imported profile'); entityId = inserted.id;
+      if (expected === 'Individual') insertedKols++; else insertedCommunities++;
+    }
+    if (expected === 'Individual' && c.followers !== null && c.avgViews !== null && c.er !== null) {
+      const { error: snapshotError } = await db.from('kol_metric_snapshots').upsert({ kol_id: entityId, scout_session_id: params.sessionId, followers: c.followers, avg_views: c.avgViews, er: c.er }, { onConflict: 'kol_id,scout_session_id', ignoreDuplicates: true }); check(snapshotError);
+    }
+    if (expected === 'Individual' && c.posts?.length) {
+      const saved = await savePosts(c.posts.filter(p => p.authorUrl === c.url).map(post => ({ post, platform: c.platform, kolId: entityId, sport: detectSportNiche(`${c.name} ${c.bio}`).join(', ') })));
+      insertedPosts += saved.length;
+    }
+  }
+  const summary = `Imported ${insertedKols + insertedCommunities} new profiles; refreshed ${updatedKols + updatedCommunities} existing profiles; saved ${insertedPosts} observed posts.`;
+  const { error: logError } = await db.from('scout_requests').insert({ keyword: session.params.keyword, target_type: session.params.targetType, platform: session.params.platform, geography: session.params.geography, target_limit: selected.length, status: 'Đã hoàn thành', results_summary: summary + (session.params.notes ? ` Notes: ${session.params.notes}` : ''), created_by: params.actorId }); check(logError);
+  const importedIds=[...new Set([...(session.progress?.importedCandidateIds || []),...params.selected.map(s=>s.candidateId)])];
+  const {error:countError}=await db.from('scout_sessions').update({progress:{...session.progress,importedCandidateIds:importedIds}}).eq('id',params.sessionId);check(countError);
+  return { success: true, insertedKols, updatedKols, insertedCommunities, updatedCommunities, insertedPosts, summary };
+  } finally {clearInterval(heartbeat);const {error}=await db.from('scout_sessions').update({import_lease_until:null,import_token:null}).eq('id',params.sessionId).eq('import_token',importToken);check(error);}
 }
-
-/**
- * Process a pending scout request directly against Supabase database
- */
+export async function savePosts(posts: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[], counts={inserted:0,refreshed:0,duplicate:0}) {
+  const db = createAdminClient(); const saved: any[] = [];
+  for (const { post: p, platform, kolId, communityId, sport, requestedScope } of posts) {
+    const identity = `${platform}:${p.url}`;
+    const { data: existing, error: readError } = await db.from('scouted_posts').select('id,post_url,scout_identity,scout_provenance,scout_missing_metrics'); check(readError);
+    const match=existing?.find(e => e.scout_identity===identity || canonicalUrl(e.post_url)===p.url);
+    if(match) {
+      if(p.provenance && (!match.scout_provenance?.fetchedAt || p.provenance.fetchedAt>match.scout_provenance.fetchedAt)) {
+        const update:any={scout_provenance:p.provenance,...(p.publishedAt ? {published_at:p.publishedAt} : {})};
+        for(const field of ['views','likes','comments']) if((p as any)[field]!=null) update[field]=(p as any)[field];
+        update.scout_missing_metrics=(match.scout_missing_metrics || []).filter((field:string)=>(p as any)[field]==null);
+        const {error}=await db.from('scouted_posts').update(update).eq('id',match.id);check(error); counts.refreshed++;
+      } else counts.duplicate++;
+      continue;
+    }
+    const { data, error } = await db.from('scouted_posts').upsert({ scout_identity: identity,requested_scope:requestedScope || null,scout_provenance:p.provenance,published_at:p.publishedAt || null, kol_id: kolId || null,community_id:communityId || null, title: p.caption, author: p.author, platform: `${platform} ${p.contentType}`, post_url: p.url, thumbnail_url: p.thumbnailUrl, sport,
+      views: p.views ?? 0, likes: p.likes ?? 0, comments: p.comments ?? 0, er: 0, scout_missing_metrics: ['views', 'likes', 'comments'].filter(k => (p as any)[k] === null).concat('er'),
+      viral_tier: p.views === null ? 'Unknown' : p.views >= 100000 ? 'Super Viral (> 100k views)' : p.views >= 20000 ? 'High Engagement (10k - 100k views)' : 'Standard', hashtags: p.hashtags.map(t => `#${t.replace(/^#/, '')}`).join(' '), notes: 'Verified social scout' }, { onConflict: 'scout_identity', ignoreDuplicates: true }).select().maybeSingle(); check(error);
+    if (data) { saved.push(data); counts.inserted++; } else counts.duplicate++;
+  }
+  return saved;
+}
+export async function scoutMarketTrends(params: { keyword: string; searchMode?: 'hashtag' | 'keyword'; sport?: string | string[]; platform?: string | string[]; limit?: number; geography?: string | string[]; sessionId: string; }) {
+  const platforms = Array.isArray(params.platform) ? params.platform : [params.platform || 'Instagram']; const limit = params.limit || 10;
+  const geography = Array.isArray(params.geography) ? params.geography.join(', ') : params.geography || 'Nationwide';
+  const mode = params.searchMode || (params.keyword.startsWith('#') ? 'hashtag' : 'keyword');
+  if (mode === 'hashtag' && !/^#?[\p{L}\p{N}_]+$/u.test(params.keyword)) throw new ScoutError('Enter one hashtag without spaces', 'INVALID_HASHTAG', 400);
+  const collected: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[] = [];
+  const db = createAdminClient(); const { data: kols, error } = await db.from('kols').select('id,profile_url'); check(error);
+  const groups:typeof collected[]=[]; const windows:any[]=[]; const warnings:string[]=[]; const failures:{message:string;code:string;httpStatus:number}[]=[]; let excluded=0,unverified=0;
+  for (const allocation of quotas(platforms,limit)) {
+    if(!allocation.limit) continue; const platform=allocation.platform;
+    const window=await retrievalWindow(platform,mode,JSON.stringify({keyword:params.keyword,geography,sport:params.sport}),params.sessionId); windows.push(window);
+    let raw:any[];
+    try {raw=await scrape(params.sessionId,platform,mode,params.keyword,allocation.limit,geography,{newerThan:window.newerThan});}
+    catch(e:any) {if(e instanceof PendingScout) throw e;warnings.push(`${platform}: ${e.message}`);failures.push({message:e.message,code:e.code || 'PROVIDER_ERROR',httpStatus:e.status || 502});groups.push([]);continue;}
+    const group:typeof collected=[];
+    for(const r of raw) {
+      const post=parsePost(r,platform);if(!post) continue;
+      if(mode==='hashtag' && !hashtagMatch(post.hashtags,params.keyword) || mode==='keyword' && !tokens(params.keyword).every(t=>tokens(post.caption).includes(t))) {excluded++;continue;}
+      const geo=assessProfile({name:'',bio:'',url:post.authorUrl,location:post.location},'running',geography,'Individual KOLs');
+      if(!geo.locationMatch) {unverified++;continue;}
+      if(!post.publishedAt) {unverified++;continue;}
+      if(post.publishedAt<window.newerThan) {excluded++;continue;}
+      group.push({post,platform,requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ') || 'Unknown'});
+    }
+    groups.push(group);
+  }
+  const unused=Math.max(0,limit-groups.reduce((sum,g)=>sum+g.length,0));
+  const allocations=quotas(platforms,limit);
+  const expandable=allocations.filter((a,i)=>a.limit>0 && groups[i]?.length>=a.limit && providerPlans(a.platform,mode,params.keyword,a.limit,geography).every(plan=>ACTOR_CONTRACTS[plan.actor]?.canExpand));
+  for(const extra of quotas(expandable.map(a=>a.platform),unused)) {
+    if(!extra.limit) continue;const index=allocations.findIndex(a=>a.platform===extra.platform);const window=windows[index];if(!window)continue;
+    try {
+      const rows=await scrape(params.sessionId,extra.platform,mode,params.keyword,allocations[index].limit+extra.limit,geography,{newerThan:window.newerThan});
+      const known=new Set(groups[index].map(p=>p.post.url));
+      for(const row of rows) {
+        const post=parsePost(row,extra.platform);if(!post || known.has(post.url))continue;
+        if(mode==='hashtag' && !hashtagMatch(post.hashtags,params.keyword) || mode==='keyword' && !tokens(params.keyword).every(t=>tokens(post.caption).includes(t)))continue;
+        if(!assessProfile({name:'',bio:'',url:post.authorUrl,location:post.location},'running',geography,'Individual KOLs').locationMatch || !post.publishedAt || post.publishedAt<window.newerThan)continue;
+        known.add(post.url);groups[index].push({post,platform:extra.platform,requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ')});
+      }
+    }catch(e:any){if(e instanceof PendingScout)throw e;warnings.push(`${extra.platform}: ${e.message}`);}
+  }
+  const unique=new Set<string>();const merged=roundRobin(groups,groups.reduce((n,g)=>n+g.length,0)).filter(p=>{if(unique.has(p.post.url))return false;unique.add(p.post.url);return true;}).slice(0,limit);
+  const counts={inserted:0,refreshed:0,duplicate:0}; const posts=await savePosts(merged,counts);
+  const {data:providerRuns,error:runError}=await db.from('scout_provider_runs').select('warnings').eq('session_id',params.sessionId);check(runError);
+  const providerPartial=(providerRuns || []).some(r=>r.warnings?.length) || merged.some(p=>p.post.provenance?.warnings?.length);
+  for(let i=0;i<windows.length;i++) await advanceWatermark(windows[i].scopeKey,(groups[i] || []).map(p=>p.post),!providerPartial && !warnings.length && !unverified && merged.length<limit && (groups[i] || []).every(p=>!!p.post.publishedAt));
+  const allFailed=failures.length===allocations.filter(a=>a.limit>0).length && failures.length>0;
+  return { success: !allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),keyword: params.keyword, partial:!allFailed && (providerPartial || warnings.length>0),warnings,counts:{...counts,excluded,unverified,failed:failures.length},totalScouted: posts.length, matchedKolsCount: posts.filter(p => p.kol_id).length, posts, message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; unverified ${unverified}; failed ${warnings.length}.` };
+}
+async function scoutEntityPosts(id: string, kind: 'kol' | 'community', limit: number, platforms: string | string[], sessionId: string) {
+  const db = createAdminClient(); const { data: entity, error } = await db.from(kind === 'kol' ? 'kols' : 'communities').select('*').eq('id', id).single(); check(error);
+  const requested = Array.isArray(platforms) ? platforms : [platforms];
+  const allocations=quotas(requested,limit).filter(a=>a.limit>0);
+  const groups:{post:SocialPost;platform:string;kolId?:string;communityId?:string;sport:string}[][]=[];
+  const windows:{platform:string;url:string;newerThan:string;scopeKey:string;complete:boolean;posts:SocialPost[]}[]=[]; const warnings:string[]=[]; const failures:{message:string;code:string;httpStatus:number}[]=[]; let excluded=0;
+  for (const allocation of allocations) {
+    if(!allocation.limit) continue; const platform=allocation.platform;
+    const url=channelUrl(entity,platform);
+    if(!url) {const message=`A verified ${platform} profile URL is required.`;warnings.push(message);failures.push({message,code:'INVALID_PROFILE_URL',httpStatus:400});groups.push([]);continue;}
+    const window=await retrievalWindow(platform,'profile-posts',url,sessionId);
+    try {
+      const rows=await scrape(sessionId,platform,'profile-posts',url,allocation.limit,'',{newerThan:window.newerThan});
+      const parsed=rows.map(row=>parsePost(row,platform)).filter(Boolean) as SocialPost[];
+      const eligible=parsed.filter(post=>{
+        const accepted=(kind==='community' || post.authorUrl===url) && !!post.publishedAt && post.publishedAt>=window.newerThan;
+        if(!accepted) excluded++; return accepted;
+      });
+      groups.push(eligible.map(post=>({post,platform,kolId:kind==='kol' ? id : undefined,communityId:kind==='community' ? id : undefined,sport:entity.sports?.join(', ') || 'Unknown'})));
+      windows.push({platform,url,newerThan:window.newerThan,scopeKey:window.scopeKey,posts:eligible,complete:rows.length<allocation.limit && parsed.every(post=>!!post.publishedAt)});
+    } catch(e:any) {if(e instanceof PendingScout) throw e; warnings.push(`${platform}: ${e.message}`);failures.push({message:e.message,code:e.code || 'PROVIDER_ERROR',httpStatus:e.status || 502});groups.push([]);}
+  }
+  const unused=Math.max(0,limit-groups.reduce((n,g)=>n+g.length,0));
+  const expandable=allocations.filter((a,i)=>groups[i]?.length>=a.limit && windows.some(w=>w.platform===a.platform) && providerPlans(a.platform,'profile-posts',windows.find(w=>w.platform===a.platform)!.url,a.limit).every(p=>ACTOR_CONTRACTS[p.actor]?.canExpand));
+  for(const extra of quotas(expandable.map(a=>a.platform),unused)) {
+    if(!extra.limit)continue;const index=allocations.findIndex(a=>a.platform===extra.platform);const window=windows.find(w=>w.platform===extra.platform)!;
+    try {
+      const cap=allocations[index].limit+extra.limit;
+      const rows=await scrape(sessionId,extra.platform,'profile-posts',window.url,cap,'',{newerThan:window.newerThan});
+      const known=new Set(groups[index].map(p=>p.post.url));
+      for(const row of rows){const post=parsePost(row,extra.platform);if(!post || known.has(post.url) || !post.publishedAt || post.publishedAt<window.newerThan || kind==='kol' && post.authorUrl!==window.url)continue;known.add(post.url);groups[index].push({post,platform:extra.platform,kolId:kind==='kol' ? id : undefined,communityId:kind==='community' ? id : undefined,sport:entity.sports?.join(', ') || 'Unknown'});window.posts.push(post);}
+      window.complete=rows.length<cap && rows.every(row=>!!parsePost(row,extra.platform)?.publishedAt);
+    }catch(e:any){if(e instanceof PendingScout)throw e;warnings.push(`${extra.platform}: ${e.message}`);window.complete=false;}
+  }
+  const seen=new Set<string>(); const merged=roundRobin(groups,groups.reduce((n,g)=>n+g.length,0)).filter(p=>{if(seen.has(p.post.url))return false;seen.add(p.post.url);return true;}).slice(0,limit);
+  const counts={inserted:0,refreshed:0,duplicate:0};const saved=await savePosts(merged,counts);
+  const {data:runs,error:runError}=await db.from('scout_provider_runs').select('warnings').eq('session_id',sessionId);check(runError);
+  const partial=warnings.length>0 || (runs || []).some(r=>r.warnings?.length) || merged.some(p=>p.post.provenance?.warnings?.length);
+  for(const window of windows) await advanceWatermark(window.scopeKey,window.posts,window.complete && !partial);
+  const allFailed=failures.length===allocations.length && allocations.length>0;
+  return {success:!allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),partial:!allFailed && partial,warnings,counts:{...counts,excluded,failed:failures.length},kolName:entity.name,communityName:entity.name,insertedCount:saved.length,posts:saved,message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; failed ${warnings.length}.`};
+}
+export async function scoutSingleKolPosts(id: string, limit = 10, platform: string | string[] = 'Instagram', sessionId = '') { return scoutEntityPosts(id, 'kol', limit, platform, sessionId); }
+export async function scoutSingleCommunityPosts(id: string, limit = 10, platform: string | string[] = 'Facebook', sessionId = '') { return scoutEntityPosts(id, 'community', limit, platform, sessionId); }
+// Queued discovery uses the same durable preview pipeline; imports still require review.
 export async function processScoutRequest(requestId: string) {
-  const supabase = createAdminClient();
-
-  // 1. Fetch request details
-  const { data: request, error: fetchErr } = await supabase
-    .from("scout_requests")
-    .select("*")
-    .eq("id", requestId)
-    .single();
-
-  if (fetchErr || !request) {
-    throw new Error(`Scout request not found: ${requestId}`);
+  const db = createAdminClient();
+  const { data: request, error } = await db.from('scout_requests').select('*').eq('id', requestId).single(); check(error);
+  const owner = request.created_by;
+  if (!owner) {
+    const { error: updateError } = await db.from('scout_requests').update({ status: 'Needs Review', results_summary: 'This legacy request has no owner. Open Discover New Profiles to start an authenticated preview.' }).eq('id', requestId); check(updateError);
+    return { summary: 'Discovery requires an authenticated owner and human confirmation.' };
   }
-
-  // 2. Mark status as Processing
-  await supabase
-    .from("scout_requests")
-    .update({
-      status: "Đang quét dữ liệu",
-      results_summary: "Đang kết nối bot Apify trên Cloud...",
-    })
-    .eq("id", requestId);
-
-  try {
-    const query = request.keyword;
-    const limit = request.target_limit || 5;
-    const platform = request.platform || "Instagram";
-    const targetType = request.target_type || "KOLs cá nhân";
-    const geo = request.geography || "Toàn quốc";
-
-    // 1. Pre-fetch existing handles and identifiers from Supabase to optimize crawling & save Apify resources
-    const existingHandles = new Set<string>();
-
-    if (targetType === "Cộng đồng / Group" || targetType === "Communities & Clubs") {
-      const { data: comms } = await supabase.from("communities").select("name, group_url");
-      for (const c of comms || []) {
-        if (c.name) existingHandles.add(c.name.trim().toLowerCase());
-        if (c.group_url) {
-          const u = c.group_url.replace(/\/$/, "").split("/").pop()?.toLowerCase();
-          if (u) existingHandles.add(u);
-        }
-      }
-    } else {
-      const { data: kols } = await supabase.from("kols").select("name, profile_url, contact_info");
-      for (const k of kols || []) {
-        if (k.name) existingHandles.add(k.name.trim().toLowerCase());
-        if (k.profile_url) {
-          const u = k.profile_url.replace(/\/$/, "").split("/").pop()?.replace(/^@/, "").toLowerCase();
-          if (u) existingHandles.add(u);
-        }
-        if (k.contact_info) {
-          const match = k.contact_info.match(/@([a-zA-Z0-9._]+)/);
-          if (match) existingHandles.add(match[1].toLowerCase());
-        }
-      }
-    }
-
-    // 2. Smart Query Diversification: if keyword has already accumulated existing matches, expand search sub-niche
-    let effectiveQuery = query;
-    let modifierApplied: string | undefined;
-
-    const existingMatchCount = Array.from(existingHandles).filter((h) =>
-      h.includes(query.toLowerCase())
-    ).length;
-
-    if (existingMatchCount >= 2) {
-      const div = getSmartDiversifiedQuery(query, existingMatchCount, platform);
-      effectiveQuery = div.effectiveQuery;
-      modifierApplied = div.modifierApplied;
-    }
-
-    // 3. Run Apify scrape with pre-filtering to save compute resources
-    const scrapedItems = await runApifyScout(effectiveQuery, limit, platform, existingHandles);
-
-    let insertedKols = 0;
-    let updatedKols = 0;
-    let insertedCommunities = 0;
-    let updatedCommunities = 0;
-    let insertedPosts = 0;
-
-    // 4. Save directly to Supabase according to Target Type
-    if (targetType === "Cộng đồng / Group" || targetType === "Communities & Clubs") {
-      // Fetch existing communities to prevent duplicates
-      const { data: allExistingComms } = await supabase
-        .from("communities")
-        .select("id, name, group_url, members_count, activity_level");
-
-      const existingComms = allExistingComms || [];
-
-      for (const it of scrapedItems) {
-        const cleanName = (it.name || "").trim();
-        const cleanUrl = (it.url || "").trim().toLowerCase().replace(/\/$/, "");
-
-        // Match existing community by URL or clean name
-        const matchedComm = existingComms.find((c) => {
-          if (cleanUrl && c.group_url) {
-            const cUrl = c.group_url.trim().toLowerCase().replace(/\/$/, "");
-            if (cUrl === cleanUrl) return true;
-          }
-          if (c.name && cleanName) {
-            if (c.name.trim().toLowerCase() === cleanName.toLowerCase()) return true;
-          }
-          return false;
-        });
-
-        if (matchedComm) {
-          // Existing community: update metrics and timestamp, DO NOT insert duplicate
-          const newMemberCount = Math.max(matchedComm.members_count || 0, it.followers || 5000);
-          await supabase
-            .from("communities")
-            .update({
-              members_count: newMemberCount,
-              activity_level: "Rất sôi động (> 20 bài/ngày)",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", matchedComm.id);
-          updatedCommunities++;
-        } else {
-          // New community: insert
-          const { data: newComm, error } = await supabase
-            .from("communities")
-            .insert({
-              name: cleanName,
-              sports: detectSportNiche(`${query} ${it.name} ${it.bio}`),
-              geography: geo,
-              members_count: it.followers || 5000,
-              platform: platform.includes("Face") ? "Facebook Group" : "Instagram Club",
-              group_url: it.url,
-              activity_level: "Rất sôi động (> 20 bài/ngày)",
-              privacy: "Công khai (Public)",
-              purposes: ["Giao lưu tìm kèo", "Chia sẻ kỹ thuật"],
-              admin_contact: `Direct @${it.username}`,
-              price_per_pin: 2000000,
-              status: "Đang hợp tác tích cực",
-            })
-            .select("id, name, group_url")
-            .single();
-
-          if (!error && newComm) {
-            insertedCommunities++;
-            existingComms.push(newComm as any);
-          }
-        }
-      }
-    } else if (
-      targetType === "Bài viết & Reels" ||
-      targetType === "Viral Posts & Reels" ||
-      targetType === "Bài viết"
-    ) {
-      // Insert directly to scouted_posts table (avoid duplicate post_url)
-      for (const it of scrapedItems) {
-        const viral =
-          it.avgViews > 100000
-            ? "Siêu Viral (> 100k views)"
-            : it.avgViews > 10000
-            ? "Tương tác cao (10k - 100k views)"
-            : "Tiêu chuẩn";
-
-        const { data: existingPost } = await supabase
-          .from("scouted_posts")
-          .select("id")
-          .eq("post_url", it.url)
-          .maybeSingle();
-
-        if (!existingPost) {
-          const { error } = await supabase.from("scouted_posts").insert({
-            title: it.bio.slice(0, 150) || `Bài viết từ @${it.username}`,
-            author: `${it.name} (@${it.username})`,
-            platform: it.avgViews > 30000 ? `${platform} Reels` : `${platform} Post`,
-            post_url: it.url,
-            sport: detectSportNiche(`${query} ${it.name} ${it.bio}`)[0] || "Thể thao",
-            likes: it.likes,
-            comments: it.comments,
-            views: it.avgViews,
-            er: it.er,
-            viral_tier: viral,
-            hashtags: it.bio
-              .split(/\s+/)
-              .filter((w) => w.startsWith("#"))
-              .slice(0, 5)
-              .join(" "),
-            notes: `Scout tự động theo từ khóa ${query} qua Apify`,
-          });
-          if (!error) insertedPosts++;
-        }
-      }
-    } else {
-      // Default: Individual KOLs / KOLs cá nhân
-      const { data: allExistingKols } = await supabase
-        .from("kols")
-        .select("id, name, sports, tier, followers, avg_views, er, quotation, status, contact_info, bio, profile_url, avatar_url, user_locked_fields, pending_scout_diff");
-
-      const existingKols = allExistingKols || [];
-
-      for (const it of scrapedItems) {
-        const sports = detectSportNiche(`${query} ${it.name} ${it.bio}`);
-        const tier = calculateTier(it.followers);
-        const cleanName = (it.name || "").trim().toLowerCase();
-        const cleanUsername = (it.username || "").trim().toLowerCase().replace(/^@/, "");
-        const cleanUrl = (it.url || "").trim().toLowerCase().replace(/\/$/, "");
-
-        // Match existing KOL by name, profile URL, or handle in contact_info / profile_url
-        const existing = existingKols.find((k) => {
-          if (k.name && k.name.trim().toLowerCase() === cleanName) return true;
-
-          if (cleanUrl && k.profile_url) {
-            const kUrl = k.profile_url.trim().toLowerCase().replace(/\/$/, "");
-            if (kUrl === cleanUrl) return true;
-          }
-
-          if (cleanUsername.length > 2) {
-            if (k.profile_url && k.profile_url.toLowerCase().includes(cleanUsername)) return true;
-            if (k.contact_info && k.contact_info.toLowerCase().includes(cleanUsername)) return true;
-          }
-
-          return false;
-        });
-
-        let kolId = existing?.id;
-
-        if (!existing || !kolId) {
-          // New KOL: Insert all details
-          const { data: newKol, error } = await supabase
-            .from("kols")
-            .insert({
-              name: it.name,
-              sports,
-              tier,
-              platform,
-              geography: geo,
-              followers: it.followers,
-              avg_views: it.avgViews,
-              er: it.er,
-              quotation: it.followers > 100000 ? 15000000 : 5000000,
-              status: "Mới scout (Tiềm năng)",
-              contact_info: `Direct @${it.username}`,
-              bio: it.bio,
-              profile_url: it.url,
-              avatar_url: it.avatarUrl || "",
-              user_locked_fields: [],
-              last_scouted_at: new Date().toISOString(),
-            })
-            .select("id, name, sports, tier, followers, avg_views, er, quotation, status, contact_info, bio, profile_url, avatar_url, user_locked_fields, pending_scout_diff")
-            .single();
-
-          if (!error && newKol) {
-            kolId = newKol.id;
-            insertedKols++;
-            existingKols.push(newKol as any);
-
-            // Record initial metric snapshot for new KOL
-            await supabase.from("kol_metric_snapshots").insert({
-              kol_id: kolId,
-              followers: it.followers,
-              avg_views: it.avgViews,
-              er: it.er,
-              recorded_at: new Date().toISOString(),
-            });
-          }
-        } else {
-          // Existing KOL: DO NOT create duplicate row!
-          updatedKols++;
-
-          // 1. Always record point-in-time metric snapshot for growth tracking
-          await supabase.from("kol_metric_snapshots").insert({
-            kol_id: kolId,
-            followers: it.followers,
-            avg_views: it.avgViews,
-            er: it.er,
-            recorded_at: new Date().toISOString(),
-          });
-
-          // 2. Prepare dynamic metrics update (always auto-updated)
-          const dynamicUpdate: Record<string, any> = {
-            followers: it.followers,
-            avg_views: it.avgViews,
-            er: it.er,
-            tier,
-            last_scouted_at: new Date().toISOString(),
-          };
-
-          // 3. Inspect user_locked_fields to protect user-authored data
-          const locked = new Set(existing.user_locked_fields || []);
-          const diffChanges: Record<string, { current: any; scouted: any }> = {};
-
-          // Check bio differences
-          if (!locked.has("bio") && it.bio && it.bio.trim() !== (existing.bio || "").trim()) {
-            diffChanges.bio = { current: existing.bio || "", scouted: it.bio };
-          }
-          // Check avatar differences
-          if (!locked.has("avatar_url") && it.avatarUrl && it.avatarUrl !== existing.avatar_url) {
-            diffChanges.avatar_url = { current: existing.avatar_url || "", scouted: it.avatarUrl };
-          }
-          // Check sports differences
-          if (!locked.has("sports")) {
-            const curSports = (existing.sports || []).slice().sort().join(",");
-            const scSports = sports.slice().sort().join(",");
-            if (scSports !== curSports) {
-              diffChanges.sports = { current: existing.sports || [], scouted: sports };
-            }
-          }
-
-          // If there are diffs in unlocked profile metadata, stage them in pending_scout_diff for user approval
-          if (Object.keys(diffChanges).length > 0) {
-            dynamicUpdate.pending_scout_diff = {
-              scoutedAt: new Date().toISOString(),
-              changes: diffChanges,
-            };
-          }
-
-          await supabase.from("kols").update(dynamicUpdate).eq("id", kolId);
-        }
-
-        // Insert recent viral post linked to this KOL (avoid duplicate post_url)
-        if (kolId && it.posts && it.posts.length > 0) {
-          for (const post of it.posts) {
-            const { data: existingPost } = await supabase
-              .from("scouted_posts")
-              .select("id")
-              .eq("post_url", post.url)
-              .maybeSingle();
-
-            if (!existingPost) {
-              await supabase.from("scouted_posts").insert({
-                kol_id: kolId,
-                title: post.caption,
-                author: `${it.name} (@${it.username})`,
-                platform: `${platform} Reels`,
-                post_url: post.url,
-                sport: sports[0] || "Thể thao",
-                likes: post.likes,
-                comments: post.comments,
-                views: post.views,
-                er: it.er,
-                viral_tier:
-                  post.views > 100000
-                    ? "Siêu Viral (> 100k views)"
-                    : "Tương tác cao (10k - 100k views)",
-                hashtags: `#${sports[0]?.toLowerCase() || "thethao"} #sport`,
-                notes: `Scout tự động từ Apify (${query})`,
-              });
-              insertedPosts++;
-            }
-          }
-        }
-      }
-    }
-
-    // 5. Update request status to Completed with detailed breakdown
-    const detailsList: string[] = [];
-    if (insertedKols > 0) detailsList.push(`${insertedKols} new KOLs added`);
-    if (updatedKols > 0) detailsList.push(`${updatedKols} existing KOLs refreshed (lightweight sync)`);
-    if (insertedCommunities > 0) detailsList.push(`${insertedCommunities} new communities added`);
-    if (updatedCommunities > 0) detailsList.push(`${updatedCommunities} existing communities updated`);
-    if (insertedPosts > 0) detailsList.push(`${insertedPosts} viral posts saved`);
-    if (modifierApplied) detailsList.push(`expanded sub-niche: "${modifierApplied}"`);
-
-    const summary =
-      detailsList.length > 0
-        ? `Discovery Scout completed: ${detailsList.join(", ")}.`
-        : "Discovery Scout completed! Data verified with Supabase.";
-
-    await supabase
-      .from("scout_requests")
-      .update({
-        status: "Đã hoàn thành",
-        results_summary: summary,
-      })
-      .eq("id", requestId);
-
-    console.log(`[Apify Scout] Request ${requestId} completed: ${summary}`);
-    return {
-      success: true,
-      insertedKols,
-      updatedKols,
-      insertedCommunities,
-      updatedCommunities,
-      insertedPosts,
-      summary,
-    };
-  } catch (err: any) {
-    console.error(`[Apify Scout] Request ${requestId} failed:`, err);
-    await supabase
-      .from("scout_requests")
-      .update({
-        status: "Lỗi",
-        results_summary: `Lỗi xử lý: ${err.message || String(err)}`,
-      })
-      .eq("id", requestId);
-    throw err;
+  const { data: profile, error: profileError } = await db.from('profiles').select('role').eq('id', owner).single(); check(profileError);
+  if (!profile || !['admin', 'editor'].includes(profile.role)) throw new ScoutError('Editor access required for queued discovery', 'FORBIDDEN', 403);
+  const kind = /Viral|Posts|Reels/i.test(request.target_type) ? 'trends' : 'preview';
+  let sessionId = request.scout_session_id;
+  if (!sessionId) {
+    const { data: session, error: sessionError } = await db.from('scout_sessions').insert({ owner_id: owner, kind,runtime_version:2, params: { keyword: request.keyword, targetType: cleanTarget(request.target_type), platform: request.platform, geography: request.geography, limit: Math.min(request.target_limit || 5, 50) } }).select('id').single(); check(sessionError); if (!session) throw new Error('Failed to create scout session'); sessionId = session.id;
+    const { error: linkError } = await db.from('scout_requests').update({ scout_session_id: sessionId }).eq('id', requestId); check(linkError);
   }
+  const {enqueue,QUEUE_NAMES}=await import('@/lib/queue');
+  await enqueue(QUEUE_NAMES.socialScout,'session',{sessionId},{jobId:sessionId,attempts:180,backoff:{type:'scout',delay:5000},removeOnComplete:true,removeOnFail:true});
+  const { resumeSession } = await import('./sessions');
+  const response = await resumeSession(sessionId, owner); const result = await response.json();
+  const summary = result.pending ? 'Scout is running. Resume the saved preview when ready.' : kind === 'trends' ? `Saved ${result.totalScouted} trending posts.` : `Preview ready: ${result.totalFound} candidates. Human confirmation is required before import.`;
+  const { error: updateError } = await db.from('scout_requests').update({ status: result.pending ? 'Đang quét dữ liệu' : result.success ? kind === 'trends' ? 'Đã hoàn thành' : 'Needs Review' : 'Failed', results_summary: result.success ? summary : result.error }).eq('id', requestId); check(updateError);
+  return { summary, sessionId, ...result };
 }
-
-/**
- * 1. Deep Post Scout for a Single KOL:
- * Scrapes posts/reels for a specific KOL, attaches them to kol_id in scouted_posts,
- * recalculates average metrics, records metric snapshot, and surfaces any super-viral posts.
- */
-export async function scoutSingleKolPosts(
-  kolId: string,
-  limit = 10,
-  platform: string | string[] = "Instagram"
-) {
-  const supabase = createAdminClient();
-  const platforms = Array.isArray(platform)
-    ? platform.filter(Boolean)
-    : [platform || "Instagram"];
-
-  // 1. Fetch target KOL
-  const { data: kol, error: kolErr } = await supabase
-    .from("kols")
-    .select("*")
-    .eq("id", kolId)
-    .single();
-
-  if (kolErr || !kol) throw new Error("KOL profile not found");
-
-  // Extract username or search query
-  let query = kol.name;
-  if (kol.profile_url && kol.profile_url.includes("/")) {
-    const parts = kol.profile_url.replace(/\/$/, "").split("/");
-    const handle = parts[parts.length - 1]?.replace("@", "");
-    if (handle && handle.length > 2 && !handle.includes("http")) {
-      query = handle;
-    }
-  } else if (kol.contact_info && kol.contact_info.includes("@")) {
-    const handleMatch = kol.contact_info.match(/@([a-zA-Z0-9._]+)/);
-    if (handleMatch) query = handleMatch[1];
-  }
-
-  // 2. Fetch posts via Apify across chosen platform(s)
-  const perPlatformLimit = Math.max(
-    2,
-    Math.ceil(Math.min(limit, 30) / (platforms.length || 1))
-  );
-
-  const postsToInsert: any[] = [];
-  let totalLikes = 0;
-  let totalComments = 0;
-  let totalViews = 0;
-
-  for (const plat of platforms) {
-    const scraped = await runApifyScout(query, perPlatformLimit, plat);
-
-    for (const item of scraped) {
-      if (item.posts && item.posts.length > 0) {
-        for (const p of item.posts) {
-          const viral =
-            p.views > 100000
-              ? "Siêu Viral (> 100k views)"
-              : p.views > 20000
-              ? "Tương tác cao (10k - 100k views)"
-              : "Tiêu chuẩn";
-
-          postsToInsert.push({
-            kol_id: kol.id,
-            title: p.caption || `Post by ${kol.name}`,
-            author: `${kol.name} (@${item.username})`,
-            platform: p.views > 15000 ? `${plat} Reels` : `${plat} Post`,
-            post_url: p.url,
-            thumbnail_url: item.avatarUrl || "",
-            sport: (kol.sports && kol.sports[0]) || "Pickleball",
-            likes: p.likes || 0,
-            comments: p.comments || 0,
-            views: p.views || 0,
-            er: item.er || 3.5,
-            viral_tier: viral,
-            hashtags: `#${(kol.sports?.[0] || "sport").toLowerCase()} #${kol.name.toLowerCase().replace(/\s+/g, "")}`,
-            notes: `Single KOL Post Scout via Apify (${plat})`,
-          });
-
-          totalLikes += p.likes || 0;
-          totalComments += p.comments || 0;
-          totalViews += p.views || 0;
-        }
-      } else {
-        const viral =
-          item.avgViews > 100000
-            ? "Siêu Viral (> 100k views)"
-            : item.avgViews > 20000
-            ? "Tương tác cao (10k - 100k views)"
-            : "Tiêu chuẩn";
-
-        postsToInsert.push({
-          kol_id: kol.id,
-          title: item.bio ? item.bio.slice(0, 180) : `Check-in thi đấu & tập luyện cùng ${kol.name}`,
-          author: `${kol.name} (@${item.username})`,
-          platform: `${plat} Reels`,
-          post_url: item.url,
-          thumbnail_url: item.avatarUrl || "",
-          sport: (kol.sports && kol.sports[0]) || "Pickleball",
-          likes: item.likes || 1200,
-          comments: item.comments || 45,
-          views: item.avgViews || 25000,
-          er: item.er || 4.2,
-          viral_tier: viral,
-          hashtags: `#${(kol.sports?.[0] || "sport").toLowerCase()} #thethao #vietnam`,
-          notes: `KOL Deep Post Scout (${plat})`,
-        });
-
-        totalLikes += item.likes || 0;
-        totalComments += item.comments || 0;
-        totalViews += item.avgViews || 0;
-      }
-    }
-  }
-
-  // 3. Batch insert posts into scouted_posts
-  let inserted = 0;
-  if (postsToInsert.length > 0) {
-    const { error: insErr } = await supabase.from("scouted_posts").insert(postsToInsert);
-    if (!insErr) inserted = postsToInsert.length;
-  }
-
-  // 4. Update KOL with new metrics & snapshot
-  const postCount = postsToInsert.length || 1;
-  const newAvgViews = Math.round(totalViews / postCount) || kol.avg_views;
-  const newEr = Number(((totalLikes + totalComments) / (kol.followers || 10000) * 100).toFixed(2)) || kol.er;
-
-  await supabase
-    .from("kols")
-    .update({
-      avg_views: newAvgViews,
-      er: newEr > 0 ? newEr : kol.er,
-      last_scouted_at: new Date().toISOString(),
-    })
-    .eq("id", kol.id);
-
-  // Record point-in-time snapshot
-  await supabase.from("kol_metric_snapshots").insert({
-    kol_id: kol.id,
-    followers: kol.followers,
-    avg_views: newAvgViews,
-    er: newEr > 0 ? newEr : kol.er,
-    recorded_at: new Date().toISOString(),
-  });
-
-  return {
-    success: true,
-    kolName: kol.name,
-    insertedCount: inserted,
-    posts: postsToInsert,
-  };
-}
-
-/**
- * 2. Market Trend & Hashtag Scout:
- * Scrapes viral posts matching market keywords/hashtags (e.g. #pickleballvietnam, marathon saigon).
- * Cross-pollination: Automatically checks if each post author matches an existing KOL in Supabase.
- * If matched: links kol_id = existingKol.id so it enriches that KOL's dossier as well!
- */
-export async function scoutMarketTrends(params: {
-  keyword: string;
-  sport?: string | string[];
-  platform?: string | string[];
-  limit?: number;
-  geography?: string | string[];
-}) {
-  const supabase = createAdminClient();
-  const keyword = params.keyword.trim();
-  const platforms = Array.isArray(params.platform)
-    ? params.platform.filter(Boolean)
-    : [params.platform || "Instagram"];
-  const sports = Array.isArray(params.sport)
-    ? params.sport.filter(Boolean)
-    : [params.sport || detectSportNiche(keyword)[0] || "Thể thao"];
-  const sportNiche = sports.length > 0 ? sports.join(", ") : "Thể thao";
-  const geos = Array.isArray(params.geography)
-    ? params.geography.filter(Boolean)
-    : [params.geography || "Toàn quốc"];
-  const geoText = geos.length > 0 ? geos.join(", ") : "Toàn quốc";
-  const limit = params.limit || 10;
-
-  // 1. Fetch all existing KOLs for author cross-matching
-  const { data: existingKols } = await supabase
-    .from("kols")
-    .select("id, name, profile_url, contact_info");
-
-  const kolList = existingKols || [];
-
-  // Helper function to find matching KOL
-  function findMatchingKol(authorName: string, authorUsername: string, postUrl: string): string | null {
-    const cleanAuthor = authorName.toLowerCase().trim();
-    const cleanUser = authorUsername.toLowerCase().trim();
-
-    for (const k of kolList) {
-      const kName = k.name.toLowerCase().trim();
-      if (cleanAuthor.includes(kName) || kName.includes(cleanAuthor)) {
-        return k.id;
-      }
-      if (k.profile_url && cleanUser.length > 2) {
-        if (k.profile_url.toLowerCase().includes(cleanUser)) {
-          return k.id;
-        }
-      }
-      if (k.contact_info && cleanUser.length > 2) {
-        if (k.contact_info.toLowerCase().includes(cleanUser)) {
-          return k.id;
-        }
-      }
-    }
-    return null;
-  }
-
-  // 2. Run Apify scrape for the market keyword/hashtag across chosen platforms
-  const perPlatformLimit = Math.max(
-    2,
-    Math.ceil(Math.min(limit, 30) / (platforms.length || 1))
-  );
-
-  const postsToInsert: any[] = [];
-  let matchedKolsCount = 0;
-
-  for (const plat of platforms) {
-    const scraped = await runApifyScout(keyword, perPlatformLimit, plat);
-
-    for (const item of scraped) {
-      const matchedKolId = findMatchingKol(item.name, item.username, item.url);
-      if (matchedKolId) matchedKolsCount++;
-
-      const viral =
-        item.avgViews > 100000
-          ? "Siêu Viral (> 100k views)"
-          : item.avgViews > 20000
-          ? "Tương tác cao (10k - 100k views)"
-          : "Tiêu chuẩn";
-
-      const caption = item.posts?.[0]?.caption || item.bio || `${item.name} trending #${keyword}`;
-      const pUrl = item.posts?.[0]?.url || item.url;
-      const views = item.posts?.[0]?.views || item.avgViews;
-      const likes = item.posts?.[0]?.likes || item.likes;
-      const comments = item.posts?.[0]?.comments || item.comments;
-
-      postsToInsert.push({
-        kol_id: matchedKolId, // Linked to KOL if matched!
-        title: caption.slice(0, 200),
-        author: `${item.name} (@${item.username})`,
-        platform: views > 25000 ? `${plat} Reels` : `${plat} Post`,
-        post_url: pUrl,
-        thumbnail_url: item.avatarUrl || "",
-        sport: sportNiche,
-        likes,
-        comments,
-        views,
-        er: item.er,
-        viral_tier: viral,
-        hashtags: keyword.startsWith("#") ? keyword : `#${keyword.toLowerCase().replace(/\s+/g, "")} #sport`,
-        notes: matchedKolId
-          ? `Market Trend Scout (${keyword} - ${plat}) - Auto-linked to existing KOL`
-          : `Market Trend Scout (${keyword} - ${plat})`,
-      });
-    }
-  }
-
-  // 3. Insert into scouted_posts
-  if (postsToInsert.length > 0) {
-    await supabase.from("scouted_posts").insert(postsToInsert);
-  }
-
-  // 4. Log a record in scout_requests
-  await supabase.from("scout_requests").insert({
-    keyword,
-    target_type: "Viral Posts & Reels",
-    platform: platforms.join(", "),
-    target_limit: limit,
-    geography: geoText,
-    status: "Đã hoàn thành",
-    results_summary: `Market Trend Scout (${platforms.join(", ")}): Found ${postsToInsert.length} trending posts (${matchedKolsCount} linked to registered KOLs)`,
-  });
-
-  return {
-    success: true,
-    keyword,
-    totalScouted: postsToInsert.length,
-    matchedKolsCount,
-    posts: postsToInsert,
-  };
-}
-
-/**
- * Scout posts and member discussions for a single Community / Club
- */
-export async function scoutSingleCommunityPosts(
-  communityId: string,
-  limit = 10,
-  platform: string | string[] = "Facebook"
-) {
-  const supabase = createAdminClient();
-  const platforms = Array.isArray(platform)
-    ? platform.filter(Boolean)
-    : [platform || "Facebook"];
-
-  // 1. Fetch target community
-  const { data: comm, error: commErr } = await supabase
-    .from("communities")
-    .select("*")
-    .eq("id", communityId)
-    .single();
-
-  if (commErr || !comm) throw new Error("Community / Club not found");
-
-  // Query is community name or sport
-  const primarySport = (comm.sports && comm.sports[0]) || "Pickleball";
-  const query = comm.name;
-
-  const perPlatformLimit = Math.max(
-    2,
-    Math.ceil(Math.min(limit, 30) / (platforms.length || 1))
-  );
-
-  const postsToInsert: any[] = [];
-  for (const plat of platforms) {
-    const scraped = await runApifyScout(query, perPlatformLimit, plat);
-
-    for (const item of scraped) {
-      if (item.posts && item.posts.length > 0) {
-        for (const p of item.posts) {
-          const viral =
-            p.views > 100000
-              ? "Siêu Viral (> 100k views)"
-              : p.views > 20000
-              ? "Tương tác cao (10k - 100k views)"
-              : "Tiêu chuẩn";
-
-          postsToInsert.push({
-            title: p.caption || `Discussion in ${comm.name}`,
-            author: `${comm.name} (@${item.username})`,
-            platform: plat.includes("Face") ? "Facebook Group" : `${plat} Post`,
-            post_url: p.url || comm.group_url || "#",
-            thumbnail_url: item.avatarUrl || "",
-            sport: primarySport,
-            likes: p.likes || 150,
-            comments: p.comments || 32,
-            views: p.views || 4500,
-            er: item.er || 3.8,
-            viral_tier: viral,
-            hashtags: `#${primarySport.toLowerCase().replace(/\s+/g, "")} #${comm.name.toLowerCase().replace(/\s+/g, "")}`,
-            notes: `Community Discussion Scout via Apify (${plat})`,
-          });
-        }
-      } else {
-        const viral =
-          item.avgViews > 100000
-            ? "Siêu Viral (> 100k views)"
-            : item.avgViews > 20000
-            ? "Tương tác cao (10k - 100k views)"
-            : "Tiêu chuẩn";
-
-        postsToInsert.push({
-          title: item.bio ? item.bio.slice(0, 180) : `Hoạt động giao lưu, giải đấu & sinh hoạt tại ${comm.name}`,
-          author: `${comm.name} (@${item.username})`,
-          platform: plat.includes("Face") ? "Facebook Group" : `${plat} Post`,
-          post_url: item.url || comm.group_url || "#",
-          thumbnail_url: item.avatarUrl || "",
-          sport: primarySport,
-          likes: item.likes || 320,
-          comments: item.comments || 48,
-          views: item.avgViews || 8500,
-          er: item.er || 4.2,
-          viral_tier: viral,
-          hashtags: `#${primarySport.toLowerCase().replace(/\s+/g, "")} #thethao #congdong`,
-          notes: `Community Discussion Scout (${plat})`,
-        });
-      }
-    }
-  }
-
-  let inserted = 0;
-  if (postsToInsert.length > 0) {
-    const { error: insErr } = await supabase.from("scouted_posts").insert(postsToInsert);
-    if (!insErr) inserted = postsToInsert.length;
-  }
-
-  return {
-    communityName: comm.name,
-    insertedCount: inserted,
-    posts: postsToInsert,
-  };
-}
-
-export interface DiscoveryCandidate {
-  username: string;
-  name: string;
-  bio: string;
-  url: string;
-  followers: number;
-  avgViews: number;
-  likes: number;
-  comments: number;
-  er: number;
-  avatarUrl?: string;
-  isExisting: boolean;
-  existingId?: string;
-  posts?: any[];
-}
-
-/**
- * Step 1: Preview Candidate Profiles for Discovery Scout
- * Fetches lightweight preview candidates (name, username, profile link, bio, stats)
- * and cross-matches them with existing Supabase records WITHOUT saving them to database.
- */
-export async function previewDiscoveryCandidates(params: {
-  keyword: string;
-  targetType?: string;
-  platform?: string;
-  limit?: number;
-  geography?: string;
-}) {
-  const supabase = createAdminClient();
-  const query = params.keyword.trim();
-  const limit = params.limit || 5;
-  const platform = params.platform || "Instagram";
-  const targetType = params.targetType || "Individual KOLs";
-  const geo = params.geography || "Nationwide";
-
-  // 1. Pre-fetch existing handles/urls from database
-  const existingMap = new Map<string, { id: string; name: string }>();
-
-  if (targetType === "Cộng đồng / Group" || targetType === "Communities & Clubs") {
-    const { data: comms } = await supabase.from("communities").select("id, name, group_url");
-    for (const c of comms || []) {
-      if (c.name) existingMap.set(c.name.trim().toLowerCase(), { id: c.id, name: c.name });
-      if (c.group_url) {
-        const u = c.group_url.replace(/\/$/, "").split("/").pop()?.toLowerCase();
-        if (u) existingMap.set(u, { id: c.id, name: c.name });
-      }
-    }
-  } else {
-    const { data: kols } = await supabase.from("kols").select("id, name, profile_url, contact_info");
-    for (const k of kols || []) {
-      if (k.name) existingMap.set(k.name.trim().toLowerCase(), { id: k.id, name: k.name });
-      if (k.profile_url) {
-        const u = k.profile_url.replace(/\/$/, "").split("/").pop()?.replace(/^@/, "").toLowerCase();
-        if (u) existingMap.set(u, { id: k.id, name: k.name });
-      }
-      if (k.contact_info) {
-        const match = k.contact_info.match(/@([a-zA-Z0-9._]+)/);
-        if (match) existingMap.set(match[1].toLowerCase(), { id: k.id, name: k.name });
-      }
-    }
-  }
-
-  // 2. Query diversification
-  const existingSet = new Set(existingMap.keys());
-  let effectiveQuery = query;
-  let modifierApplied: string | undefined;
-
-  const existingMatchCount = Array.from(existingSet).filter((h) =>
-    h.includes(query.toLowerCase())
-  ).length;
-
-  if (existingMatchCount >= 2) {
-    const div = getSmartDiversifiedQuery(query, existingMatchCount, platform);
-    effectiveQuery = div.effectiveQuery;
-    modifierApplied = div.modifierApplied;
-  }
-
-  // 3. Run quick preview scrape
-  const scraped = await runApifyScout(effectiveQuery, limit, platform, existingSet);
-
-  // 4. Map candidates with existing status
-  const candidates: DiscoveryCandidate[] = scraped.map((it) => {
-    const cleanUser = it.username.toLowerCase().trim().replace(/^@/, "");
-    const cleanName = it.name.toLowerCase().trim();
-    const matched = existingMap.get(cleanUser) || existingMap.get(cleanName);
-    const profileUrl = buildProfileUrl(platform, it.username, it.url);
-
-    return {
-      username: it.username,
-      name: it.name,
-      bio: it.bio,
-      url: profileUrl,
-      followers: it.followers,
-      avgViews: it.avgViews,
-      likes: it.likes,
-      comments: it.comments,
-      er: it.er,
-      avatarUrl: it.avatarUrl,
-      isExisting: !!matched,
-      existingId: matched?.id,
-      posts: it.posts,
-    };
-  });
-
-  return {
-    success: true,
-    candidates,
-    effectiveQuery,
-    modifierApplied,
-    totalFound: candidates.length,
-    newCount: candidates.filter((c) => !c.isExisting).length,
-    existingCount: candidates.filter((c) => c.isExisting).length,
-  };
-}
-
-/**
- * Step 2: Ingest User-Confirmed Candidate Profiles
- * Commits the approved candidates into Supabase, saving full metrics, snapshots, and posts.
- */
-export async function ingestSelectedCandidates(params: {
-  candidates: DiscoveryCandidate[];
-  targetType?: string;
-  platform?: string;
-  geography?: string;
-  keyword?: string;
-  notes?: string;
-}) {
-  const supabase = createAdminClient();
-  const {
-    candidates,
-    targetType = "Individual KOLs",
-    platform = "Instagram",
-    geography = "Nationwide",
-    keyword = "",
-    notes = "",
-  } = params;
-
-  let insertedKols = 0;
-  let updatedKols = 0;
-  let insertedCommunities = 0;
-  let updatedCommunities = 0;
-  let insertedPosts = 0;
-
-  if (targetType === "Cộng đồng / Group" || targetType === "Communities & Clubs") {
-    const { data: allExistingComms } = await supabase
-      .from("communities")
-      .select("id, name, group_url, members_count, activity_level");
-
-    const existingComms = allExistingComms || [];
-
-    for (const it of candidates) {
-      const cleanName = (it.name || "").trim();
-      const cleanUrl = (it.url || "").trim().toLowerCase().replace(/\/$/, "");
-
-      const matchedComm = existingComms.find((c) => {
-        if (cleanUrl && c.group_url) {
-          const cUrl = c.group_url.trim().toLowerCase().replace(/\/$/, "");
-          if (cUrl === cleanUrl) return true;
-        }
-        if (c.name && cleanName) {
-          if (c.name.trim().toLowerCase() === cleanName.toLowerCase()) return true;
-        }
-        return false;
-      });
-
-      if (matchedComm) {
-        const newMemberCount = Math.max(matchedComm.members_count || 0, it.followers || 5000);
-        await supabase
-          .from("communities")
-          .update({
-            members_count: newMemberCount,
-            activity_level: "Rất sôi động (> 20 bài/ngày)",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", matchedComm.id);
-        updatedCommunities++;
-      } else {
-        const { data: newComm, error } = await supabase
-          .from("communities")
-          .insert({
-            name: cleanName,
-            sports: detectSportNiche(`${keyword} ${it.name} ${it.bio}`),
-            geography,
-            members_count: it.followers || 5000,
-            platform: platform.includes("Face") ? "Facebook Group" : "Instagram Club",
-            group_url: it.url,
-            activity_level: "Rất sôi động (> 20 bài/ngày)",
-            privacy: "Công khai (Public)",
-            purposes: ["Giao lưu tìm kèo", "Chia sẻ kỹ thuật"],
-            admin_contact: `Direct @${it.username}`,
-            price_per_pin: 2000000,
-            status: "Đang hợp tác tích cực",
-          })
-          .select("id, name, group_url")
-          .single();
-
-        if (!error && newComm) {
-          insertedCommunities++;
-          existingComms.push(newComm as any);
-        }
-      }
-    }
-  } else {
-    // KOLs Ingestion
-    const { data: allExistingKols } = await supabase
-      .from("kols")
-      .select("id, name, sports, tier, followers, avg_views, er, quotation, status, contact_info, bio, profile_url, avatar_url, user_locked_fields, pending_scout_diff");
-
-    const existingKols = allExistingKols || [];
-
-    for (const it of candidates) {
-      const sports = detectSportNiche(`${keyword} ${it.name} ${it.bio}`);
-      const tier = calculateTier(it.followers);
-      const cleanName = (it.name || "").trim().toLowerCase();
-      const cleanUsername = (it.username || "").trim().toLowerCase().replace(/^@/, "");
-      const cleanUrl = (it.url || "").trim().toLowerCase().replace(/\/$/, "");
-
-      const existing = existingKols.find((k) => {
-        if (k.name && k.name.trim().toLowerCase() === cleanName) return true;
-        if (cleanUrl && k.profile_url) {
-          const kUrl = k.profile_url.trim().toLowerCase().replace(/\/$/, "");
-          if (kUrl === cleanUrl) return true;
-        }
-        if (cleanUsername.length > 2) {
-          if (k.profile_url && k.profile_url.toLowerCase().includes(cleanUsername)) return true;
-          if (k.contact_info && k.contact_info.toLowerCase().includes(cleanUsername)) return true;
-        }
-        return false;
-      });
-
-      let kolId = existing?.id;
-
-      if (!existing || !kolId) {
-        const { data: newKol, error } = await supabase
-          .from("kols")
-          .insert({
-            name: it.name,
-            sports,
-            tier,
-            platform,
-            geography,
-            followers: it.followers,
-            avg_views: it.avgViews,
-            er: it.er,
-            quotation: it.followers > 100000 ? 15000000 : 5000000,
-            status: "Mới scout (Tiềm năng)",
-            contact_info: `Direct @${it.username}`,
-            bio: it.bio,
-            profile_url: it.url,
-            avatar_url: it.avatarUrl || "",
-            user_locked_fields: [],
-            last_scouted_at: new Date().toISOString(),
-          })
-          .select("id, name, sports, tier, followers, avg_views, er, quotation, status, contact_info, bio, profile_url, avatar_url, user_locked_fields, pending_scout_diff")
-          .single();
-
-        if (!error && newKol) {
-          kolId = newKol.id;
-          insertedKols++;
-          existingKols.push(newKol as any);
-
-          await supabase.from("kol_metric_snapshots").insert({
-            kol_id: kolId,
-            followers: it.followers,
-            avg_views: it.avgViews,
-            er: it.er,
-            recorded_at: new Date().toISOString(),
-          });
-        }
-      } else {
-        updatedKols++;
-        await supabase.from("kol_metric_snapshots").insert({
-          kol_id: kolId,
-          followers: it.followers,
-          avg_views: it.avgViews,
-          er: it.er,
-          recorded_at: new Date().toISOString(),
-        });
-
-        const dynamicUpdate: Record<string, any> = {
-          followers: it.followers,
-          avg_views: it.avgViews,
-          er: it.er,
-          tier,
-          last_scouted_at: new Date().toISOString(),
-        };
-
-        const locked = new Set(existing.user_locked_fields || []);
-        const diffChanges: Record<string, { current: any; scouted: any }> = {};
-
-        if (!locked.has("bio") && it.bio && it.bio.trim() !== (existing.bio || "").trim()) {
-          diffChanges.bio = { current: existing.bio || "", scouted: it.bio };
-        }
-        if (!locked.has("avatar_url") && it.avatarUrl && it.avatarUrl !== existing.avatar_url) {
-          diffChanges.avatar_url = { current: existing.avatar_url || "", scouted: it.avatarUrl };
-        }
-        if (!locked.has("sports")) {
-          const curSports = (existing.sports || []).slice().sort().join(",");
-          const scSports = sports.slice().sort().join(",");
-          if (scSports !== curSports) {
-            diffChanges.sports = { current: existing.sports || [], scouted: sports };
-          }
-        }
-
-        if (Object.keys(diffChanges).length > 0) {
-          dynamicUpdate.pending_scout_diff = {
-            scoutedAt: new Date().toISOString(),
-            changes: diffChanges,
-          };
-        }
-
-        await supabase.from("kols").update(dynamicUpdate).eq("id", kolId);
-      }
-
-      // Link sample posts
-      if (kolId && it.posts && it.posts.length > 0) {
-        for (const post of it.posts) {
-          const { data: existingPost } = await supabase
-            .from("scouted_posts")
-            .select("id")
-            .eq("post_url", post.url)
-            .maybeSingle();
-
-          if (!existingPost) {
-            await supabase.from("scouted_posts").insert({
-              kol_id: kolId,
-              title: post.caption,
-              author: `${it.name} (@${it.username})`,
-              platform: `${platform} Reels`,
-              post_url: post.url,
-              sport: sports[0] || "Thể thao",
-              likes: post.likes,
-              comments: post.comments,
-              views: post.views,
-              er: it.er,
-              viral_tier:
-                post.views > 100000
-                  ? "Siêu Viral (> 100k views)"
-                  : "Tương tác cao (10k - 100k views)",
-              hashtags: `#${sports[0]?.toLowerCase() || "thethao"} #sport`,
-              notes: `Interactive Discovery Scout (${keyword || "manual select"})`,
-            });
-            insertedPosts++;
-          }
-        }
-      }
-    }
-  }
-
-  // Log request in scout_requests
-  const detailsList: string[] = [];
-  if (insertedKols > 0) detailsList.push(`${insertedKols} new KOLs imported`);
-  if (updatedKols > 0) detailsList.push(`${updatedKols} existing KOLs refreshed`);
-  if (insertedCommunities > 0) detailsList.push(`${insertedCommunities} new communities imported`);
-  if (updatedCommunities > 0) detailsList.push(`${updatedCommunities} existing communities updated`);
-  if (insertedPosts > 0) detailsList.push(`${insertedPosts} viral posts saved`);
-
-  const summary =
-    detailsList.length > 0
-      ? `Imported selected profiles: ${detailsList.join(", ")}.`
-      : "Successfully verified and updated selected profiles.";
-
-  await supabase.from("scout_requests").insert({
-    keyword: keyword || "Interactive Selected Import",
-    target_type: targetType,
-    platform,
-    target_limit: candidates.length,
-    geography,
-    status: "Đã hoàn thành",
-    results_summary: summary,
-  });
-
-  return {
-    success: true,
-    insertedKols,
-    updatedKols,
-    insertedCommunities,
-    updatedCommunities,
-    insertedPosts,
-    summary,
-  };
-}
-

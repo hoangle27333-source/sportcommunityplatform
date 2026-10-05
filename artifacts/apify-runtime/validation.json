@@ -1,0 +1,33 @@
+{
+  "recordedAt": "2026-10-05T13:04:44.147Z",
+  "remoteMigration": "PASS: authenticated SQL Editor transaction; migration-history table absent, prerequisites checked, source checksum recorded",
+  "paidVerificationRunsStarted": 27,
+  "postgres16Isolated": "passed migration, concurrent claims/day/session caps, settlement, lifetime verification cap, role revocation, RLS/RPC grants, timezone/day reset, monotonic watermark",
+  "browser": "PASS: authenticated Inspect start, completion, reload, Activity restored evidence, Review in Add Form restored saved evidence; desktop and 400px mobile screenshot receipts. Cache hit started no paid run.",
+  "tests": {
+    "fullSuite": "PASS: 25 files, 265 tests",
+    "focusedSuite": "PASS: provider, discovery, import, quota, metrics, audit sample invariants",
+    "typecheck": "PASS: npm run scout:typecheck covers application and tooling source, excluding generated transient QA route types",
+    "productionBuild": "PASS: latest frozen source build, exit 0, source hashes recorded; only transient concurrent scout-workspace-qa route excluded",
+    "sql": "PASS: migration, shared/duplicate claims, concurrent worker/import/dataset leases, concurrent daily budget, settlement, verification cap, role revocation, session caps, timezone/day reset, monotonic watermarks and RLS/RPC denial.",
+    "diffCheck": "PASS for scoped implementation files; unrelated pre-existing page EOF whitespace retained",
+    "remoteAccess": "PASS: service role access and anonymous table/RPC denial",
+    "remoteBudget": "PASS: ten concurrent claims create one reservation, no Actor started",
+    "worker": "PASS: isolated local BullMQ queue, actual provider and remote result persistence, completed replay without a new run",
+    "queueRecovery": "PASS: dedicated Scout producer/consumer connection with existing general Redis config preserved, readiness deadline regressions, real BullMQ worker/provider/remote persistence receipt",
+    "observationPersistence": "PASS: 11 isolated tests for persisted channel precedence, URL normalization, locks, missing metrics, valid zero, fallback retry, bounded comment persistence, all-failed outcome and policy preview",
+    "queueReadiness": "PASS: connecting sockets are not ready; timeout and readiness both remove listeners/deadlines",
+    "roleAndCommentInput": "PASS: viewer denied before enqueue; empty/duplicate comment selections rejected before enqueue"
+  },
+  "rolloutComplete": false,
+  "verificationActualUsd": 0.0919,
+  "verificationHeldUsd": 0,
+  "verifiedCapabilities": 15,
+  "remainingGates": [
+    "Deployed worker Redis still requires an external available service; local Scout has dedicated working Redis.",
+    "Browser role denial and budget exhaustion across all modules remain unverified.",
+    "Production CRM sync/posts/comments/audit writes not exercised with test data; isolated persistence regression fixtures pass.",
+    "TikTok Actor minimum cap exceeds the fixed policy; disabled.",
+    "Facebook Group feed/date filter and multiple dataset capabilities lack verified samples; disabled."
+  ]
+}

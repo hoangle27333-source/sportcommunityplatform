@@ -1,0 +1,15 @@
+{
+  "observedAt": "2026-10-05T12:55:43.453Z",
+  "sessionId": "ec4fe281-7f35-48bc-bebc-c5905ebf56f7",
+  "status": "complete",
+  "queue": "isolated BullMQ queue using executeSession",
+  "completedReplay": "no new run",
+  "runs": [
+    {
+      "provider_run_id": "Mpkd9y2djcY3maotI",
+      "actual_usd": 0,
+      "reserved_usd": 0.25
+    }
+  ],
+  "crmWrites": 0
+}

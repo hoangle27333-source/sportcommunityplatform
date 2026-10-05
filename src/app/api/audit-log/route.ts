@@ -1,3 +1,4 @@
+import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const { isAdmin } = await getServerUserRole();
     const { searchParams } = new URL(req.url);
     const entity = searchParams.get("entity");
     const entityId = searchParams.get("entityId");
@@ -93,7 +95,7 @@ export async function GET(req: NextRequest) {
         action: l.action,
         entity: l.entity || "",
         entityId: l.entity_id || "",
-        detail: l.detail || {},
+        detail: isAdmin ? l.detail || {} : redactFinancial(l.detail || {}),
         createdAt: l.created_at,
       };
     });
@@ -109,4 +111,10 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function redactFinancial(value: any): any {
+  if (Array.isArray(value)) return value.map(redactFinancial);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !/gmv|quotation|price|budget|contribution|agreedFee/i.test(key)).map(([key, v]) => [key, redactFinancial(v)]));
 }

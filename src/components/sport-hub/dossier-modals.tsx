@@ -1,4 +1,6 @@
 "use client";
+import { ScoutTaskLauncher } from "./scout-task-launcher";
+import { UrlInspector } from "./url-inspector";
 
 import React, { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -53,6 +55,7 @@ import { PlatformIcon, getPlatformBadgeStyle } from "./platform-icon";
 import { AudienceAuditSection, PostAuditControl } from "./audience-audit-panel";
 import { cleanAuditSummary } from "@/lib/sport-hub/audience-audit-types";
 import { KOLChannel, CommunityChannel, KolAudienceAudit } from "./types";
+import { GMVPanel } from "./gmv-panel";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 
 // Shared avatar dictionary for Vietnamese sports KOLs
@@ -121,6 +124,8 @@ export interface KOL {
   avgViews: number;
   er: number;
   quotation: number;
+  gmv?: { amount: number; month: string; source: string } | null;
+  missingMetrics?: string[];
   status: string;
   info: string;
   profileUrl: string;
@@ -143,6 +148,7 @@ export interface Post {
   views: number;
   er: number;
   postUrl: string;
+  missingMetrics?: string[];
   viralGrade: string;
   status: string;
   isSponsored?: boolean;
@@ -167,6 +173,7 @@ export interface Report {
 }
 
 export interface Community {
+  missingMetrics?: string[];
   id: string;
   name: string;
   sport: string[];
@@ -213,6 +220,7 @@ export function Kol360Modal({
   onUpdateKol,
 }: Kol360ModalProps) {
   const { isAdmin } = useCurrentUser();
+  const [scoutRefreshOpen, setScoutRefreshOpen] = useState(false);
   const [postSearch, setPostSearch] = useState("");
   const [selectedChannelPlatform, setSelectedChannelPlatform] = useState<string>("all");
 
@@ -240,81 +248,11 @@ export function Kol360Modal({
     setLocalPosts([]);
   }, [currentKol?.id]);
 
-  const handleRunLiveAudit = async (options?: { forceScout?: boolean }) => {
+  const handleRunLiveAudit = async () => {
     if (!currentKol) return;
     setIsAuditing(true);
     const toastId = toast.loading(`Initiating audit for ${currentKol.name}...`);
     try {
-      // Step 1: Automatically trigger Apify Scraper if KOL has 0 posts or forceScout is requested
-      const shouldScout = options?.forceScout || kolPosts.length === 0;
-
-      if (shouldScout) {
-        toast.loading(
-          `No scouted posts found for ${currentKol.name}. Launching Apify scraper...`,
-          { id: toastId }
-        );
-
-        // Determine platform from channel footprint or profile
-        const platform = currentKol.platform
-          ? currentKol.platform.includes("TikTok")
-            ? "TikTok"
-            : currentKol.platform.includes("Facebook")
-            ? "Facebook"
-            : "Instagram"
-          : "Instagram";
-
-        const scoutRes = await fetch("/api/sport-hub/scout/kol-posts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            kolId: currentKol.id,
-            platform: [platform],
-            limit: 10,
-          }),
-        });
-
-        const scoutJson = await scoutRes.json().catch(() => null);
-        if (scoutRes.ok && scoutJson?.success && Array.isArray(scoutJson.posts) && scoutJson.posts.length > 0) {
-          const mappedPosts: Post[] = scoutJson.posts.map((p: any) => ({
-            id: p.id || `scouted-${Date.now()}-${Math.random()}`,
-            title: p.title || `Post by ${currentKol.name}`,
-            author: p.author || currentKol.name,
-            kolRecordIds: [currentKol.id],
-            platform: p.platform || platform,
-            likes: Number(p.likes) || 0,
-            comments: Number(p.comments) || 0,
-            views: Number(p.views) || 0,
-            er: Number(p.er) || 0,
-            postUrl: p.post_url || p.postUrl || "#",
-            viralGrade: p.viral_tier || p.viralGrade || "Tiêu chuẩn",
-            status: "Scouted",
-            isSponsored: Boolean(p.is_sponsored),
-            sponsorBrand: p.sponsor_brand,
-          }));
-
-          setLocalPosts((prev) => {
-            const existingIds = new Set(prev.map((x) => x.id));
-            const newOnes = mappedPosts.filter((x) => !existingIds.has(x.id));
-            return [...prev, ...newOnes];
-          });
-
-          toast.loading(
-            `Apify scouted ${scoutJson.insertedCount || mappedPosts.length} posts! Analyzing audience authenticity & sponsored content...`,
-            { id: toastId }
-          );
-        } else {
-          toast.loading(
-            `Scout completed. Running audience authenticity audit...`,
-            { id: toastId }
-          );
-        }
-      } else {
-        toast.loading(
-          `Auditing audience authenticity & sponsored content for ${currentKol.name}...`,
-          { id: toastId }
-        );
-      }
-
       // Step 2: Run Audience Authenticity & Sponsored Content Audit
       const res = await fetch(`/api/sport-hub/kol/${currentKol.id}/audience-audit`, {
         method: "POST",
@@ -355,6 +293,8 @@ export function Kol360Modal({
     geography: string;
     status: string;
     quotation: number;
+  gmv?: { amount: number; month: string; source: string } | null;
+  missingMetrics?: string[];
     sport: string[];
     info: string;
     bio: string;
@@ -369,8 +309,6 @@ export function Kol360Modal({
     bio: "",
   });
   const [isSaving, setIsSaving] = useState(false);
-  const [scoutUrlInput, setScoutUrlInput] = useState("");
-  const [isInspecting, setIsInspecting] = useState(false);
 
   const startEditing = () => {
     if (!currentKol) return;
@@ -389,7 +327,6 @@ export function Kol360Modal({
       info: currentKol.info || "",
       bio: (currentKol as any).bio || "",
     });
-    setScoutUrlInput("");
     setIsEditing(true);
   };
 
@@ -474,86 +411,6 @@ export function Kol360Modal({
         isPrimary: idx === index,
       }))
     );
-  };
-
-  const handleAutoInspectUrl = async () => {
-    const trimmed = scoutUrlInput.trim();
-    if (!trimmed) {
-      toast.error("Please enter a valid social profile URL to inspect");
-      return;
-    }
-
-    setIsInspecting(true);
-    try {
-      const res = await fetch("/api/sport-hub/scout/inspect-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: trimmed, type: "kol" }),
-      });
-      const data = await res.json();
-      if (data.success && data.scouted) {
-        const s = data.scouted;
-        const newCh: KOLChannel = {
-          platform: s.platform || "TikTok",
-          handle: s.handle || s.name || "",
-          url: trimmed,
-          followers: Number(s.followers) || 0,
-          avgViews: Number(s.avgViews) || 0,
-          er: Number(s.er) || 0,
-          isPrimary: editChannels.length === 0,
-        };
-
-        const exists = editChannels.findIndex(
-          (c) => c.platform.toLowerCase() === newCh.platform.toLowerCase()
-        );
-        if (exists >= 0) {
-          setEditChannels((prev) => {
-            const next = [...prev];
-            next[exists] = { ...next[exists], ...newCh };
-            return next;
-          });
-          toast.success(`Updated existing ${newCh.platform} channel from URL!`);
-        } else {
-          setEditChannels((prev) => [...prev, newCh]);
-          toast.success(`Auto-detected and added ${newCh.platform} channel!`);
-        }
-        setScoutUrlInput("");
-      } else {
-        toast.error(
-          data.error || "Unable to inspect URL automatically. Adding blank row."
-        );
-        setEditChannels((prev) => [
-          ...prev,
-          {
-            platform: "TikTok",
-            handle: "",
-            url: trimmed,
-            followers: 0,
-            avgViews: 0,
-            er: 0,
-            isPrimary: prev.length === 0,
-          },
-        ]);
-        setScoutUrlInput("");
-      }
-    } catch {
-      toast.error("Network error during inspection. Added URL to a new channel row.");
-      setEditChannels((prev) => [
-        ...prev,
-        {
-          platform: "TikTok",
-          handle: "",
-          url: trimmed,
-          followers: 0,
-          avgViews: 0,
-          er: 0,
-          isPrimary: prev.length === 0,
-        },
-      ]);
-      setScoutUrlInput("");
-    } finally {
-      setIsInspecting(false);
-    }
   };
 
   const handleSaveAll = async () => {
@@ -709,6 +566,7 @@ export function Kol360Modal({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-200">
+      {scoutRefreshOpen && <ScoutTaskLauncher context={{ intent: "refresh", mode: "entity", entityType: "kol", ids: [currentKol.id], source: "/kols" }} entity={currentKol} onClose={() => setScoutRefreshOpen(false)} />}
       <div
         className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
@@ -809,6 +667,7 @@ export function Kol360Modal({
                   </button>
                 )}
 
+              <button type="button" onClick={() => setScoutRefreshOpen(true)} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white">Refresh Data</button>
               {onScoutKolPosts && (
                 <button
                   type="button"
@@ -816,11 +675,11 @@ export function Kol360Modal({
                   className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-md active:scale-95 cursor-pointer border border-purple-400/30"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Scout Posts</span>
+                  <span>Collect Posts</span>
                 </button>
               )}
 
-              {/* Run Audience Audit Header Action */}
+              {/* Refresh Audit Header Action */}
               <button
                 type="button"
                 disabled={isAuditing}
@@ -829,7 +688,7 @@ export function Kol360Modal({
                 title="Run Audience Authenticity & Sponsored Content Audit"
               >
                 <ShieldCheck className={`w-3.5 h-3.5 text-indigo-300 ${isAuditing ? "animate-spin" : ""}`} />
-                <span>{isAuditing ? "Auditing..." : "Run Audience Audit"}</span>
+                <span>{isAuditing ? "Auditing..." : "Refresh Audit"}</span>
               </button>
 
               {onOpenGrowth && (
@@ -900,7 +759,7 @@ export function Kol360Modal({
             {audienceAudit ? (
               <>
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
-                  <span className="text-slate-300">Real Audience</span>
+                  <span className="text-slate-300">Organic Sample Comments</span>
                   <span className="font-black text-emerald-300 text-sm">
                     {audienceAudit.totalCommentsScanned > 0 ? `${audienceAudit.realAudienceRate}%` : "—"}
                   </span>
@@ -913,7 +772,7 @@ export function Kol360Modal({
             ) : (
               <>
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
-                  <span className="text-slate-300">Real Audience</span>
+                  <span className="text-slate-300">Organic Sample Comments</span>
                   <span className="font-bold text-slate-400 text-xs">—</span>
                 </div>
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
@@ -927,6 +786,7 @@ export function Kol360Modal({
 
         {/* ─── MODAL SCROLLABLE BODY ─── */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
+          <GMVPanel kolId={currentKol.id} isAdmin={isAdmin} />
           {isEditing ? (
             /* ─── IN-DOSSIER CHANNELS & SPECS EDITING STUDIO ─── */
             <div className="space-y-6 animate-in fade-in duration-200">
@@ -1043,44 +903,16 @@ export function Kol360Modal({
                   </button>
                 </div>
 
-                {/* Auto-Scout Channel Link Helper */}
-                <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-indigo-100 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center space-x-2">
-                    <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
-                    <span className="text-xs font-bold text-slate-800">Quick Auto-Fill from Channel Link:</span>
-                  </div>
-                  <div className="flex items-center space-x-2 flex-1 max-w-xl">
-                    <div className="relative flex-1">
-                      <Link2 className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
-                      <input
-                        type="url"
-                        value={scoutUrlInput}
-                        onChange={(e) => setScoutUrlInput(e.target.value)}
-                        placeholder="Paste TikTok, YouTube, Facebook, or Instagram profile link..."
-                        className="w-full pl-8 pr-3 py-1.5 bg-white rounded-lg border border-indigo-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isInspecting}
-                      onClick={handleAutoInspectUrl}
-                      className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-xs transition flex items-center space-x-1 shadow-xs disabled:opacity-50 cursor-pointer shrink-0"
-                    >
-                      {isInspecting ? (
-                        <>
-                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Inspecting...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3 h-3 text-amber-300" />
-                          <span>Inspect Link</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
+                <UrlInspector key={currentKol.id} destination="kol" onDetails={d => {
+                  const platform = d.platform;
+                  setEditChannels(prev => {
+                    const existing = prev.find(ch => ch.url === d.url);
+                    const next = { ...existing, platform, handle: d.username || d.name || "", url: d.url,
+                      followers: d.followers ?? existing?.followers ?? 0, avgViews: d.avgViews ?? existing?.avgViews ?? 0, er: d.er ?? existing?.er ?? 0,
+                      missingMetrics: d.missingMetrics, scoutProvenance: d.provenance, isPrimary: existing?.isPrimary ?? prev.length === 0 };
+                    return existing ? prev.map(ch => ch === existing ? next : ch) : [...prev, next];
+                  });
+                }} />
                 {/* Channel Rows */}
                 <div className="space-y-3">
                   {editChannels.map((ch, idx) => (
@@ -1486,20 +1318,20 @@ export function Kol360Modal({
               <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm px-3.5 py-1.5 rounded-xl border border-white/10 text-xs">
                 <div>
                   <span className="text-slate-400 text-[10px] block">Total Reach</span>
-                  <span className="font-extrabold text-white">{formatNumber(aggregates.totalFollowers)}</span>
+                  <span className="font-extrabold text-white">{currentKol.missingMetrics?.includes("followers") ? "Unknown" : formatNumber(aggregates.totalFollowers)}</span>
                 </div>
                 <div className="w-px h-6 bg-white/10" />
                 <div>
                   <span className="text-slate-400 text-[10px] block">Combined Views</span>
                   <span className="font-extrabold text-indigo-200">
-                    {aggregates.totalAvgViews > 0 ? formatNumber(aggregates.totalAvgViews) : "—"}
+                    {currentKol.missingMetrics?.includes("avgViews") ? "Unknown" : formatNumber(aggregates.totalAvgViews)}
                   </span>
                 </div>
                 <div className="w-px h-6 bg-white/10" />
                 <div>
                   <span className="text-slate-400 text-[10px] block">Blended ER</span>
                   <span className="font-extrabold text-emerald-300">
-                    {aggregates.blendedEr > 0 ? `${aggregates.blendedEr}%` : "—"}
+                    {currentKol.missingMetrics?.includes("er") ? "Unknown" : `${aggregates.blendedEr}%`}
                   </span>
                 </div>
               </div>
@@ -1924,434 +1756,7 @@ export function Kol360Modal({
           </div>
 
           {/* ─── AUDIENCE AUTHENTICITY & COMMERCIAL SPONSORSHIP AUDIT ─── */}
-          {audienceAudit && audienceAudit.totalPostsScanned > 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6 space-y-5">
-              {/* Section Header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                <div className="flex items-center space-x-3">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-900">
-                        Audience Authenticity & Commercial Sponsorship Audit
-                      </h3>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
-                        AI NLP Scanner
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Comment topic clustering, seeding vs organic detection, and brand collaboration saturation
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] text-slate-400 mr-1">
-                    Audited {audienceAudit.totalPostsScanned} posts & {audienceAudit.totalCommentsScanned} comments
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isAuditing}
-                    onClick={() => handleRunLiveAudit()}
-                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
-                    title="Re-run audit on existing scouted posts"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
-                    <span>{isAuditing ? "Auditing..." : "Refresh Audit"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isAuditing}
-                    onClick={() => handleRunLiveAudit({ forceScout: true })}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center space-x-1.5 border border-indigo-200 shadow-2xs active:scale-95 disabled:opacity-50 cursor-pointer"
-                    title="Scout fresh posts via Apify and re-run audit"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Scout via Apify & Re-Audit</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Main 2-Column Audit Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* COLUMN 1: AUDIENCE QUALITY & COMMENT TOPIC DISTRIBUTION */}
-                <div className="space-y-4 bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200/80">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <MessageCircle className="w-4 h-4 text-indigo-600" />
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                        Audience Engagement Authenticity
-                      </h4>
-                    </div>
-                    {audienceAudit.totalCommentsScanned > 0 ? (
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                          audienceAudit.seedingRiskLevel === "Low"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : audienceAudit.seedingRiskLevel === "Moderate"
-                            ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : "bg-rose-50 text-rose-700 border-rose-200"
-                        }`}
-                      >
-                        {audienceAudit.seedingRiskLevel} Seeding Risk
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold border bg-slate-100 text-slate-600 border-slate-200">
-                        No comment sample
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Dual Metric Split */}
-                  <div className="space-y-2">
-                    {audienceAudit.totalCommentsScanned > 0 ? (
-                      <>
-                        <div className="flex items-center justify-between text-xs font-extrabold">
-                          <span className="text-emerald-700 flex items-center space-x-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{audienceAudit.realAudienceRate}% Real Audience</span>
-                          </span>
-                          <span className="text-amber-700">
-                            {audienceAudit.seedingRate}% Seeding / Bot
-                          </span>
-                        </div>
-                        <div className="h-3 w-full bg-amber-200 rounded-full overflow-hidden flex shadow-inner">
-                          <div
-                            className="h-full bg-emerald-500 transition-all duration-500"
-                            style={{ width: `${audienceAudit.realAudienceRate}%` }}
-                            title={`Organic Audience: ${audienceAudit.realAudienceRate}%`}
-                          />
-                        </div>
-                        <p className="text-[10px] text-slate-500 leading-relaxed">
-                          Evaluated from technical sports inquiries, sentence naturalness, and bot-comment heuristics.
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        Comment text was not included with these posts, so real-audience and seeding rates were not scored.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Top 5 Tag Distribution (Comments & Content Topics) */}
-                  <div className="space-y-2.5 pt-3 border-t border-slate-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                        <BarChart3 className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Top 5 Tag Distribution</span>
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        Audience comment & content topics
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {audienceAudit.topTagDistribution.map((item, idx) => {
-                        const barColor = item.color || getTagColor(item.tag, idx);
-                        return (
-                          <div key={item.tag} className="space-y-1">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-700 text-[11px] truncate max-w-[220px]">
-                                {item.tag}
-                              </span>
-                              <span className="font-extrabold text-slate-900 text-xs">
-                                {item.percentage}%
-                              </span>
-                            </div>
-                            <div className="h-2 w-full bg-slate-200/80 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full transition-all duration-500"
-                                style={{
-                                  width: `${item.percentage}%`,
-                                  backgroundColor: barColor,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Sample Comments Drilldown Toggle */}
-                  {audienceAudit.sampleComments && (
-                    <div className="pt-2 border-t border-slate-200/60">
-                      <button
-                        type="button"
-                        onClick={() => setShowSampleComments(!showSampleComments)}
-                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 cursor-pointer transition"
-                      >
-                        <span>
-                          {showSampleComments
-                            ? "Hide Sample Audit Comments"
-                            : "Inspect Sample Comments & Seeding Signals"}
-                        </span>
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 transition-transform ${
-                            showSampleComments ? "rotate-180" : ""
-                          }`}
-                        />
-                      </button>
-
-                      {showSampleComments && (
-                        <div className="mt-2.5 space-y-2.5 text-xs bg-white p-3 rounded-xl border border-slate-200 animate-in fade-in duration-150">
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-emerald-700 block mb-1">
-                              ✓ Organic Audience Discussions:
-                            </span>
-                            <ul className="space-y-1 text-slate-700 italic text-[11px]">
-                              {audienceAudit.sampleComments.organic.map((c, i) => (
-                                <li key={i} className="pl-2 border-l-2 border-emerald-400">
-                                  &ldquo;{c}&rdquo;
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-
-                          <div className="pt-2 border-t border-slate-100">
-                            <span className="text-[10px] font-bold uppercase text-amber-700 block mb-1">
-                              ⚠ Flagged Seeding / Bot Signals:
-                            </span>
-                            <ul className="space-y-1 text-slate-600 italic text-[11px]">
-                              {audienceAudit.sampleComments.seeding.map((c, i) => (
-                                <li key={i} className="pl-2 border-l-2 border-amber-400">
-                                  &ldquo;{c}&rdquo;
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* COLUMN 2: COMMERCIAL SATURATION & BRAND BOOKING PORTFOLIO */}
-                <div className="space-y-4 bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200/80 flex flex-col justify-between">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Briefcase className="w-4 h-4 text-indigo-600" />
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                          Commercial Sponsorship Saturation
-                        </h4>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          audienceAudit.commercialSaturation === "Heavy Commercial"
-                            ? "bg-purple-50 text-purple-700 border-purple-200"
-                            : audienceAudit.commercialSaturation === "Balanced"
-                            ? "bg-blue-50 text-blue-700 border-blue-200"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        }`}
-                      >
-                        {audienceAudit.commercialSaturation}
-                      </span>
-                    </div>
-
-                    {/* Prominent % Sponsored Content Card (Benchmark Style with Highlight Ring) */}
-                    <div className="bg-gradient-to-br from-white to-indigo-50/50 p-4 rounded-xl border-2 border-indigo-300/80 shadow-sm flex items-center justify-between gap-4">
-                      <div>
-                        <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
-                          The percentage of sponsored content
-                        </span>
-                        <div className="flex items-baseline space-x-2 mt-1">
-                          <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
-                            {audienceAudit.sponsoredContentRate}%
-                          </span>
-                          <span className="text-xs font-bold text-indigo-600">
-                            sponsored by brands
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                          Scanned via Vietnam Advertising Law disclosure tags (#ad, #quangcao, #duoctaitro) and platform Branded Content tools.
-                        </p>
-                      </div>
-
-                      {/* Circular visual badge */}
-                      <div className="w-16 h-16 rounded-full border-4 border-indigo-600/30 flex items-center justify-center shrink-0 bg-white shadow-xs">
-                        <span className="text-xs font-black text-indigo-700 text-center leading-tight">
-                          {audienceAudit.sponsoredContentRate > 60
-                            ? "Heavy"
-                            : audienceAudit.sponsoredContentRate > 30
-                            ? "Balanced"
-                            : "Low"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Booked Categories (Ngành Hàng Được Book) */}
-                    <div className="space-y-2 pt-2 border-t border-slate-200">
-                      <span className="text-xs font-bold text-slate-800 block">
-                        Top Booked Categories (Brand Industries):
-                      </span>
-                      <div className="grid grid-cols-2 gap-2">
-                        {audienceAudit.bookedCategories.map((cat) => (
-                          <div
-                            key={cat.category}
-                            className="bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between text-xs"
-                          >
-                            <span className="font-semibold text-slate-700 truncate mr-1">
-                              {cat.category}
-                            </span>
-                            <div className="text-right shrink-0">
-                              <span className="font-extrabold text-indigo-600">
-                                {cat.percentage}%
-                              </span>
-                              {cat.count !== undefined && cat.count > 0 && (
-                                <span className="text-[10px] text-slate-400 block font-normal">
-                                  {cat.count} {cat.count === 1 ? "post" : "posts"}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Detected Brand Collaborations (Thương hiệu đã book) */}
-                    <div className="space-y-2 pt-2 border-t border-slate-200">
-                      <span className="text-xs font-bold text-slate-800 block">
-                        Detected Brand Partners & Collaborations:
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {audienceAudit.partnerBrands.map((brand) => (
-                          <div
-                            key={brand.brand}
-                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs hover:border-indigo-300 transition"
-                          >
-                            <span className="font-extrabold text-slate-900">{brand.brand}</span>
-                            {brand.handle && (
-                              <span className="font-mono text-[10px] text-indigo-600">
-                                {brand.handle}
-                              </span>
-                            )}
-                            {brand.industry && (
-                              <span className="text-[10px] text-slate-400 hidden sm:inline">
-                                • {brand.industry}
-                              </span>
-                            )}
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                              {brand.postCount} {brand.postCount === 1 ? "post" : "posts"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Audit Summary & Timestamp Prose Card (Under Panels) */}
-              <div className="p-4 bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 rounded-xl border border-indigo-100/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                <div className="space-y-1 max-w-3xl">
-                  <div className="flex items-center space-x-2">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    <span className="font-extrabold uppercase text-[10px] text-indigo-900 tracking-wider">
-                      AI Audit Summary & Synthesis:
-                    </span>
-                    {audienceAudit.auditedAt && (
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        • Audited {formatAuditTimestamp(audienceAudit.auditedAt)}
-                      </span>
-                    )}
-                  </div>
-                  {audienceAudit.auditSummary && (
-                    <p className="text-slate-800 italic leading-relaxed text-xs">
-                      &ldquo;{cleanAuditSummary(audienceAudit.auditSummary, audienceAudit.totalCommentsScanned)}&rdquo;
-                    </p>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  disabled={isAuditing}
-                  onClick={() => handleRunLiveAudit()}
-                  className="shrink-0 px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200 shadow-2xs flex items-center space-x-1.5 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                  title="Force re-run live audit"
-                >
-                  <RefreshCw className={`w-3 h-3 text-indigo-600 ${isAuditing ? "animate-spin" : ""}`} />
-                  <span>{isAuditing ? "Auditing..." : "Refresh Audit"}</span>
-                </button>
-              </div>
-            </div>
-          ) : audienceAudit && audienceAudit.totalPostsScanned === 0 ? (
-            /* ─── EMPTY AUDIT WITH ZERO POSTS ─── */
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-inner">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="text-sm font-extrabold text-slate-900">
-                  Zero Posts Found for Audience Audit
-                </h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-                  {audienceAudit.auditSummary ||
-                    "No posts or comments were available during the audit scan. Scout posts for this creator to generate comment sentiment, authenticity, and brand saturation insights."}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
-                <button
-                  type="button"
-                  disabled={isAuditing}
-                  onClick={() => handleRunLiveAudit({ forceScout: true })}
-                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
-                  <span>{isAuditing ? "Scouting & Auditing..." : `Scout via Apify & Re-Audit`}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={isAuditing}
-                  onClick={() => handleRunLiveAudit()}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isAuditing ? "animate-spin" : ""}`} />
-                  <span>{isAuditing ? "Auditing..." : "Re-run Audit Only"}</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* ─── EMPTY STATE: NO AUDIT RUN YET ─── */
-            <div className="bg-white rounded-2xl border border-dashed border-slate-300 shadow-2xs p-6 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-indigo-600 flex items-center justify-center mx-auto">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="text-sm font-extrabold text-slate-900">
-                  Audience Authenticity & Commercial Sponsorship Audit
-                </h4>
-                {kolPosts.length === 0 ? (
-                  <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-                    No scouted posts found yet. Clicking &ldquo;Run Apify Scout &amp; Audit&rdquo; will automatically scrape the creator&apos;s latest social posts via Apify and evaluate audience authenticity.
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-                    Audience authenticity and sponsored content have not been audited yet. Analyze comment sentiments, seeding risk, and brand sponsorship ratios across {kolPosts.length} scouted posts.
-                  </p>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
-                <button
-                  type="button"
-                  disabled={isAuditing}
-                  onClick={() => handleRunLiveAudit({ forceScout: kolPosts.length === 0 })}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95 flex items-center space-x-1.5 disabled:opacity-50"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 text-amber-300 ${isAuditing ? "animate-spin" : ""}`} />
-                  <span>
-                    {isAuditing
-                      ? "Auditing via Apify..."
-                      : kolPosts.length === 0
-                      ? "Run Apify Scout & Audit"
-                      : "Run Audience Audit"}
-                  </span>
-                </button>
-              </div>
-            </div>
-          )}
+          <AudienceAuditSection endpoint={`/api/sport-hub/kol/${currentKol.id}/audience-audit`} initialAudit={audienceAudit} subjectName={currentKol.name} emptyMessage="No stored post or comment evidence is available. Collect Posts or Collect Comment Evidence separately, then refresh this audit." onAudit={data=>{setAudienceAudit(data);setCurrentKol(prev=>prev ? {...prev,audienceAudit:data} : null);}} />
 
           {/* ─── BOTTOM SECTION: COMPREHENSIVE SCOUTED POSTS SUMMARY TABLE ─── */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
@@ -2385,7 +1790,7 @@ export function Kol360Modal({
                       className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 hover:text-purple-800 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 border border-purple-200 cursor-pointer active:scale-95 shadow-2xs"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Scout KOL Posts</span>
+                      <span>Collect Posts</span>
                     </button>
                   )}
 
@@ -2507,7 +1912,7 @@ export function Kol360Modal({
                           </span>
                         </td>
                         <td className="py-3 px-3 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                          {post.views > 0 ? (
+                          {!post.missingMetrics?.includes("views") ? (
                             <span className="flex items-center justify-end space-x-1">
                               <Eye className="w-3 h-3 text-slate-400" />
                               <span>{formatNumber(post.views)}</span>
@@ -2517,7 +1922,7 @@ export function Kol360Modal({
                           )}
                         </td>
                         <td className="py-3 px-3 text-right font-semibold text-slate-700 whitespace-nowrap">
-                          {post.likes > 0 ? (
+                          {!post.missingMetrics?.includes("likes") ? (
                             <span className="flex items-center justify-end space-x-1">
                               <Heart className="w-3 h-3 text-rose-400" />
                               <span>{formatNumber(post.likes)}</span>
@@ -2527,7 +1932,7 @@ export function Kol360Modal({
                           )}
                         </td>
                         <td className="py-3 px-3 text-right font-semibold text-slate-700 whitespace-nowrap">
-                          {post.comments > 0 ? (
+                          {!post.missingMetrics?.includes("comments") ? (
                             <span className="flex items-center justify-end space-x-1">
                               <MessageCircle className="w-3 h-3 text-slate-400" />
                               <span>{formatNumber(post.comments)}</span>
@@ -2538,7 +1943,7 @@ export function Kol360Modal({
                         </td>
                         <td className="py-3 px-3 text-center whitespace-nowrap">
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            {post.er}%
+                            {post.missingMetrics?.includes("er") ? "Unknown" : `${post.er}%`}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center whitespace-nowrap">
@@ -2584,7 +1989,7 @@ export function Kol360Modal({
                       className="inline-flex items-center space-x-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Scout Posts for {currentKol.name}</span>
+                      <span>Collect Posts for {currentKol.name}</span>
                     </button>
                   </div>
                 )}
@@ -2630,6 +2035,7 @@ export function Community360Modal({
   onAddChannel,
 }: Community360ModalProps) {
   const { isAdmin } = useCurrentUser();
+  const [scoutRefreshOpen, setScoutRefreshOpen] = useState(false);
   const [postSearch, setPostSearch] = useState("");
 
   // Filter evaluation reports for this community
@@ -2717,6 +2123,7 @@ export function Community360Modal({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-200">
+      {scoutRefreshOpen && <ScoutTaskLauncher context={{ intent: "refresh", mode: "entity", entityType: "community", ids: [community.id], source: "/community" }} entity={community} onClose={() => setScoutRefreshOpen(false)} />}
       <div
         className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
@@ -2749,7 +2156,7 @@ export function Community360Modal({
                   </span>
                   <span>•</span>
                   <span className="text-emerald-300 font-bold">
-                    {formatNumber(community.members)} Active Members
+                    {community.missingMetrics?.includes("members") ? "Unknown" : formatNumber(community.members)} Active Members
                   </span>
                   <span>•</span>
                   <span className="text-amber-300 font-bold flex items-center space-x-1">
@@ -2762,6 +2169,7 @@ export function Community360Modal({
 
             {/* Quick Action Buttons */}
             <div className="flex items-center space-x-2">
+              <button type="button" onClick={() => setScoutRefreshOpen(true)} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white">Refresh Data</button>
               {onScoutCommunityPosts && (
                 <button
                   type="button"
@@ -2769,7 +2177,7 @@ export function Community360Modal({
                   className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow-md active:scale-95 cursor-pointer border border-purple-400/30"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Scout Discussions</span>
+                  <span>Collect Posts</span>
                 </button>
               )}
 
@@ -2830,7 +2238,7 @@ export function Community360Modal({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-white/10 text-xs">
             <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
               <span className="text-slate-300">Total Members</span>
-              <span className="font-black text-white text-sm">{formatNumber(community.members)}</span>
+              <span className="font-black text-white text-sm">{community.missingMetrics?.includes("members") ? "Unknown" : formatNumber(community.members)}</span>
             </div>
             <div className="bg-white/5 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/10 flex items-center justify-between">
               <span className="text-slate-300">Related Posts</span>
@@ -2872,7 +2280,7 @@ export function Community360Modal({
               <div className="flex items-center space-x-2">
                 <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-sm px-3.5 py-1.5 rounded-xl border border-white/10 text-xs">
                   <span className="text-slate-400 text-[10px] block">Total Combined Reach</span>
-                  <span className="font-extrabold text-white">{formatNumber(commAggregates.totalMembers)} members</span>
+                  <span className="font-extrabold text-white">{community.missingMetrics?.includes("members") ? "Unknown" : formatNumber(commAggregates.totalMembers)} members</span>
                 </div>
 
                 {onAddChannel && (
@@ -2979,7 +2387,7 @@ export function Community360Modal({
                     Total Community Members
                   </span>
                   <span className="font-black text-base text-slate-900 mt-0.5 block">
-                    {formatNumber(community.members)}
+                    {community.missingMetrics?.includes("members") ? "Unknown" : formatNumber(community.members)}
                   </span>
                 </div>
                 <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-center shadow-xs">
@@ -3321,7 +2729,7 @@ export function Community360Modal({
                           </span>
                         </td>
                         <td className="py-3 px-3 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                          {post.views > 0 ? (
+                          {!post.missingMetrics?.includes("views") ? (
                             <span className="flex items-center justify-end space-x-1">
                               <Eye className="w-3 h-3 text-slate-400" />
                               <span>{formatNumber(post.views)}</span>
@@ -3331,7 +2739,7 @@ export function Community360Modal({
                           )}
                         </td>
                         <td className="py-3 px-3 text-right font-semibold text-slate-700 whitespace-nowrap">
-                          {post.likes > 0 ? (
+                          {!post.missingMetrics?.includes("likes") ? (
                             <span className="flex items-center justify-end space-x-1">
                               <Heart className="w-3 h-3 text-rose-400" />
                               <span>{formatNumber(post.likes)}</span>
@@ -3341,7 +2749,7 @@ export function Community360Modal({
                           )}
                         </td>
                         <td className="py-3 px-3 text-right font-semibold text-slate-700 whitespace-nowrap">
-                          {post.comments > 0 ? (
+                          {!post.missingMetrics?.includes("comments") ? (
                             <span className="flex items-center justify-end space-x-1">
                               <MessageCircle className="w-3 h-3 text-slate-400" />
                               <span>{formatNumber(post.comments)}</span>
@@ -3352,7 +2760,7 @@ export function Community360Modal({
                         </td>
                         <td className="py-3 px-3 text-center whitespace-nowrap">
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            {post.er}%
+                            {post.missingMetrics?.includes("er") ? "Unknown" : `${post.er}%`}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center whitespace-nowrap">

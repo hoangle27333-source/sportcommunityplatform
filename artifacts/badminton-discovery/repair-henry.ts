@@ -1,0 +1,13 @@
+import { createAdminClient } from '../../src/lib/supabase/admin';
+import { parseProfile } from '../../src/lib/apify/providers';
+import { readFileSync, writeFileSync } from 'node:fs';
+const db=createAdminClient();
+const id='069ecaf0-4aa4-4f97-9e09-352bf0c192af';
+const row=JSON.parse(readFileSync('src/lib/apify/fixtures/facebook-badminton-search.json','utf8')).find((r:any)=>r.name==='Henry Badminton');
+const profile=parseProfile(row,'Facebook'); if(!profile)throw new Error('Invalid source profile');
+const {data:before,error}=await db.from('kols').select('*').eq('id',id).single();if(error)throw error;
+writeFileSync('artifacts/badminton-discovery/henry-before.json',JSON.stringify(before,null,2)+'\n');
+if(before.name!==profile.name || before.profile_url!=='https://facebook.com/search/top' || before.user_locked_fields?.includes('profile_url'))throw new Error('Record changed or link locked; aborting repair');
+const {data:after,error:save}=await db.from('kols').update({profile_url:profile.url,scout_identity:`Facebook:${profile.url}`}).eq('id',id).eq('profile_url',before.profile_url).select('id,name,profile_url,scout_identity').single();if(save)throw save;
+writeFileSync('artifacts/badminton-discovery/henry-repaired.json',JSON.stringify(after,null,2)+'\n');
+console.log(JSON.stringify(after));

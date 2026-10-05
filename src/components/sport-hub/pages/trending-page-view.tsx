@@ -1,6 +1,7 @@
 "use client";
+import { ScoutTaskLauncher } from "../scout-task-launcher";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Flame,
@@ -24,8 +25,6 @@ import {
   Plus,
 } from "lucide-react";
 import { PlatformHeader } from "../platform-header";
-import { MarketTrendScoutModal } from "../market-trend-scout-modal";
-import { KolPostScoutModal } from "../kol-post-scout-modal";
 import { Kol360Modal, Community360Modal } from "../dossier-modals";
 import { AddPostModal } from "../action-modals";
 import { ColumnInfoTooltip } from "../column-info-tooltip";
@@ -90,6 +89,8 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
       setLoading(false);
     }
   };
+  useEffect(() => { const refresh = () => { void handleRefresh(); }; window.addEventListener('sport-hub-data-changed', refresh); return () => window.removeEventListener('sport-hub-data-changed', refresh); }, []);
+
 
   const handleOpen360ForAuthor = (authorName: string, kolRecordIds?: string[]) => {
     const clean = (authorName || "").trim().toLowerCase();
@@ -239,7 +240,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
               className="px-3.5 py-1.5 bg-gradient-to-r from-rose-600 via-orange-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white text-xs font-bold rounded-xl shadow-xs flex items-center space-x-1.5 transition active:scale-95 cursor-pointer whitespace-nowrap"
             >
               <Flame className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
-              <span>Scout Market Trends</span>
+              <span>Find Content</span>
             </button>
           </div>
         </div>
@@ -636,24 +637,24 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                           <td className="py-2 px-2 text-right whitespace-nowrap">
                             <span className="inline-flex items-center space-x-1 font-extrabold text-slate-900 text-xs">
                               <Eye className="w-3 h-3 text-slate-400" />
-                              <span>{formatNumber(p.views || 0)}</span>
+                              <span>{p.missingMetrics?.includes("views") ? "Unknown" : formatNumber(p.views)}</span>
                             </span>
                           </td>
                           <td className="py-2 px-2 text-right whitespace-nowrap">
                             <span className="inline-flex items-center space-x-1 font-semibold text-slate-700 text-xs">
                               <Heart className="w-3 h-3 text-rose-400" />
-                              <span>{formatNumber(p.likes || 0)}</span>
+                              <span>{p.missingMetrics?.includes("likes") ? "Unknown" : formatNumber(p.likes)}</span>
                             </span>
                           </td>
                           <td className="py-2 px-2 text-right whitespace-nowrap">
                             <span className="inline-flex items-center space-x-1 font-semibold text-slate-700 text-xs">
                               <MessageCircle className="w-3 h-3 text-slate-400" />
-                              <span>{formatNumber(p.comments || 0)}</span>
+                              <span>{p.missingMetrics?.includes("comments") ? "Unknown" : formatNumber(p.comments)}</span>
                             </span>
                           </td>
                           <td className="py-2 px-2 text-center whitespace-nowrap">
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              {p.er}%
+                              {p.missingMetrics?.includes("er") ? "Unknown" : `${p.er}%`}
                             </span>
                           </td>
                           <td className="py-2 px-2 text-center whitespace-nowrap">
@@ -786,22 +787,22 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                         <div>
                           <span className="text-[10px] text-slate-400 block font-medium">Views</span>
                           <span className="font-bold text-slate-900">
-                            {p.views > 1000 ? `${(p.views / 1000).toFixed(0)}k` : p.views}
+                            {p.missingMetrics?.includes("views") ? "Unknown" : formatNumber(p.views)}
                           </span>
                         </div>
                         <div>
                           <span className="text-[10px] text-slate-400 block font-medium">Likes</span>
                           <span className="font-bold text-slate-900">
-                            {p.likes > 1000 ? `${(p.likes / 1000).toFixed(0)}k` : p.likes}
+                            {p.missingMetrics?.includes("likes") ? "Unknown" : formatNumber(p.likes)}
                           </span>
                         </div>
                         <div>
                           <span className="text-[10px] text-slate-400 block font-medium">Comments</span>
-                          <span className="font-bold text-slate-900">{p.comments || 0}</span>
+                          <span className="font-bold text-slate-900">{p.missingMetrics?.includes("comments") ? "Unknown" : formatNumber(p.comments)}</span>
                         </div>
                         <div>
                           <span className="text-[10px] text-slate-400 block font-medium">ER%</span>
-                          <span className="font-black text-emerald-600">{p.er}%</span>
+                          <span className="font-black text-emerald-600">{p.missingMetrics?.includes("er") ? "Unknown" : `${p.er}%`}</span>
                         </div>
                       </div>
                     </div>
@@ -854,18 +855,9 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
       </main>
 
       {/* ─── MODALS ─── */}
-      <MarketTrendScoutModal
-        isOpen={isScoutModalOpen}
-        onClose={() => setIsScoutModalOpen(false)}
-        onSuccess={handleRefresh}
-      />
+      {isScoutModalOpen && <ScoutTaskLauncher context={{ intent: "content", mode: "search", entityType: "kol", source: "/trending" }} onClose={() => setIsScoutModalOpen(false)} onSuccess={handleRefresh} />}
 
-      <KolPostScoutModal
-        isOpen={!!scoutTargetKol}
-        kol={scoutTargetKol}
-        onClose={() => setScoutTargetKol(null)}
-        onSuccess={handleRefresh}
-      />
+      {scoutTargetKol && <ScoutTaskLauncher context={{ intent: "content", mode: "entity", entityType: "kol", source: "/trending", ids: [scoutTargetKol.id] }} entity={scoutTargetKol} key={scoutTargetKol.id} onClose={() => setScoutTargetKol(null)} onSuccess={handleRefresh} />}
 
       {selectedKolFor360 && (
         <Kol360Modal

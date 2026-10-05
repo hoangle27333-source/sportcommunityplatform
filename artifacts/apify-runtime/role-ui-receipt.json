@@ -1,0 +1,39 @@
+{
+  "observedAt": "2026-10-05T13:42:57.566Z",
+  "mode": "real components with isolated AuthContext role fixtures; server identity unchanged",
+  "viewerDisabled": [
+    "Search Profiles",
+    "Collect Posts",
+    "Choose Accounts",
+    "Collect Comments",
+    "Run Audience Audit",
+    "Audit"
+  ],
+  "editorChecks": [
+    {
+      "name": "Search Profiles",
+      "editorEnabled": true
+    },
+    {
+      "name": "Collect Posts",
+      "editorEnabled": true
+    },
+    {
+      "name": "Choose Accounts",
+      "editorEnabled": true
+    },
+    {
+      "name": "Collect Comments",
+      "editorEnabled": true
+    },
+    {
+      "name": "Run Audience Audit",
+      "editorEnabled": true
+    },
+    {
+      "name": "Audit",
+      "editorEnabled": true
+    }
+  ],
+  "paidRunsStarted": 0
+}

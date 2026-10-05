@@ -1,3 +1,4 @@
+import { scoutAccess, scoutReadAccess } from "@/lib/apify/sessions";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getLatestAudienceAudit,
@@ -15,6 +16,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
  */
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
+    await scoutReadAccess();
     const { id: kolId } = await ctx.params;
     if (!kolId) {
       return NextResponse.json(
@@ -39,7 +41,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     console.error("API GET /api/sport-hub/kol/[id]/audience-audit error:", err);
     return NextResponse.json(
       { success: false, error: err.message || "Failed to load audience audit" },
-      { status: 500 }
+      { status: err.status || 500 }
     );
   }
 }
@@ -51,6 +53,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
  */
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
+    await scoutAccess();
     const { id: kolId } = await ctx.params;
     if (!kolId) {
       return NextResponse.json(
@@ -88,7 +91,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         success: false,
         error: err.message || "Failed to run audience authenticity audit",
       },
-      { status: 500 }
+      { status: err.status || 500 }
     );
   }
 }

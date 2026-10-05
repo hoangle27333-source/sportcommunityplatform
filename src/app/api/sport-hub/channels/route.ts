@@ -1,3 +1,5 @@
+import { inspectionObservation } from '@/lib/apify/inspection-observation';
+import { scoutAccess, scoutFailure } from "@/lib/apify/sessions";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -19,6 +21,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   try {
+    const owner = await scoutAccess();
     const body = await req.json();
     const { entityType, entityId, entityName, channel } = body;
 
@@ -77,6 +80,7 @@ export async function POST(req: NextRequest) {
     // 3. Format new channel
     const newChannel = {
       ...channel,
+      scoutProvenance: await inspectionObservation(channel, owner, entityType === 'community'),
       followers: Number(channel.followers) || Number(channel.members) || 0,
       members: Number(channel.members) || Number(channel.followers) || 0,
       avgViews: Number(channel.avgViews) || 0,
@@ -152,6 +156,7 @@ export async function POST(req: NextRequest) {
       channels: currentChannels,
     });
   } catch (err: any) {
+    if (["UNAUTHORIZED", "FORBIDDEN"].includes(err?.code)) return scoutFailure(err);
     console.error("API /api/sport-hub/channels POST error:", err);
     return NextResponse.json(
       { success: false, error: err.message || "Failed to add channel" },
@@ -166,6 +171,7 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
+    await scoutAccess();
     const body = await req.json();
     const { entityType, entityId, entityName, channelIndex, channelUrl } = body;
 
@@ -267,6 +273,7 @@ export async function DELETE(req: NextRequest) {
       channels: currentChannels,
     });
   } catch (err: any) {
+    if (["UNAUTHORIZED", "FORBIDDEN"].includes(err?.code)) return scoutFailure(err);
     console.error("API /api/sport-hub/channels DELETE error:", err);
     return NextResponse.json(
       { success: false, error: err.message || "Failed to delete channel" },
@@ -282,6 +289,7 @@ export async function DELETE(req: NextRequest) {
  */
 export async function PUT(req: NextRequest) {
   try {
+    await scoutAccess();
     const body = await req.json();
     const { entityType, entityId, entityName, channels, specs } = body;
 
@@ -421,6 +429,7 @@ export async function PUT(req: NextRequest) {
       record: updatedRecord,
     });
   } catch (err: any) {
+    if (["UNAUTHORIZED", "FORBIDDEN"].includes(err?.code)) return scoutFailure(err);
     console.error("API /api/sport-hub/channels PUT error:", err);
     return NextResponse.json(
       { success: false, error: err.message || "Failed to update channels" },

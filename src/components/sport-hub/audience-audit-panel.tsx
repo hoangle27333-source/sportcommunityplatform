@@ -1,5 +1,7 @@
 "use client";
 
+import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { CommentEvidencePanel } from "./comment-evidence-panel";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -13,7 +15,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import {
-  cleanAuditSummary,
+  cleanAuditSummary, normalizeAudienceAudit,
   type AudienceAuditResult,
 } from "@/lib/sport-hub/audience-audit-types";
 
@@ -45,21 +47,34 @@ export function AudienceAuditSection({
   initialAudit,
   subjectName,
   emptyMessage,
+  onAudit,
 }: {
   endpoint: string;
   initialAudit?: AudienceAuditResult | null;
   subjectName: string;
   emptyMessage: string;
+  onAudit?:(audit:AudienceAuditResult)=>void;
 }) {
-  const [audit, setAudit] = useState<AudienceAuditResult | null>(initialAudit || null);
+  const { isEditor } = useCurrentUser();
+  const [audit, setAudit] = useState<AudienceAuditResult | null>(initialAudit ? normalizeAudienceAudit(initialAudit) : null);
   const [isAuditing, setIsAuditing] = useState(false);
   const [showComments, setShowComments] = useState(false);
 
   useEffect(() => {
-    setAudit(initialAudit || null);
-  }, [initialAudit]);
+    let cancelled = false;
+    setAudit(initialAudit ? normalizeAudienceAudit(initialAudit) : null);
+    if (!initialAudit) {
+      void fetch(endpoint).then(async response => {
+        if (!response.ok) return;
+        const value = await response.json();
+        if (!cancelled && value.success && value.data) setAudit(normalizeAudienceAudit(value.data));
+      }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [initialAudit, endpoint]);
 
   const run = async () => {
+    if (!isEditor) return;
     setIsAuditing(true);
     const toastId = toast.loading(`Auditing audience and sponsored content for ${subjectName}...`);
     try {
@@ -73,7 +88,7 @@ export function AudienceAuditSection({
         toast.error(json?.error || `Audit failed (HTTP ${res.status})`, { id: toastId });
         return;
       }
-      setAudit(json.data);
+      setAudit(json.data);onAudit?.(json.data);
       toast.success("Audience audit updated.", { id: toastId });
     } catch (err: any) {
       toast.error(err?.message || "Could not reach the audit service.", { id: toastId });
@@ -88,6 +103,7 @@ export function AudienceAuditSection({
         <div className="w-12 h-12 rounded-2xl bg-slate-100 text-indigo-600 flex items-center justify-center mx-auto">
           <ShieldCheck className="w-6 h-6" />
         </div>
+        <CommentEvidencePanel endpoint={endpoint} />
         <h4 className="text-sm font-extrabold text-slate-900">
           Audience Authenticity & Sponsored Content
         </h4>
@@ -96,7 +112,7 @@ export function AudienceAuditSection({
         </p>
         <button
           type="button"
-          disabled={isAuditing}
+          disabled={isAuditing || !isEditor}
           onClick={run}
           className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
         >
@@ -126,7 +142,7 @@ export function AudienceAuditSection({
         </div>
         <button
           type="button"
-          disabled={isAuditing}
+          disabled={isAuditing || !isEditor}
           onClick={run}
           className="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
         >
@@ -135,6 +151,8 @@ export function AudienceAuditSection({
         </button>
       </div>
 
+      <CommentEvidencePanel endpoint={endpoint} />
+      <p className="text-xs text-slate-500">Comment sample indicators do not establish authenticity of all followers.</p>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="space-y-3 bg-slate-50 rounded-2xl border border-slate-200 p-4">
           <div className="flex items-center justify-between">
@@ -165,7 +183,7 @@ export function AudienceAuditSection({
               <div className="flex justify-between text-xs font-extrabold">
                 <span className="text-emerald-700 inline-flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  {audit.realAudienceRate}% Real Audience
+                  {audit.realAudienceRate}% Organic Sample Comments
                 </span>
                 <span className="text-amber-700">{audit.seedingRate}% Seeding / Bot</span>
               </div>
@@ -291,6 +309,7 @@ export function PostAuditControl({
   initialSponsored?: boolean;
   initialBrand?: string;
 }) {
+  const { isEditor } = useCurrentUser();
   const [sponsored, setSponsored] = useState(Boolean(initialSponsored));
   const [brand, setBrand] = useState(initialBrand || "");
   const [risk, setRisk] = useState<string>("");
@@ -298,6 +317,7 @@ export function PostAuditControl({
   const [busy, setBusy] = useState(false);
 
   const run = async () => {
+    if (!isEditor) return;
     setBusy(true);
     const toastId = toast.loading("Auditing this post...");
     try {
@@ -341,7 +361,7 @@ export function PostAuditControl({
       )}
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !isEditor}
         onClick={run}
         className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-900 text-white disabled:opacity-50 cursor-pointer"
         title={`Audit “${title}”`}

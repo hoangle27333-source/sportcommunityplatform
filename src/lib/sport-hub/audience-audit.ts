@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 /**
  * KOL Audience Authenticity & Sponsored Content audit pipeline.
  *
@@ -7,7 +8,6 @@
  */
 
 import { getAIProvider } from "@/lib/ai";
-import { getLarkDashboardData } from "@/lib/lark/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   cleanAuditSummary,
@@ -314,6 +314,11 @@ function normalizeCommentsSample(raw: unknown): string[] {
   return [];
 }
 
+function commentEvidence(postId:string,raw:unknown) {
+  if(!Array.isArray(raw)) return [];
+  return raw.map((entry,index)=>({evidenceId:entry && typeof entry==='object' && entry.id ? String(entry.id) : `legacy:${postId}:${index}`,text:typeof entry==='string' ? entry.trim() : String(entry?.text || '').trim()})).filter(c=>c.text).slice(0,20);
+}
+
 interface ScoutedPostRow {
   id: string;
   title?: string;
@@ -334,7 +339,7 @@ interface AiAuditPayload {
   bookedCategories?: BookedCategoryItem[];
   partnerBrands?: PartnerBrandItem[];
   sampleComments?: SampleComments;
-  commentLabels?: { text: string; label: "organic" | "seeding" }[];
+  commentLabels?: { evidenceId?: string; text: string; label: "organic" | "seeding" }[];
   auditSummary?: string;
   postEnrichments?: {
     postId: string;
@@ -350,8 +355,8 @@ function emptyResult(partial?: Partial<AudienceAuditResult>): AudienceAuditResul
     totalPostsScanned: 0,
     totalCommentsScanned: 0,
     realAudienceRate: 100,
-    seedingRate: 0,
-    seedingRiskLevel: "Low",
+    seedingRate: null,
+    seedingRiskLevel: "Unknown",
     topTagDistribution: [],
     sponsoredContentRate: 0,
     commercialSaturation: "Low Commercial",
@@ -468,7 +473,7 @@ function heuristicAudit(
   const summaryParts = [
     `Audience audit for ${kolName}: scanned ${posts.length} posts`,
     commentsScanned > 0
-      ? ` and ${commentsScanned} comments. Real organic audience ${realAudienceRate}% (seeding ${seedingRate}%, risk ${seedingRiskLevel(seedingRate)}).`
+      ? ` and ${commentsScanned} comments. Organic comments in the sample ${realAudienceRate}% (seeding ${seedingRate}%, risk ${seedingRiskLevel(seedingRate)}).`
       : ". No comment sample was available, so audience authenticity was not scored.",
     ` Sponsored content ${sponsoredContentRate}% → ${commercialSaturationFromRate(sponsoredContentRate)}.`,
   ];
@@ -478,9 +483,11 @@ function heuristicAudit(
     result: {
       totalPostsScanned: posts.length,
       totalCommentsScanned: commentsScanned,
-      realAudienceRate: commentsScanned > 0 ? realAudienceRate : 0,
-      seedingRate: commentsScanned > 0 ? seedingRate : 0,
-      seedingRiskLevel: commentsScanned > 0 ? seedingRiskLevel(seedingRate) : "Low",
+      commentClassifications:posts.flatMap(p=>commentEvidence(p.id,p.comments_sample)).map(c=>({evidenceId:c.evidenceId,label:classifySeedingComment(c.text)})),
+      sampleCoverage:{available:commentsScanned,classified:commentsScanned,limitation:'Bounded public comment sample; does not verify all followers.'},
+      realAudienceRate: commentsScanned > 0 ? realAudienceRate : null,
+      seedingRate: commentsScanned > 0 ? seedingRate : null,
+      seedingRiskLevel: commentsScanned > 0 ? seedingRiskLevel(seedingRate) : "Unknown",
       topTagDistribution: buildTagDistribution(tagHits, 5),
       sponsoredContentRate,
       commercialSaturation: commercialSaturationFromRate(sponsoredContentRate),
@@ -510,12 +517,14 @@ async function enrichWithAi(
       postId: p.id,
       caption: String(p.title || "").slice(0, 280),
       hashtags: String(p.hashtags || "").slice(0, 160),
-      commentsSample: normalizeCommentsSample(p.comments_sample).slice(0, 8),
+      commentsSample: commentEvidence(p.id,p.comments_sample),
     }));
 
-    const sourceComments = compactPosts.flatMap((p) => p.commentsSample);
+    const evidence=compactPosts.flatMap(p=>p.commentsSample);
+    const sourceComments=evidence.map(c=>c.text);
+    const classifiedIds=new Set<string>();
     const corpus = compactPosts
-      .map((p) => `${p.caption}\n${p.hashtags}\n${p.commentsSample.join("\n")}`)
+      .map((p) => `${p.caption}\n${p.hashtags}\n${p.commentsSample.map(c=>c.text).join("\n")}`)
       .join("\n")
       .toLowerCase();
     const commentSeen = new Set(sourceComments.map((c) => c.trim().toLowerCase()));
@@ -546,7 +555,7 @@ Return ONLY JSON with this shape:
   "bookedCategories": [{"category":"Sportswear & Footwear","percentage":40,"count":8}],
   "partnerBrands": [{"brand":"Garmin","handle":"@garmin","industry":"Sports Tech & Wearables","postCount":5}],
   "sampleComments": {"organic":["..."],"seeding":["..."]},
-  "commentLabels": [{"text":"...","label":"organic"}],
+  "commentLabels": [{"evidenceId":"postId:index","text":"...","label":"organic"}],
   "postEnrichments": [{"postId":"...","isSponsored":true,"sponsorBrand":"Garmin","sponsorCategory":"Sports Tech & Wearables","sponsorDisclosureType":"vn_ad_hashtag"}],
   "auditSummary": "..."
 }`;
@@ -560,8 +569,10 @@ Return ONLY JSON with this shape:
     const sampleOrganic: string[] = [];
     const sampleSeeding: string[] = [];
     for (const row of labels) {
-      const text = String(row.text || "").trim();
-      if (!text || !commentSeen.has(text.toLowerCase())) continue;
+      const item=evidence.find(c=>c.evidenceId===row.evidenceId);
+      if(!item || classifiedIds.has(item.evidenceId) || !['organic','seeding'].includes(row.label)) continue;
+      classifiedIds.add(item.evidenceId);
+      const text=item.text;
       if (row.label === "seeding") {
         seeding += 1;
         if (sampleSeeding.length < 8) sampleSeeding.push(text);
@@ -571,10 +582,11 @@ Return ONLY JSON with this shape:
       }
     }
 
+    const commentClassifications=labels.filter(row=>row.evidenceId && classifiedIds.has(row.evidenceId)).filter((row,index,all)=>all.findIndex(r=>r.evidenceId===row.evidenceId)===index).map(row=>({evidenceId:row.evidenceId!,label:row.label}));
     const commentsScanned = organic + seeding;
-    let realAudienceRate = heuristic.realAudienceRate;
-    let seedingRate = heuristic.seedingRate;
-    let risk = heuristic.seedingRiskLevel;
+    let realAudienceRate:number|null=null;
+    let seedingRate:number|null=null;
+    let risk:SeedingRiskLevel="Unknown";
     if (sourceComments.length > 0 && commentsScanned > 0) {
       seedingRate = round2((seeding / commentsScanned) * 100);
       realAudienceRate = round2(100 - seedingRate);
@@ -613,8 +625,8 @@ Return ONLY JSON with this shape:
       enrichments: mergedEnrichments,
       result: {
         totalPostsScanned: posts.length,
-        totalCommentsScanned:
-          commentsScanned > 0 ? commentsScanned : heuristic.totalCommentsScanned,
+        totalCommentsScanned: commentsScanned,
+        commentClassifications, sampleCoverage:{available:sourceComments.length,classified:commentsScanned,limitation:"Bounded public comment sample; does not establish authenticity of all followers."},
         realAudienceRate,
         seedingRate,
         seedingRiskLevel: risk,
@@ -678,9 +690,14 @@ Return ONLY JSON with this shape:
   }
 }
 
+export function normalizeAuditCache(result:AudienceAuditResult):AudienceAuditResult {
+ return {...result,...(!result.totalCommentsScanned ? {realAudienceRate:null,seedingRate:null,seedingRiskLevel:'Unknown' as const} : {})};
+}
 function toCachePayload(result: AudienceAuditResult, auditedAt: string, auditId: string) {
   return {
     ...result,
+    ...(result.totalCommentsScanned===0 ? {realAudienceRate:null,seedingRate:null,seedingRiskLevel:"Unknown" as const} : {}),
+    sampleCoverage:result.sampleCoverage || {available:result.totalCommentsScanned,classified:result.totalCommentsScanned,limitation:"Bounded public comment sample; does not establish authenticity of all followers."},
     auditedAt,
     auditId,
   };
@@ -690,9 +707,9 @@ function rowToResult(row: any): AudienceAuditResult {
   return {
     totalPostsScanned: Number(row.total_posts_scanned) || 0,
     totalCommentsScanned: Number(row.total_comments_scanned) || 0,
-    realAudienceRate: Number(row.real_audience_rate) || 0,
-    seedingRate: Number(row.seeding_rate) || 0,
-    seedingRiskLevel: (row.seeding_risk_level as SeedingRiskLevel) || "Low",
+    realAudienceRate: Number(row.total_comments_scanned)>0 ? Number(row.real_audience_rate) : null,
+    seedingRate: Number(row.total_comments_scanned)>0 ? Number(row.seeding_rate) : null,
+    seedingRiskLevel: Number(row.total_comments_scanned)>0 ? (row.seeding_risk_level as SeedingRiskLevel) : "Unknown",
     topTagDistribution: Array.isArray(row.top_tag_distribution)
       ? row.top_tag_distribution
       : [],
@@ -725,45 +742,28 @@ async function loadExternalSubject(kolId: string): Promise<{
   supabaseId: string | null;
   posts: ScoutedPostRow[];
 } | null> {
-  let dash: Awaited<ReturnType<typeof getLarkDashboardData>> | null = null;
-  try {
-    dash = await getLarkDashboardData();
-  } catch (err) {
-    console.warn("[audience-audit] Lark lookup failed:", err);
-    return null;
-  }
-
-  const kol = (dash.kols || []).find((k: any) => k?.id === kolId);
-  if (!kol?.name) return null;
-
-  const posts: ScoutedPostRow[] = (dash.posts || [])
-    .filter((p: any) => {
-      if (!p) return false;
-      if (Array.isArray(p.kolRecordIds) && p.kolRecordIds.includes(kolId)) return true;
-      const author = String(p.author || "").toLowerCase();
-      return author.includes(String(kol.name).toLowerCase());
-    })
-    .map((p: any) => ({
-      id: String(p?.id || ""),
-      title: p?.title || "",
-      hashtags: "",
-      notes: "",
-      platform: p?.platform || "",
-      post_url: p?.postUrl || "",
-    }));
-
   const supabase = createAdminClient();
-  const { data: match } = await supabase
+  const { data: kol } = await supabase
     .from("kols")
-    .select("id")
-    .ilike("name", kol.name)
+    .select("id, name")
+    .ilike("name", `%${kolId}%`)
     .limit(1)
     .maybeSingle();
 
+  if (!kol?.name) return null;
+
+  const safe = kol.name.replace(/[%_,]/g, " ");
+  const { data: postsData } = await supabase
+    .from("scouted_posts")
+    .select("id, title, hashtags, notes, platform, post_url, comments, comments_sample")
+    .or(`author.ilike.%${safe}%,title.ilike.%${safe}%`)
+    .order("views", { ascending: false })
+    .limit(40);
+
   return {
     name: kol.name,
-    supabaseId: match?.id || null,
-    posts,
+    supabaseId: kol.id,
+    posts: (postsData || []) as ScoutedPostRow[],
   };
 }
 
@@ -780,7 +780,7 @@ export async function getLatestAudienceAudit(
     .maybeSingle();
 
   if (kol?.audience_audit && typeof kol.audience_audit === "object") {
-    return kol.audience_audit as AudienceAuditResult;
+    return normalizeAuditCache(kol.audience_audit as AudienceAuditResult);
   }
 
   const { data: row } = await supabase
@@ -832,13 +832,6 @@ export async function runKolAudienceAudit(
     }
   }
 
-  if (!options.force && kol.audience_audit?.auditedAt) {
-    const ageMs = Date.now() - new Date(kol.audience_audit.auditedAt).getTime();
-    if (Number.isFinite(ageMs) && ageMs < 6 * 60 * 60 * 1000) {
-      return kol.audience_audit as AudienceAuditResult;
-    }
-  }
-
   const persistable = isUuid(kol.id);
   let postRows: ScoutedPostRow[] = [];
 
@@ -875,12 +868,14 @@ export async function runKolAudienceAudit(
     postRows = externalPosts.slice(0, postLimit);
   }
 
+  const fingerprint=createHash('sha256').update(JSON.stringify(postRows.map(p=>({id:p.id,title:p.title,hashtags:p.hashtags,comments:p.comments_sample})))).digest('hex');
+  if(!options.force && kol.audience_audit?.evidenceFingerprint===fingerprint && kol.audience_audit.analyzerVersion==='2') return kol.audience_audit;
   if (postRows.length === 0) {
     const empty = emptyResult();
     const auditedAt = new Date().toISOString();
     let auditId = "";
     if (persistable) {
-      const { data: inserted } = await supabase
+      const { data: inserted, error: historyError } = await supabase
         .from("kol_audience_audits")
         .insert({
           kol_id: kol.id,
@@ -900,10 +895,12 @@ export async function runKolAudienceAudit(
         })
         .select("id")
         .single();
+      if (historyError) throw new Error(`Audience audit history could not be saved: ${historyError.message}`);
       auditId = inserted?.id || "";
       if (inserted?.id) {
         const payload = toCachePayload(empty, auditedAt, auditId);
-        await supabase.from("kols").update({ audience_audit: payload }).eq("id", kol.id);
+        const {error:cacheSaveError}=await supabase.from("kols").update({ audience_audit: payload }).eq("id", kol.id);
+  if(cacheSaveError)throw new Error(`Audience audit could not be saved: ${cacheSaveError.message}`);
         return payload;
       }
     }
@@ -965,12 +962,12 @@ export async function runKolAudienceAudit(
     .single();
 
   if (insErr) {
-    console.warn("[audience-audit] history insert skipped:", insErr.message);
-    return toCachePayload(result, auditedAt, "");
+    throw new Error(`Audience audit history could not be saved: ${insErr.message}`);
   }
 
-  const payload = toCachePayload(result, auditedAt, inserted.id);
-  await supabase.from("kols").update({ audience_audit: payload }).eq("id", kol.id);
+  const payload = {...toCachePayload(result,auditedAt,inserted.id),evidenceFingerprint:fingerprint,analyzerVersion:'2'};
+  const {error:cacheSaveError}=await supabase.from("kols").update({ audience_audit: payload }).eq("id", kol.id);
+  if(cacheSaveError)throw new Error(`Audience audit could not be saved: ${cacheSaveError.message}`);
 
   return payload;
 }
@@ -1006,30 +1003,6 @@ function auditRow(result: AudienceAuditResult, auditedAt: string) {
   };
 }
 
-function larkPostsForCommunity(dash: any, community: { id: string; name: string; sport?: string[] }) {
-  const name = (community.name || "").toLowerCase();
-  const sports = (community.sport || []).map((s) => s.toLowerCase()).filter((s) => s.length > 2);
-  const linked = (dash.posts || []).filter((p: any) => {
-    const title = String(p.title || "").toLowerCase();
-    const author = String(p.author || "").toLowerCase();
-    if (Array.isArray(p.kolRecordIds) && p.kolRecordIds.includes(community.id)) return true;
-    if (name && (author.includes(name) || title.includes(name))) return true;
-    return false;
-  });
-  const pool = linked.length > 0 ? linked : (dash.posts || []).filter((p: any) => {
-    const title = String(p.title || "").toLowerCase();
-    return sports.some((sp) => title.includes(sp));
-  });
-  return pool.slice(0, 40).map((p: any) => ({
-    id: String(p.id || ""),
-    title: p.title || "",
-    hashtags: "",
-    notes: "",
-    platform: p.platform || "",
-    post_url: p.postUrl || "",
-  })) as ScoutedPostRow[];
-}
-
 export async function getLatestCommunityAudienceAudit(
   communityId: string
 ): Promise<AudienceAuditResult | null> {
@@ -1041,7 +1014,7 @@ export async function getLatestCommunityAudienceAudit(
     .eq("id", communityId)
     .maybeSingle();
   if (row?.audience_audit && typeof row.audience_audit === "object") {
-    return row.audience_audit as AudienceAuditResult;
+    return normalizeAuditCache(row.audience_audit as AudienceAuditResult);
   }
   return null;
 }
@@ -1082,40 +1055,29 @@ export async function runCommunityAudienceAudit(
     }
   }
 
-  let externalPosts: ScoutedPostRow[] = [];
   if (!name) {
     try {
-      const dash = await getLarkDashboardData();
-      const community = (dash.communities || []).find((c: any) => c?.id === communityId);
-      if (!community?.name) throw new Error("Community profile not found");
-      name = community.name;
-      sports = community.sport || [];
-      externalPosts = larkPostsForCommunity(dash, { id: communityId, name, sport: sports });
       const { data: match } = await supabase
         .from("communities")
-        .select("id, audience_audit")
-        .ilike("name", name)
+        .select("id, name, sports, audience_audit")
+        .ilike("name", `%${communityId}%`)
         .limit(1)
         .maybeSingle();
-      if (match?.id) {
+      if (match?.name) {
         supabaseId = match.id;
+        name = match.name;
+        sports = Array.isArray(match.sports) ? match.sports : [];
         cached = match.audience_audit || null;
       }
     } catch (err: any) {
-      if (err?.message === "Community profile not found") throw err;
-      console.warn("[audience-audit] community lark lookup:", err);
+      console.warn("[audience-audit] community lookup error:", err);
     }
   }
 
   if (!name) throw new Error("Community profile not found");
 
-  if (!options.force && cached?.auditedAt) {
-    const age = Date.now() - new Date(cached.auditedAt).getTime();
-    if (Number.isFinite(age) && age < 6 * 60 * 60 * 1000) return cached;
-  }
-
   let posts: ScoutedPostRow[] = [];
-  if (supabaseId) {
+  if (supabaseId || name) {
     const safe = name.replace(/[%_,]/g, " ");
     const { data, error } = await supabase
       .from("scouted_posts")
@@ -1125,16 +1087,10 @@ export async function runCommunityAudienceAudit(
       .limit(postLimit);
     if (!error) posts = (data || []) as ScoutedPostRow[];
   }
-  if (posts.length === 0 && externalPosts.length === 0) {
-    try {
-      const dash = await getLarkDashboardData();
-      externalPosts = larkPostsForCommunity(dash, { id: communityId, name, sport: sports });
-    } catch {
-      /* lark optional */
-    }
-  }
-  if (posts.length === 0) posts = externalPosts.slice(0, postLimit);
 
+
+  const fingerprint=createHash('sha256').update(JSON.stringify(posts.map(p=>({id:p.id,title:p.title,hashtags:p.hashtags,comments:p.comments_sample})))).digest('hex');
+  if(!options.force && cached?.evidenceFingerprint===fingerprint && cached.analyzerVersion==='2') return normalizeAuditCache(cached);
   const { result } = await analyzePosts(name, posts, options.heuristicsOnly);
   const auditedAt = new Date().toISOString();
   if (!supabaseId) return toCachePayload(result, auditedAt, "");
@@ -1144,12 +1100,12 @@ export async function runCommunityAudienceAudit(
     .insert({ community_id: supabaseId, ...auditRow(result, auditedAt) })
     .select("id")
     .single();
-  const payload = toCachePayload(result, auditedAt, inserted?.id || "");
+  const payload = {...toCachePayload(result, auditedAt, inserted?.id || ""),evidenceFingerprint:fingerprint,analyzerVersion:"2"};
   if (insErr) {
-    console.warn("[audience-audit] community history skipped:", insErr.message);
-    return payload;
+    throw new Error(`Community audit history could not be saved: ${insErr.message}`);
   }
-  await supabase.from("communities").update({ audience_audit: payload }).eq("id", supabaseId);
+  const {error:cacheSaveError}=await supabase.from("communities").update({ audience_audit: payload }).eq("id", supabaseId);
+  if(cacheSaveError)throw new Error(`Community audit could not be saved: ${cacheSaveError.message}`);
   return payload;
 }
 
@@ -1168,24 +1124,22 @@ async function findOnePost(postId: string): Promise<{ name: string; post: Scoute
       };
     }
   }
-  try {
-    const dash = await getLarkDashboardData();
-    const found = (dash.posts || []).find((p: any) => p?.id === postId);
-    if (!found) return null;
+
+  const { data: found } = await supabase
+    .from("scouted_posts")
+    .select("id, title, hashtags, notes, platform, post_url, comments, comments_sample, author")
+    .or(`id.eq.${postId},post_url.ilike.%${postId}%`)
+    .limit(1)
+    .maybeSingle();
+
+  if (found) {
     return {
       name: found.author || "Post",
-      post: {
-        id: String(found.id),
-        title: found.title || "",
-        hashtags: "",
-        notes: "",
-        platform: found.platform || "",
-        post_url: found.postUrl || "",
-      },
+      post: found as ScoutedPostRow,
     };
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 export async function getLatestPostAudienceAudit(
@@ -1199,7 +1153,7 @@ export async function getLatestPostAudienceAudit(
     .eq("id", postId)
     .maybeSingle();
   if (data?.content_audit && typeof data.content_audit === "object") {
-    return data.content_audit as AudienceAuditResult;
+    return normalizeAuditCache(data.content_audit as AudienceAuditResult);
   }
   return null;
 }
@@ -1227,6 +1181,6 @@ export async function runPostAudienceAudit(
       sponsor_disclosure_type: sponsor?.sponsorDisclosureType || "",
     })
     .eq("id", found.post.id);
-  if (error) console.warn("[audience-audit] post snapshot skipped:", error.message);
+  if (error) throw new Error(`Post audit could not be saved: ${error.message}`);
   return payload;
 }

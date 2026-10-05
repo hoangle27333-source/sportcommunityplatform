@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { roleAccess } from "./role-policy";
 import type { User } from "@supabase/supabase-js";
 
 export type AppRole = "admin" | "editor" | "viewer";
@@ -26,7 +27,7 @@ export interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({
+export const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   role: null,
@@ -55,20 +56,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, name, email, role, avatar_url")
+        .select("id, name, email, role")
         .eq("id", currentUser.id)
         .single();
 
       setUser(currentUser);
-      if (data && !error) {
+      if (data && !error && data.role) {
         setProfile(data as UserProfile);
       } else {
-        // Fallback profile if record not yet synced
-        const fallbackRole: AppRole =
-          currentUser.email === "admin@sportcommunityplatform.com" ||
-          currentUser.email === "hoangle27333@gmail.com"
-            ? "admin"
-            : "editor";
+        // An unavailable profile never grants write or administrative access.
+        const fallbackRole: AppRole = "viewer";
 
         setProfile({
           id: currentUser.id,
@@ -79,6 +76,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.warn("Failed to fetch user profile:", err);
+      setProfile({
+        id: currentUser.id,
+        name: currentUser.user_metadata?.name || currentUser.email?.split("@")[0] || "Member",
+        email: currentUser.email || "",
+        role: "viewer",
+      });
     } finally {
       setLoading(false);
     }
@@ -117,9 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchProfile]);
 
   const role = profile?.role ?? null;
-  const isAdmin = role === "admin";
-  const isEditor = role === "admin" || role === "editor";
-  const isViewer = role === "viewer";
+  const { isAdmin, isEditor, isViewer } = roleAccess(role);
 
   return (
     <AuthContext.Provider

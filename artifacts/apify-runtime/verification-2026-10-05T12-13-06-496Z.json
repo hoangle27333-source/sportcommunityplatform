@@ -1,0 +1,77 @@
+{
+  "verifiedAt": "2026-10-05T12:13:06.496Z",
+  "checks": [
+    {
+      "name": "instagram-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "facebook-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "name": "tiktok-comments",
+      "verified": false,
+      "reason": "No public test post URL configured."
+    },
+    {
+      "platform": "Instagram",
+      "task": "profile-details",
+      "actor": "apify~instagram-scraper",
+      "input": {
+        "directUrls": [
+          "https://www.instagram.com/nike/"
+        ],
+        "resultsType": "details",
+        "resultsLimit": 1
+      },
+      "name": "instagram-profile-details",
+      "verified": true,
+      "reasons": [],
+      "build": "0.0.797",
+      "count": 1,
+      "parsed": 1,
+      "runs": [
+        {
+          "provider_run_id": "QddNi8JwQW8lcY7df",
+          "build_id": "stDgWAnKuW1OXIcLL",
+          "dataset_ids": {
+            "default": "oJ7ErKTpBqfqXuZ7Z"
+          },
+          "actual_usd": 0.0027,
+          "reserved_usd": 0.25,
+          "warnings": [],
+          "usage": null,
+          "pricing": {
+            "createdAt": "2026-02-20T12:24:59.754Z",
+            "startedAt": "2026-02-20T12:24:59.754Z",
+            "pricingModel": "PAY_PER_EVENT",
+            "pricingPerEvent": {
+              "actorChargeEvents": {
+                "result": {
+                  "eventTitle": "Result",
+                  "eventPriceUsd": 0.0027,
+                  "isOneTimeEvent": false,
+                  "isPrimaryEvent": true,
+                  "eventDescription": "Each result written to the dataset"
+                }
+              }
+            },
+            "apifyMarginPercentage": 0.2,
+            "minimalMaxTotalChargeUsd": 0.0027,
+            "isPriceChangeNotificationSuppressed": true
+          }
+        }
+      ],
+      "memory": "Actor default",
+      "pricingModel": "PAY_PER_EVENT",
+      "dataAliases": [
+        "default"
+      ],
+      "supportsBatch": true,
+      "supportsDateFilter": false
+    }
+  ]
+}
