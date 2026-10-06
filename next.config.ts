@@ -13,7 +13,8 @@ const nextConfig: NextConfig = {
     "sharp",
     "satori",
     "canvas",
-    "bullmq"
+    "bullmq",
+    "playwright"
   ],
   webpack: (config) => {
     config.externals = [...(config.externals || []), { canvas: "canvas" }];

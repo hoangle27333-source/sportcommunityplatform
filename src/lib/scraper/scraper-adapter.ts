@@ -1,5 +1,3 @@
-import { scrapeFacebookPage } from "./facebook-scraper";
-import { scrapeInstagramProfile } from "./instagram-scraper";
 import type { ScrapedProfile } from "./types";
 
 /**
@@ -9,6 +7,10 @@ export async function scrapeProfile(
   platform: "facebook" | "instagram",
   url: string,
 ): Promise<ScrapedProfile> {
-  if (platform === "facebook") return scrapeFacebookPage(url);
+  if (platform === "facebook") {
+    const { scrapeFacebookPage } = await import("./facebook-scraper");
+    return scrapeFacebookPage(url);
+  }
+  const { scrapeInstagramProfile } = await import("./instagram-scraper");
   return scrapeInstagramProfile(url);
 }

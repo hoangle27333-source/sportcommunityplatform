@@ -1,5 +1,15 @@
-import { chromium } from "playwright";
 import type { ScrapedProfile, RecentPost } from "./types";
+
+async function getChromium() {
+  try {
+    // Dynamic import to prevent bundler failure when playwright is not installed (e.g. Vercel serverless)
+    // @ts-ignore
+    const pw = await import(/* webpackIgnore: true */ "playwright");
+    return pw.chromium || pw.default?.chromium;
+  } catch {
+    throw new Error("Playwright is not installed or available in this runtime environment.");
+  }
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
@@ -16,6 +26,7 @@ const USER_AGENT =
  * and are therefore omitted here.
  */
 export async function scrapeFacebookPage(profileUrl: string): Promise<ScrapedProfile> {
+  const chromium = await getChromium();
   const browser = await chromium.launch({
     headless: true,
     args: [

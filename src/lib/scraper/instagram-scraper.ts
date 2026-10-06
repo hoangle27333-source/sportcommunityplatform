@@ -1,5 +1,15 @@
-import { chromium } from "playwright";
 import type { ScrapedProfile, RecentPost } from "./types";
+
+async function getChromium() {
+  try {
+    // Dynamic import to prevent bundler failure when playwright is not installed (e.g. Vercel serverless)
+    // @ts-ignore
+    const pw = await import(/* webpackIgnore: true */ "playwright");
+    return pw.chromium || pw.default?.chromium;
+  } catch {
+    throw new Error("Playwright is not installed or available in this runtime environment.");
+  }
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
@@ -15,6 +25,7 @@ const USER_AGENT =
  * We try each strategy in order, accumulating fields as they become available.
  */
 export async function scrapeInstagramProfile(profileUrl: string): Promise<ScrapedProfile> {
+  const chromium = await getChromium();
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -177,9 +188,8 @@ function extractUsername(url: string): string {
   }
 }
 
-async function scrapeRecentPosts(
-  page: import("playwright").Page,
-): Promise<RecentPost[]> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function scrapeRecentPosts(page: any): Promise<RecentPost[]> {
   try {
     // Instagram post thumbnails are in <article> elements
     const posts = await page.evaluate(() => {
