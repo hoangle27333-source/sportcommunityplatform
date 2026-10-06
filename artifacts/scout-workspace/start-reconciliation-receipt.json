@@ -1,0 +1,100 @@
+{
+  "checkedAt": "2026-10-05T16:08:28.133Z",
+  "sessionId": "61868fc8-abdd-4ff9-b865-8e45e13b436e",
+  "result": {
+    "success": true,
+    "reconciled": true,
+    "message": "Provider history confirms no run was created in the start window. The reserved budget has been released. You can retry this task."
+  },
+  "runs": [
+    {
+      "id": "a86e5381-79c8-48fb-b1f8-00c04e7e17ec",
+      "actor": "apify~facebook-search-scraper",
+      "state": "rejected:START_NOT_CREATED",
+      "actual_usd": 0,
+      "usage": {
+        "reconciliation": {
+          "actor": "apify~facebook-search-scraper",
+          "total": 5,
+          "cutoff": "2026-10-05T14:58:54.459Z",
+          "outcome": "no-provider-run-in-start-window",
+          "checkedAt": "2026-10-05T16:08:26.274Z",
+          "recentRunIds": [
+            "EQl1kVAEsG5ecWat4",
+            "McGD30v8doYWxXEJd",
+            "PicrDM9u9MhDK6KgL",
+            "vWunxfJWYClUyjFhP",
+            "8NeuNBEbdVUP11gTv"
+          ],
+          "reservationId": "a86e5381-79c8-48fb-b1f8-00c04e7e17ec"
+        }
+      }
+    },
+    {
+      "id": "41d054c6-e54d-4068-a0a9-055606133cf9",
+      "actor": "clockworks~tiktok-scraper",
+      "state": "rejected:START_NOT_CREATED",
+      "actual_usd": 0,
+      "usage": {
+        "reconciliation": {
+          "actor": "clockworks~tiktok-scraper",
+          "total": 5,
+          "cutoff": "2026-10-05T14:59:06.704Z",
+          "outcome": "no-provider-run-in-start-window",
+          "checkedAt": "2026-10-05T16:08:26.924Z",
+          "recentRunIds": [
+            "5IwTHYQn3zQeM0tIh",
+            "ebaxvsLH8a3ewuUWa",
+            "wQqqPDE30b3IISHE5",
+            "DUkEDCZeq66BGn82g",
+            "PbtFqosOHjHO2qEaj"
+          ],
+          "reservationId": "41d054c6-e54d-4068-a0a9-055606133cf9"
+        }
+      }
+    },
+    {
+      "id": "1fadd8b9-eef6-4e93-b506-c44fc2bd3934",
+      "actor": "apify~instagram-scraper",
+      "state": "rejected:START_NOT_CREATED",
+      "actual_usd": 0,
+      "usage": {
+        "reconciliation": {
+          "actor": "apify~instagram-scraper",
+          "total": 24,
+          "cutoff": "2026-10-05T14:58:42.189Z",
+          "outcome": "no-provider-run-in-start-window",
+          "checkedAt": "2026-10-05T16:08:27.359Z",
+          "recentRunIds": [
+            "0aS634BlAcjxOlgeB",
+            "hVXZBN0DeDCs7sCK9",
+            "aR56hHPARMcNO3jtP",
+            "iGRS8QGPChEjSNFlI",
+            "Mpkd9y2djcY3maotI",
+            "ix884iPfs0mmFYQlF",
+            "zM8wIPSuc0m33XB8D",
+            "0ONUssGv0dAfc99UC",
+            "K5ZyfUIVJooxxvcPI",
+            "qk5g1eGW1W9SOWpNT",
+            "8rSXArBloFhXGxHev",
+            "QddNi8JwQW8lcY7df",
+            "52v8yz9dF69bwZz7t",
+            "tbaaghNmezGAW7tvF",
+            "3FzmBBh8iIXObnyG1",
+            "9LChO4R0p8145QPOr",
+            "DTyhOzwnJ17PIUWdO",
+            "gJIqZgtdA2J7XVYqC",
+            "SEhwtfIt7I1bFxpge",
+            "hAy844s7i9io71FcE",
+            "1PUYHF9W7yYuYxCMJ",
+            "nCI1lUJekcqNywmhy",
+            "cnBoavWb51LqIt8lO",
+            "MAeegTtA748DEfNoi"
+          ],
+          "reservationId": "1fadd8b9-eef6-4e93-b506-c44fc2bd3934"
+        }
+      }
+    }
+  ],
+  "newProviderStarts": 0
+}

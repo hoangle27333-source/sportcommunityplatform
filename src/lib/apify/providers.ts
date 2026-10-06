@@ -37,10 +37,10 @@ export function providerPlans(platform: string, task: ScoutTask, query: string, 
 }
 export function parseProfile(it: any, platform: string): SocialProfile | null {
   const a = it.authorMeta || it.user || (typeof it.author === 'object' ? it.author : {}) || {};
-  const username = String(it.username || it.uniqueId || a.uniqueId || (platform === 'TikTok' ? a.name : '') || '').replace(/^@/, '');
+  const username = String(it.username || it.pageName || it.uniqueId || a.uniqueId || (platform === 'TikTok' ? a.name : '') || '').replace(/^@/, '');
   // Facebook search output uses facebookUrl for the shared search page and url
   // for the actual result. Never let the search context become account identity.
-  const urls = [it.profileUrl, it.groupUrl, it.url, it.facebookUrl];
+  const urls = [it.profileUrl, it.groupUrl, it.url, it.pageUrl, it.facebookUrl];
   if (platform !== 'Facebook' && /^[\w.]+$/.test(username)) urls.push(platform === 'TikTok' ? `https://www.tiktok.com/@${username}` : `https://www.${platform.toLowerCase()}.com/${username}/`);
   const url = urls.map(value => canonicalUrl(value)).find(value => platformMatches(platform, value) && ['profile', 'group'].includes(urlKind(value)));
   if (!url) return null;
@@ -51,7 +51,7 @@ export function parseProfile(it: any, platform: string): SocialProfile | null {
   const avgViews = observedViews.length ? Math.round(observedViews.reduce((n, p) => n + p.views!, 0) / observedViews.length) : null;
   const er = followers !== null && followers > 0 && interactions.length ? Number((interactions.reduce((n, p) => n + p.likes! + p.comments!, 0) / interactions.length / followers * 100).toFixed(2)) : null;
   const provenance=it._provenance ? {...it._provenance,missingFields:followers===null ? ['followers'] : []} : undefined;
-  return { username: username || new URL(url).searchParams.get('id') || new URL(url).pathname.split('/').filter(Boolean).pop() || it.id, name: String(it.fullName || it.name || it.title || a.nickName || a.nickname || username), bio: String(it.biography || it.bio || it.description || a.signature || ''), url, platform,
+  return { username: username || new URL(url).searchParams.get('id') || new URL(url).pathname.split('/').filter(Boolean).pop() || it.id, name: String(it.fullName || it.name || it.title || a.nickName || a.nickname || username), bio: String(it.biography || it.bio || it.description || it.intro || a.signature || ''), url, platform,
     followers, avgViews, likes: null, comments: null, er, provenance, derivedMetrics: {viewsSample:observedViews.length,erSample:interactions.length,formula:"mean(likes + comments) / followers * 100"},
     avatarUrl: it.profilePicUrlHD || it.profilePicUrl || it.profilePicture || it.profilePictureUrl || it.imageUrl || a.avatar || '', category: String(it.categoryName || it.businessCategoryName || it.category || ''), entityType: String(it.entityType || it.type || '').toLowerCase(), location: String(it.location?.name || it.address?.city || (typeof it.location === 'string' ? it.location : '') || ''), posts };
 }
@@ -63,8 +63,9 @@ export function parsePost(it: any, platform: string): SocialPost | null {
   const caption = String(it.caption || it.text || it.description || '');
   const tags = (it.hashtags || []).map((h: any) => typeof h === 'string' ? h : h.name || h.title || '');
   const authorUrl = canonicalUrl(it.ownerProfileUrl || a.profileUrl || (username ? platform === 'TikTok' ? `https://www.tiktok.com/@${username}` : `https://www.${platform.toLowerCase()}.com/${username}/` : it.user?.url || ''));
-  const date = it.timestamp || it.createTimeISO || (it.createTime ? new Date(Number(it.createTime)*1000).toISOString() : undefined);
-  return { publishedAt: date && Number.isFinite(Date.parse(date)) ? new Date(date).toISOString() : undefined, location: typeof it.location === 'string' ? it.location : it.location?.name || '', provenance: it._provenance, id: String(it.id || it.postId || url), caption, url, authorUrl, author: String(it.ownerFullName || a.nickName || a.nickname || it.user?.name || username || 'Unknown'), username,
+  const rawDate = it.time || it.createTimeISO || it.timestamp || it.createTime;
+  const date = typeof rawDate === 'number' ? (Number.isFinite(rawDate) && Number.isFinite(new Date(rawDate < 1e12 ? rawDate * 1000 : rawDate).getTime()) ? new Date(rawDate < 1e12 ? rawDate * 1000 : rawDate).toISOString() : undefined) : rawDate;
+  return { publishedAt: date && Number.isFinite(Date.parse(date)) ? new Date(date).toISOString() : undefined, location: typeof it.location === 'string' ? it.location : it.location?.name || it.locationMeta?.city || it.locationMeta?.address || '', provenance: it._provenance, id: String(it.id || it.postId || url), caption, url, authorUrl, author: String(it.ownerFullName || a.nickName || a.nickname || it.user?.name || username || 'Unknown'), username,
     views: metric(it.videoViewCount, it.videoPlayCount, it.playCount, it.views), likes: metric(it.likesCount, it.diggCount, it.likes, it.reactionsCount), comments: metric(it.commentsCount, it.commentCount, it.comments),
     hashtags: [...new Set<string>([...tags, ...(caption.match(/#[\p{L}\p{N}_]+/gu) || []).map(t => t.slice(1))])],
     contentType: platform === 'TikTok' ? 'Video' : /\/reels?\//.test(url) || it.productType === 'clips' || it.type === 'Reel' ? 'Reels' : 'Post', thumbnailUrl: it.displayUrl || it.thumbnailUrl || it.videoMeta?.coverUrl || '' };

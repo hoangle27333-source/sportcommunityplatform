@@ -1,0 +1,83 @@
+{
+  "recordedAt": "2026-10-06T03:19:51.069Z",
+  "checks": [
+    {
+      "platform": "Instagram",
+      "sessionId": "d7dec774-3fd4-4a2c-a160-46012c990cf3",
+      "criteria": {
+        "platform": [
+          "Instagram"
+        ],
+        "searchMode": "hashtag",
+        "keyword": "#chaybo",
+        "sport": [
+          "Chạy bộ / Marathon"
+        ],
+        "geography": [
+          "Toàn quốc"
+        ],
+        "limit": 5
+      },
+      "status": "complete",
+      "success": true,
+      "counts": {
+        "failed": 0,
+        "excluded": 0,
+        "inserted": 0,
+        "duplicate": 0,
+        "refreshed": 0,
+        "unverified": 5
+      },
+      "warnings": [],
+      "runs": [
+        {
+          "provider_run_id": "0toDyTiuJP573gIqw",
+          "build": "0.0.796",
+          "state": "succeeded",
+          "actual_usd": 0,
+          "reserved_usd": 0.25
+        }
+      ],
+      "persistedPosts": 0
+    },
+    {
+      "platform": "TikTok",
+      "sessionId": "cc1e23e2-e6e8-4768-8023-05b7fbe274dd",
+      "criteria": {
+        "platform": [
+          "TikTok"
+        ],
+        "searchMode": "keyword",
+        "keyword": "cầu lông",
+        "sport": [
+          "Cầu lông"
+        ],
+        "geography": [
+          "Toàn quốc"
+        ],
+        "limit": 5
+      },
+      "status": "complete",
+      "success": true,
+      "counts": {
+        "failed": 0,
+        "excluded": 4,
+        "inserted": 0,
+        "duplicate": 0,
+        "refreshed": 0,
+        "unverified": 1
+      },
+      "warnings": [],
+      "runs": [
+        {
+          "provider_run_id": "xrHsFD2TGQlci6GRU",
+          "build": "0.0.612",
+          "state": "succeeded",
+          "actual_usd": 0,
+          "reserved_usd": 0.5
+        }
+      ],
+      "persistedPosts": 0
+    }
+  ]
+}

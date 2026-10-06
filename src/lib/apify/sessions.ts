@@ -1,3 +1,4 @@
+import {explainSavedProviderWarnings} from './provider-warnings';
 import {scoutOutcome} from './scout-outcome';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -9,7 +10,7 @@ import { queryGeographyConflict } from './discovery-quality';
 import { executeExtendedSession } from './tasks';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
-const requestSchema = z.object({ keyword: z.string().trim().min(1).max(300).optional(), targetType: z.enum(['Individual KOLs', 'Communities & Clubs']).default('Individual KOLs'), platform: z.union([z.enum(['Instagram', 'Facebook', 'TikTok']), z.array(z.enum(['Instagram', 'Facebook', 'TikTok'])).min(1).max(3)]).default('Instagram'), geography: z.union([z.string().max(100), z.array(z.string().max(100)).max(4)]).default('Nationwide'), limit: z.number().int().min(1).max(50).default(5), searchMode: z.enum(['hashtag', 'keyword']).optional(), sport: z.union([z.string().max(100), z.array(z.string().max(100)).max(10)]).optional(), kolId: z.string().uuid().optional(), communityId: z.string().uuid().optional(), forceRefresh:z.boolean().default(false), ids:z.array(z.string().uuid()).min(1).max(50).optional(), entityType:z.enum(['kol','community']).optional(), trackedAccountId:z.string().uuid().optional(), url:z.string().url().optional(), selectedPostIds:z.array(z.string().uuid()).min(1).max(5).refine(ids=>new Set(ids).size===ids.length,'Select each post once.').optional(), uiContext: z.object({source:z.string().max(200)}).optional(), notes: z.string().max(5000).optional() });
+const requestSchema = z.object({ keyword: z.string().trim().min(1).max(300).optional(), targetType: z.enum(['Individual KOLs', 'Communities & Clubs']).default('Individual KOLs'), platform: z.union([z.enum(['Instagram', 'Facebook', 'TikTok']), z.array(z.enum(['Instagram', 'Facebook', 'TikTok'])).min(1).max(3).refine(values => new Set(values).size === values.length, 'Select each platform once.')]).default('Instagram'), geography: z.union([z.string().max(100), z.array(z.string().max(100)).max(4)]).default('Nationwide'), limit: z.number().int().min(1).max(50).default(5), searchMode: z.enum(['hashtag', 'keyword']).optional(), qualityMode:z.enum(['high-engagement','topic']).default('high-engagement'), minInteractions:z.number().int().min(1).max(1000000).default(100), minViews:z.number().int().min(1).max(1000000000).default(10000), recentDays:z.number().int().min(1).max(30).default(7), sport: z.union([z.string().max(100), z.array(z.string().max(100)).max(10)]).optional(), kolId: z.string().uuid().optional(), communityId: z.string().uuid().optional(), forceRefresh:z.boolean().default(false), ids:z.array(z.string().uuid()).min(1).max(50).optional(), entityType:z.enum(['kol','community']).optional(), trackedAccountId:z.string().uuid().optional(), url:z.string().url().optional(), selectedPostIds:z.array(z.string().uuid()).min(1).max(5).refine(ids=>new Set(ids).size===ids.length,'Select each post once.').optional(), uiContext: z.object({source:z.string().max(200)}).optional(), notes: z.string().max(5000).optional() });
 export async function scoutReadAccess() { const user = await getServerUserRole(); if (!user.userId) throw new ScoutError('Please log in', 'UNAUTHORIZED', 401); return user.userId; }
 export async function scoutAccess() { const user = await getServerUserRole(); if (!user.userId) throw new ScoutError('Please log in', 'UNAUTHORIZED', 401); if (!['admin','editor'].includes(user.role)) throw new ScoutError('Editor access required', 'FORBIDDEN', 403); return user.userId; }
 export function scoutFailure(e: any) { return NextResponse.json({ success: false, error: e.name === 'ZodError' ? 'Invalid scout criteria' : e.message || 'Scout failed', code: e.code || 'SCOUT_ERROR', ...(e.approvalUrl ? {approvalUrl:e.approvalUrl} : {}) }, { status: e.status || (e.name === 'ZodError' ? 400 : 500) }); }
@@ -28,7 +29,7 @@ export async function startSession(kind: string, value: unknown) {
   const params = requestSchema.parse(value);
   if(kind==='sync' && (!params.ids || !params.entityType) || kind==='tracked' && !params.trackedAccountId || kind==='comments' && (!params.kolId || !params.selectedPostIds) || kind==='inspect' && !params.url) throw new ScoutError('Missing task parameters.','INVALID_TASK',400);
   if ((kind === 'preview' || kind === 'trends') && !params.keyword) throw new ScoutError('Enter a search query', 'INVALID_QUERY', 400);
-  if (kind === 'preview' && (Array.isArray(params.platform) || Array.isArray(params.geography))) throw new ScoutError('Select one platform and location', 'INVALID_QUERY', 400);
+  if (kind === 'preview' && Array.isArray(params.geography)) throw new ScoutError('Select one location', 'INVALID_QUERY', 400);
   if (kind === 'kol-posts' && !params.kolId || kind === 'community-posts' && !params.communityId) throw new ScoutError('Missing profile ID', 'INVALID_QUERY', 400);
   if(params.keyword && typeof params.geography==='string' && queryGeographyConflict(params.keyword,params.geography)) throw new ScoutError('Query location conflicts with the selected geography.','GEOGRAPHY_CONFLICT',400);
   const { data, error } = await createAdminClient().from('scout_sessions').insert({ owner_id: owner, kind, params, runtime_version:2 }).select('id').single(); if (error) throw error;
@@ -37,8 +38,13 @@ export async function startSession(kind: string, value: unknown) {
 }
 export async function resumeSession(id: string, owner: string) {
   const db = createAdminClient(); const { data: s, error } = await db.from('scout_sessions').select('*').eq('id', id).eq('owner_id', owner).single(); if (error || !s) throw new ScoutError('Scout session not found', 'NOT_FOUND', 404);
-  const result=scoutOutcome(s.kind,s.params,s.result);
-  if (s.status === 'complete' && result?.success!==false) return NextResponse.json({...result,sessionId:id,criteria:s.params,importedCandidateIds:s.progress?.importedCandidateIds || []});
+  let result=scoutOutcome(s.kind,s.params,s.result);
+  if (result?.warnings?.includes('Provider item unavailable')) {
+    const {data:runs,error:runError}=await db.from('scout_provider_runs').select('platform,raw_rows,warnings').eq('session_id',id);
+    if(runError) throw runError;
+    result={...result,warnings:explainSavedProviderWarnings(result.warnings,runs || [])};
+  }
+  if (s.status === 'complete' && result?.success!==false) return NextResponse.json({...result,sessionId:id,criteria:s.params,reviewDecisions:s.review_decisions || {},importedCandidateIds:s.progress?.importedCandidateIds || []});
   if (s.status === 'failed' || s.status==='complete' && result?.success===false) return NextResponse.json({...result,sessionId:id,criteria:s.params}, { status: result?.httpStatus || 502 });
   return NextResponse.json({success:true,pending:true,sessionId:id,progress:s.progress,status:s.status,warnings:s.warnings}, {status:202});
 }

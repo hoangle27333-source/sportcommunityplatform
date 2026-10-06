@@ -1,3 +1,4 @@
+import {providerItemWarning} from './provider-warnings';
 import {sessionSnapshot} from './session-snapshot';
 import { createHash,randomUUID } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -17,7 +18,10 @@ export function inputKey(actor: string, build: string, task: string, input: any)
 export function capabilityKey(plan: ProviderPlan, task: string) { return [plan.actor, task, plan.input.searchType || plan.input.resultsType || 'default'].join(':'); }
 export async function apifyApi(path: string, body?: unknown) {
   if (!process.env.APIFY_TOKEN) throw new ScoutError('Apify is not configured.', 'NOT_CONFIGURED', 503);
-  const res = await fetch(`https://api.apify.com/v2/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${process.env.APIFY_TOKEN}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(15000) }).catch(()=>{throw new ScoutError('Provider connection failed.','PROVIDER_UNAVAILABLE',502);});
+  const res = await fetch(`https://api.apify.com/v2/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${process.env.APIFY_TOKEN}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(body === undefined ? 15000 : 60000) }).catch((error)=>{
+    const reason = error.name === 'TimeoutError' ? 'request timed out' : 'connection interrupted';
+    throw new ScoutError(`Provider ${reason}.`, 'PROVIDER_UNAVAILABLE', 502);
+  });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
     let approvalUrl: string | undefined;
@@ -35,7 +39,7 @@ export function validateProviderItem(actor: string, task: string, item: any): bo
   if (task === 'comments') return typeof (item.text ?? item.commentText ?? item.comment ?? item.content) === 'string';
   if (actor.includes('instagram')) return ['username','url','profileUrl','ownerUsername','id'].some(k => typeof item[k] === 'string') && !['followersCount','likesCount','commentsCount'].some(k => item[k] != null && (typeof item[k] !== 'number' || item[k] < 0));
   if (actor.includes('tiktok')) return !!(item.authorMeta?.name || item.authorMeta?.uniqueId || item.uniqueId || item.webVideoUrl || item.profileUrl || item.username);
-  return !!(item.url || item.facebookUrl || item.profileUrl || item.groupUrl) && !['followersCount','membersCount','likesCount'].some(k => item[k] != null && (typeof item[k] !== 'number' || item[k] < 0));
+  return !!(item.url || item.facebookUrl || item.pageUrl || item.profileUrl || item.groupUrl) && !['followersCount','membersCount','likesCount'].some(k => item[k] != null && (typeof item[k] !== 'number' || item[k] < 0));
 }
 export function knownCharge(state: any): number | null {
   // Authenticated requests read runs owned by this integration. Apify documents
@@ -79,6 +83,10 @@ export async function executePlan(sessionId: string, platform: string, task: str
     if (cache) return cache.rows.map((r: any) => ({ ...r, _provenance: { ...r._provenance, cached: true } }));
   }
   if (!run) {
+    // A new session must not bypass an unresolved start for the same provider input.
+    const {data: unresolved,error: unresolvedError} = await db.from('scout_provider_runs').select('id').eq('actor',plan.actor).eq('input',JSON.stringify(plan.input)).eq('state','start-unknown').is('provider_run_id',null).limit(1).maybeSingle();
+    if(unresolvedError)throw unresolvedError;
+    if(unresolved)throw new ScoutError('An earlier task with these provider criteria is awaiting start confirmation. Reconcile that task before trying again.', 'START_UNKNOWN',409);
     const { data: reservation, error } = await db.rpc('reserve_scout_run', { p_session:sessionId,p_key:hash,p_cache:hash,p_actor:plan.actor,p_platform:platform,p_task:task,p_build:build,p_input:plan.input });
     if (error) throw new ScoutError(error.message.includes('BUDGET_EXHAUSTED') ? 'Scout budget exhausted.' : error.message, error.message.includes('BUDGET_EXHAUSTED') ? 'BUDGET_EXHAUSTED' : 'RESERVATION_FAILED', 409);
     run = reservation.run;
@@ -86,24 +94,30 @@ export async function executePlan(sessionId: string, platform: string, task: str
     if (reservation.claimed) {
       // Persist before transmitting start; a lost response must never trigger another paid start.
       const { error: save } = await db.from('scout_provider_runs').update({state:'starting'}).eq('id',run.id); if (save) throw save;
+      let started: any;
       try {
-        const started = (await apifyApi(`acts/${plan.actor}/runs?build=${encodeURIComponent(build)}&timeout=180&maxTotalChargeUsd=${run.reserved_usd}&restartOnError=false${session.verification && session.params?.memory ? `&memory=${session.params.memory}` : ''}${capability?.receipt?.pricingModel==='PAY_PER_RESULT' ? `&maxItems=${plan.input.resultsLimit || plan.input.maxProfilesPerQuery || plan.input.resultsPerPage || 1}` : ''}`,plan.input)).data;
-        if(typeof started?.id!=='string' || !started.defaultDatasetId) throw new Error('Start response has no run identity.');
-        const { error } = await db.from('scout_provider_runs').update({provider_run_id:started.id,dataset_id:started.defaultDatasetId,build_id:started.buildId,state:'running'}).eq('id',run.id); if (error) throw error;
-        run = {...run,provider_run_id:started.id,dataset_id:started.defaultDatasetId,build_id:started.buildId,state:'running'};
+        started = (await apifyApi(`acts/${plan.actor}/runs?build=${encodeURIComponent(build)}&timeout=180&maxTotalChargeUsd=${run.reserved_usd}&restartOnError=false${session.verification && session.params?.memory ? `&memory=${session.params.memory}` : ''}${capability?.receipt?.pricingModel==='PAY_PER_RESULT' ? `&maxItems=${plan.input.resultsLimit || plan.input.maxProfilesPerQuery || plan.input.resultsPerPage || 1}` : ''}`,plan.input)).data;
+        if(typeof started?.id!=='string') throw new Error('Start response has no run identity.');
+        const identity = {provider_run_id:started.id,dataset_id:started.defaultDatasetId || started.storageIds?.datasets?.default || null,build_id:started.buildId,state:'running'};
+        const { error } = await db.from('scout_provider_runs').update(identity).eq('id',run.id); if (error) throw error;
+        run = {...run,...identity};
       } catch (e) {
         if (e instanceof ScoutError && ['BILLING_REQUIRED','RATE_LIMITED','APPROVAL_REQUIRED','PROVIDER_ERROR'].includes(e.code)) {
           const {error} = await db.rpc('settle_scout_run',{p_run:run.id,p_state:`rejected:${e.code}`,p_amount:0,p_pricing:null,p_usage:null,p_events:null}); if(error) throw error;
           throw e;
         }
-        await db.from('scout_provider_runs').update({state:'start-unknown'}).eq('id',run.id);
-        throw new ScoutError('Provider start outcome is unknown. The reservation remains held; no new paid run will be started.', 'START_UNKNOWN', 409);
+        const reason = e instanceof ScoutError ? e.message : typeof started?.id === 'string' ? 'Provider run identity could not be saved.' : 'Provider returned no run identity.';
+        const recovery = typeof started?.id === 'string' ? {provider_run_id:started.id,dataset_id:started.defaultDatasetId || started.storageIds?.datasets?.default || null,build_id:started.buildId,state:'running'} : {state:'start-unknown'};
+        const {error: recoveryError} = await db.from('scout_provider_runs').update({...recovery,warnings:[reason]}).eq('id',run.id);
+        if(recoveryError)throw recoveryError;
+        if(typeof started?.id==='string')throw new PendingScout();
+        throw new ScoutError('The provider did not confirm whether this task started. Check Scout Activity; this task needs reconciliation before retrying.', 'START_UNKNOWN', 409);
       }
     }
   }
   if(run.state?.startsWith('rejected:'))throw new ScoutError('Provider start was rejected. Start a new session after resolving the provider restriction.',run.state.slice('rejected:'.length),502);
   if(!run.provider_run_id && ['reserved','starting'].includes(run.state)) throw new PendingScout();
-  if (!run.provider_run_id) throw new ScoutError('Provider start needs reconciliation; no duplicate run was started.', 'START_UNKNOWN',409);
+  if (!run.provider_run_id) throw new ScoutError('The provider did not confirm whether this task started. Check Scout Activity; this task needs reconciliation before retrying.', 'START_UNKNOWN',409);
   const state = (await apifyApi(`actor-runs/${run.provider_run_id}`)).data;
   if (!['SUCCEEDED','FAILED','ABORTED','TIMED-OUT'].includes(state.status)) throw new PendingScout();
   const {error: settlement} = await db.rpc('settle_scout_run',{p_run:run.id,p_state:state.status.toLowerCase(),p_amount:knownCharge(state),p_pricing:state.pricingInfo || null,p_usage:state.usageUsd || state.usage ? {usd:state.usageUsd,units:state.usage,totalUsd:state.usageTotalUsd} : null,p_events:state.chargedEventCounts || null}); if(settlement) throw settlement;
@@ -113,7 +127,7 @@ export async function executePlan(sessionId: string, platform: string, task: str
   const {data:claimedDataset,error:datasetClaim}=await db.from('scout_provider_runs').update({dataset_token:datasetToken,dataset_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',run.id).or(`dataset_lease_until.is.null,dataset_lease_until.lt.${new Date().toISOString()}`).select('id').maybeSingle();if(datasetClaim)throw datasetClaim;if(!claimedDataset)throw new PendingScout();
   const datasetHeartbeat=setInterval(()=>void db.from('scout_provider_runs').update({dataset_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',run.id).eq('dataset_token',datasetToken).then(({error})=>{if(error)console.error('[social-scout] Dataset lease renewal failed',error.code);}),30000);
   try {
-  const ids = state.storageIds?.datasets || {default:run.dataset_id};
+  const ids = state.storageIds?.datasets || {default:state.defaultDatasetId || run.dataset_id};
   const dataAliases = capability?.receipt?.dataAliases || ['default'];
   const warnings: string[] = []; const raw: any[] = []; const rows: any[] = [];
   const observedAt = state.finishedAt || new Date().toISOString();
@@ -126,7 +140,7 @@ export async function executePlan(sessionId: string, platform: string, task: str
       raw.push(...(task==='comments' ? items.map(item=>({id:item.id || item.cid || item.commentId,text:item.text ?? item.commentText ?? item.comment ?? item.content,timestamp:item.timestamp || item.createTimeISO || item.createTime,error:item.error})) : items));
       for(const item of items) {
         if(item.error === 'no_items') continue;
-        if(item.error || !validateProviderItem(plan.actor,task,item)) { warnings.push(item.error ? 'Provider item unavailable' : 'Provider schema mismatch'); continue; }
+        if(item.error || !validateProviderItem(plan.actor,task,item)) { warnings.push(item.error ? providerItemWarning(platform,item) : `${platform}: An item was skipped because its format could not be validated.`); continue; }
         const normalized=task==='comments' ? {id:item.id || item.cid || item.commentId,text:item.text ?? item.commentText ?? item.comment ?? item.content,timestamp:item.timestamp || item.createTimeISO || item.createTime} : item;
         rows.push({...normalized,_provenance:{actor:plan.actor,runId:run.provider_run_id,datasetId:id,buildId:state.buildId || run.build_id,fetchedAt:observedAt,adapterVersion:ADAPTER_VERSION}});
       }

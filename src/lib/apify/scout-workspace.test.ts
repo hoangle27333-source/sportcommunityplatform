@@ -10,6 +10,11 @@ describe('Scout workspace public contracts', () => {
     expect(summary.counts).toEqual({ found: 2 });
     expect(sessionSummary({...session,progress:{importedCandidateIds:['a','b']}}).reviewState).toBe('reviewed');
   });
+  it('keeps approved profiles actionable until imported and resolves rejected profiles', () => {
+    const session = { kind:'preview', status:'complete', params:{}, candidates:[{candidateId:'a',reviewState:'Matched'},{candidateId:'b',reviewState:'Needs Review'}], review_decisions:{a:{decision:'approved'},b:{decision:'rejected'}} };
+    expect(sessionSummary(session).remainingCandidates).toBe(1);
+    expect(sessionSummary({...session,progress:{importedCandidateIds:['a']}}).reviewState).toBe('reviewed');
+  });
   it('does not turn running or failed previews into review tasks', () => {
     for(const status of ['pending','running','failed']) expect(sessionSummary({kind:'preview',status,candidates:[{candidateId:'a'}]}).reviewState).toBe('none');
   });

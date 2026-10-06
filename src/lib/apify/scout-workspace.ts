@@ -1,3 +1,4 @@
+import {explainSavedProviderWarnings} from './provider-warnings';
 import {scoutOutcome} from './scout-outcome';
 /** Public workspace contracts. Provider execution and billing stay server-side. */
 export const SCOUT_PLATFORMS = ['Instagram', 'Facebook', 'TikTok'] as const;
@@ -33,7 +34,7 @@ export function sessionSummary(session: any, subjects: Record<string, string> = 
   const status=session.status==='complete' && outcome?.success===false ? 'failed' : session.status;
   const candidates = session.candidates || session.result?.candidates || [];
   const imported = new Set(session.progress?.importedCandidateIds || []);
-  const remainingCandidates = candidates.filter((c: any) => c.reviewState !== 'Excluded' && !imported.has(c.candidateId)).length;
+  const remainingCandidates = candidates.filter((c: any) => c.reviewState !== 'Excluded' && !imported.has(c.candidateId) && session.review_decisions?.[c.candidateId]?.decision !== 'rejected').length;
   const ids: string[] = params.ids || [params.kolId || params.communityId || params.trackedAccountId].filter(Boolean);
   const names = ids.map(id => subjects[id]).filter(Boolean);
   const subject = params.keyword || params.url || (names.length ? `${names.slice(0, 2).join(', ')}${ids.length > 2 ? ` +${ids.length - 2}` : ''}` : `${ids.length} saved ${params.entityType === 'community' ? 'communities' : 'accounts'}`);
@@ -42,7 +43,7 @@ export function sessionSummary(session: any, subjects: Record<string, string> = 
     createdAt: session.created_at, status, partial: !!outcome?.partial, empty:status==='complete' && ['trends','kol-posts','community-posts'].includes(session.kind) && Array.isArray(outcome?.posts) && !outcome.posts.length && !outcome.counts?.refreshed && !outcome.counts?.duplicate,
     reviewState: session.kind === 'preview' && status === 'complete' ? remainingCandidates ? 'needs-review' : 'reviewed' : 'none',
     remainingCandidates, progress: { stage: session.progress?.stage },
-    warnings: [...new Set<string>([...(status==='pending' ? session.warnings || [] : (session.warnings || []).filter((w:string)=>w!=='Waiting for the worker queue to recover.')), ...(session.result?.warnings || [])])],
+    warnings: explainSavedProviderWarnings([...(status==='pending' ? session.warnings || [] : (session.warnings || []).filter((w:string)=>w!=='Waiting for the worker queue to recover.')), ...(session.result?.warnings || [])], []),
     counts: Object.fromEntries(Object.entries(session.result?.counts || {}).filter((entry):entry is [string,number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))),
     params: Object.fromEntries(Object.entries(params).filter(([key]) => ['keyword','targetType','platform','geography','limit','searchMode','sport','kolId','communityId','forceRefresh','ids','entityType','trackedAccountId','url','selectedPostIds','notes','uiContext'].includes(key))),
   };

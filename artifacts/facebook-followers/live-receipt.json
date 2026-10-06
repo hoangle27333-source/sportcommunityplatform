@@ -1,0 +1,16 @@
+{
+  "sessionId": "fe5d1fba-feae-452f-ad39-9d9b1134785a",
+  "status": "complete",
+  "name": "Học Viện Cầu Lông - VietNam One Badminton Academy | Ho Chi Minh City",
+  "url": "https://facebook.com/oneba.vn",
+  "followers": 3396,
+  "runs": [
+    {
+      "id": "b3d0b5c9-47e7-45c8-a010-99bbd9306cfd",
+      "state": "succeeded",
+      "providerRunId": "63YUVsKvqZa48WJVf",
+      "actualUsd": 0.012,
+      "rawObservedFollowers": 3396
+    }
+  ]
+}

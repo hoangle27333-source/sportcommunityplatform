@@ -149,3 +149,21 @@ export function formatCurrency(val: number | null | undefined): string {
   if (!val || isNaN(val) || val <= 0) return "Negotiable";
   return `${val.toLocaleString("en-US")} VND`;
 }
+
+/**
+ * Format numbers in compact human-readable notation (e.g., 303M, 1.2M, 45K)
+ */
+export function formatCompactNumber(val: number | null | undefined): string {
+  if (val === null || val === undefined || isNaN(val)) return "0";
+  const abs = Math.abs(val);
+  if (abs >= 1_000_000_000) {
+    return (val / 1_000_000_000).toFixed(1).replace(/\.0$/, "") + "B";
+  }
+  if (abs >= 1_000_000) {
+    return (val / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  }
+  if (abs >= 1_000) {
+    return (val / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  }
+  return val.toLocaleString("en-US");
+}

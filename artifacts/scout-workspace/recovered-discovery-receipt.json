@@ -1,0 +1,96 @@
+{
+  "observedAt": "2026-10-05T16:18:12.211Z",
+  "sessionId": "bf1ea6ee-e654-473b-adef-9c96b79aa2ed",
+  "status": "complete",
+  "criteria": {
+    "limit": 5,
+    "keyword": "cầu lông",
+    "platform": [
+      "Instagram",
+      "Facebook",
+      "TikTok"
+    ],
+    "geography": "Nationwide",
+    "targetType": "Individual KOLs"
+  },
+  "diagnostics": {
+    "excludedCount": 15,
+    "providerCount": 59,
+    "returnedCount": 5,
+    "requestedCount": 5,
+    "uniqueProfileCount": 59
+  },
+  "candidates": [
+    {
+      "id": "8d624b5f-7dcc-4886-8cca-b05a1251a46a",
+      "name": "Yêu Cầu Lông",
+      "platform": "TikTok",
+      "followers": 300000
+    },
+    {
+      "id": "3b6a34fa-76ab-46cb-95cc-fe620a7de009",
+      "name": "diendancaulongvietnam",
+      "platform": "TikTok",
+      "followers": 290800
+    },
+    {
+      "id": "d080a513-1f9b-47ed-ac0e-edcf5a1af10d",
+      "name": "Cầu Lông 88",
+      "platform": "TikTok",
+      "followers": 269500
+    },
+    {
+      "id": "e00c2c3d-be39-4827-b2d8-f2c058160442",
+      "name": "Cầu Lông 🏸",
+      "platform": "TikTok",
+      "followers": 81300
+    },
+    {
+      "id": "d81f697d-af02-4a16-ba1c-7174026c958d",
+      "name": "Girl cầu lông 🏸",
+      "platform": "TikTok",
+      "followers": 74400
+    }
+  ],
+  "warnings": [
+    "Provider item unavailable"
+  ],
+  "runs": [
+    {
+      "id": "c29c5c70-1274-4eb9-9f02-21afa8c70e4f",
+      "platform": "Facebook",
+      "state": "succeeded",
+      "provider_run_id": "iqtoGFhFB2Yu9XgRo",
+      "actual_usd": 0.091,
+      "warnings": []
+    },
+    {
+      "id": "c8911f18-5cda-43cc-a7f0-dc63ee010938",
+      "platform": "TikTok",
+      "state": "succeeded",
+      "provider_run_id": "FGvNyhWxb5GOMP9Z9",
+      "actual_usd": 0.0565,
+      "warnings": []
+    },
+    {
+      "id": "fcff8a6b-a23e-4c90-b118-64737dfc4d93",
+      "platform": "Instagram",
+      "state": "succeeded",
+      "provider_run_id": "cn997EqBQpf2eb2ZU",
+      "actual_usd": 0.0405,
+      "warnings": [
+        "Provider item unavailable"
+      ]
+    },
+    {
+      "id": "694700a6-9a55-4f3c-a33f-faa6c281ff0d",
+      "platform": "Facebook",
+      "state": "succeeded",
+      "provider_run_id": "uTVrmVGDNcomkbZkV",
+      "actual_usd": 0.091,
+      "warnings": []
+    }
+  ],
+  "providerRunsAfterReload": 4,
+  "crmImports": 0
+}

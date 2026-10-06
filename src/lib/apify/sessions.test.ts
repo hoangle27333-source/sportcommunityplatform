@@ -12,6 +12,12 @@ vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({from:()=>({
 import {enqueueScoutSession,startSession} from './sessions';
 beforeEach(()=>{vi.useFakeTimers();state.enqueue.mockReset();state.updates.length=0;state.role='editor';});
 describe('durable session queue handoff',()=>{
+ it('accepts multi-platform preview and rejects empty or duplicate platforms',async()=>{
+  state.enqueue.mockResolvedValue({id:session.id});
+  expect((await startSession('preview',{keyword:'running',platform:['Instagram','Facebook']})).status).toBe(202);
+  for(const platform of [[],['Instagram','Instagram']])await expect(startSession('preview',{keyword:'running',platform})).rejects.toMatchObject({name:'ZodError'});
+  expect(state.enqueue).toHaveBeenCalledTimes(1);vi.useRealTimers();
+ });
  it('denies a viewer before enqueueing paid work',async()=>{state.role='viewer';await expect(startSession('inspect',{url:'https://instagram.com/nike',platform:'Instagram'})).rejects.toMatchObject({code:'FORBIDDEN'});expect(state.enqueue).not.toHaveBeenCalled();vi.useRealTimers();});
  it('rejects empty and duplicate comment selections before queueing',async()=>{for(const selectedPostIds of [[],[session.id,session.id]])await expect(startSession('comments',{kolId:session.id,selectedPostIds})).rejects.toMatchObject({name:'ZodError'});expect(state.enqueue).not.toHaveBeenCalled();vi.useRealTimers();});
  it('returns 202 and a persisted session when Redis never becomes ready',async()=>{

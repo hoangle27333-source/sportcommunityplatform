@@ -506,6 +506,30 @@ export function Kol360Modal({
     return [...parentMatches, ...extraLocal];
   }, [posts, localPosts, currentKol]);
 
+  // Unique platforms from channels and posts for filtering
+  const availablePlatforms = useMemo(() => {
+    const map = new Map<string, string>();
+    aggregates.channels.forEach((ch) => {
+      if (ch.platform?.trim()) {
+        const trimmed = ch.platform.trim();
+        const lower = trimmed.toLowerCase();
+        if (!map.has(lower)) {
+          map.set(lower, trimmed);
+        }
+      }
+    });
+    kolPosts.forEach((p) => {
+      if (p.platform?.trim()) {
+        const trimmed = p.platform.trim();
+        const lower = trimmed.toLowerCase();
+        if (!map.has(lower)) {
+          map.set(lower, trimmed);
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [aggregates.channels, kolPosts]);
+
   // Filtered posts by search keyword inside modal table
   const displayedPosts = useMemo(() => {
     let list = kolPosts;
@@ -1811,7 +1835,7 @@ export function Kol360Modal({
               </div>
 
               {/* Channel Filter Tabs */}
-              {aggregates.channels.length > 1 && (
+              {availablePlatforms.length > 1 && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
                   <span className="text-[11px] font-semibold text-slate-400 mr-1">Filter by Channel:</span>
                   <button
@@ -1825,18 +1849,18 @@ export function Kol360Modal({
                   >
                     All Channels ({kolPosts.length})
                   </button>
-                  {aggregates.channels.map((ch) => {
+                  {availablePlatforms.map((platform) => {
                     const count = kolPosts.filter((p) =>
-                      p.platform.toLowerCase().includes(ch.platform.toLowerCase())
+                      p.platform.toLowerCase().includes(platform.toLowerCase())
                     ).length;
                     const isSelected =
-                      selectedChannelPlatform.toLowerCase() === ch.platform.toLowerCase();
+                      selectedChannelPlatform.toLowerCase() === platform.toLowerCase();
                     return (
                       <button
-                        key={ch.platform}
+                        key={platform}
                         type="button"
                         onClick={() =>
-                          setSelectedChannelPlatform(isSelected ? "all" : ch.platform.toLowerCase())
+                          setSelectedChannelPlatform(isSelected ? "all" : platform.toLowerCase())
                         }
                         className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                           isSelected
@@ -1844,8 +1868,8 @@ export function Kol360Modal({
                             : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                         }`}
                       >
-                        <PlatformIcon platform={ch.platform} size="xs" />
-                        <span>{ch.platform}</span>
+                        <PlatformIcon platform={platform} size="xs" />
+                        <span>{platform}</span>
                         <span className="text-[10px] opacity-75">({count})</span>
                       </button>
                     );

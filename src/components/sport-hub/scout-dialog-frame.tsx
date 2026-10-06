@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 
-export function ScoutDialogFrame({ title, description, children, onClose, wide = false }: {
-  title: string; description?: string; children: ReactNode; onClose: () => void; wide?: boolean;
+export function ScoutDialogFrame({ title, description, children, onClose, wide = false, footer }: {
+  title: string; description?: string; children: ReactNode; onClose: () => void; wide?: boolean; footer?: ReactNode;
 }) {
   return <Dialog.Root open onOpenChange={open => { if (!open) onClose(); }}>
     <Dialog.Portal>
@@ -16,6 +16,7 @@ export function ScoutDialogFrame({ title, description, children, onClose, wide =
           <Dialog.Close asChild><button type="button" aria-label="Close Scout task" className="rounded-lg p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></Dialog.Close>
         </header>
         <div className="overflow-y-auto min-h-0 p-5">{children}</div>
+        {footer && <footer className="shrink-0 border-t bg-white p-4">{footer}</footer>}
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>;

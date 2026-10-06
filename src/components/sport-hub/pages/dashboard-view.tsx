@@ -1,6 +1,6 @@
 "use client";
-import { ScoutTaskLauncher } from "../scout-task-launcher";
 
+import { ScoutTaskLauncher } from "../scout-task-launcher";
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -29,6 +29,10 @@ import {
   Calendar,
   Clock,
   Lock,
+  Zap,
+  Crown,
+  Activity,
+  Plus,
 } from "lucide-react";
 import { PlatformHeader } from "../platform-header";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
@@ -40,7 +44,7 @@ import {
   AddProjectModal,
 } from "../action-modals";
 import { ExcelUploadModal } from "../excel-upload-modal";
-import { t, formatNumber, formatCurrency } from "@/lib/i18n";
+import { t, formatNumber, formatCurrency, formatCompactNumber } from "@/lib/i18n";
 import type { DashboardData, KOL, Post, Report, Community, Project } from "../types";
 
 export interface DashboardViewProps {
@@ -91,8 +95,14 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       setLoading(false);
     }
   };
-  useEffect(() => { const refresh = () => { void handleRefresh(); }; window.addEventListener('sport-hub-data-changed', refresh); return () => window.removeEventListener('sport-hub-data-changed', refresh); }, []);
 
+  useEffect(() => {
+    const refresh = () => {
+      void handleRefresh();
+    };
+    window.addEventListener("sport-hub-data-changed", refresh);
+    return () => window.removeEventListener("sport-hub-data-changed", refresh);
+  }, []);
 
   // Top 5 Creators Leaderboard
   const topCreators = useMemo(() => {
@@ -135,22 +145,93 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   const platformStats = useMemo(() => {
     const counts: Record<string, { count: number; followers: number }> = {};
     data.kols.forEach((k) => {
-      const p = k.platform || "Other";
+      const p = (k.platform || "Other").trim();
       if (!counts[p]) counts[p] = { count: 0, followers: 0 };
       counts[p].count += 1;
       counts[p].followers += k.followers || 0;
     });
-    return Object.entries(counts).sort((a, b) => b[1].followers - a[1].followers);
+
+    return Object.entries(counts).sort((a, b) => {
+      if (b[1].followers !== a[1].followers) {
+        return b[1].followers - a[1].followers;
+      }
+      return b[1].count - a[1].count;
+    });
   }, [data.kols]);
 
-  // Tier Breakdown
-  const tierStats = useMemo(() => {
-    const counts: Record<string, number> = {};
+  // Hierarchical Creator Tier Matrix
+  const tierMatrix = useMemo(() => {
+    const buckets: Record<string, number> = {
+      Mega: 0,
+      Macro: 0,
+      Micro: 0,
+      Nano: 0,
+      Pending: 0,
+    };
+
     data.kols.forEach((k) => {
-      const tKey = k.tier || "Other";
-      counts[tKey] = (counts[tKey] || 0) + 1;
+      const raw = (k.tier || "").trim().toLowerCase();
+      if (raw.includes("mega")) buckets.Mega++;
+      else if (raw.includes("macro")) buckets.Macro++;
+      else if (raw.includes("micro")) buckets.Micro++;
+      else if (raw.includes("nano")) buckets.Nano++;
+      else buckets.Pending++;
     });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+    const total = data.kols.length || 1;
+
+    return [
+      {
+        key: "Mega",
+        name: "Mega Creators",
+        range: "> 1M Followers",
+        count: buckets.Mega,
+        pct: Math.round((buckets.Mega / total) * 100),
+        color: "from-purple-500 to-indigo-600",
+        bg: "bg-purple-50/70 border-purple-200/80 text-purple-900",
+        dot: "bg-purple-500",
+      },
+      {
+        key: "Macro",
+        name: "Macro Creators",
+        range: "250K - 1M Followers",
+        count: buckets.Macro,
+        pct: Math.round((buckets.Macro / total) * 100),
+        color: "from-blue-500 to-cyan-600",
+        bg: "bg-blue-50/70 border-blue-200/80 text-blue-900",
+        dot: "bg-blue-500",
+      },
+      {
+        key: "Micro",
+        name: "Micro Influencers",
+        range: "50K - 250K Followers",
+        count: buckets.Micro,
+        pct: Math.round((buckets.Micro / total) * 100),
+        color: "from-emerald-500 to-teal-600",
+        bg: "bg-emerald-50/70 border-emerald-200/80 text-emerald-900",
+        dot: "bg-emerald-500",
+      },
+      {
+        key: "Nano",
+        name: "Nano Creators",
+        range: "< 50K Followers",
+        count: buckets.Nano,
+        pct: Math.round((buckets.Nano / total) * 100),
+        color: "from-amber-500 to-orange-600",
+        bg: "bg-amber-50/70 border-amber-200/80 text-amber-900",
+        dot: "bg-amber-500",
+      },
+      {
+        key: "Pending",
+        name: "Pending Classification",
+        range: "Awaiting Metric Audit",
+        count: buckets.Pending,
+        pct: Math.round((buckets.Pending / total) * 100),
+        color: "from-slate-400 to-slate-600",
+        bg: "bg-slate-50 border-slate-200 text-slate-800",
+        dot: "bg-slate-400",
+      },
+    ];
   }, [data.kols]);
 
   // Total Projects & Budget
@@ -169,372 +250,586 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       <PlatformHeader onRefresh={handleRefresh} loading={loading} />
 
       {/* ─── MAIN DASHBOARD CONTENT ─── */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-7">
+        {/* ─── EXECUTIVE COMMAND BAR ─── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+              <span>Command Center</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse mr-1.5" />
+                Live Supabase Sync
+              </span>
+            </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Real-time CRM intelligence across athlete rosters, grassroots communities, and campaign deliverables.
+            </p>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setIsScoutModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white text-xs font-bold shadow-xs hover:shadow transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
+              <span>Find Content</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAddKolModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+              <span>Add Profile</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsUploadModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Upload Excel spreadsheet"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Import</span>
+            </button>
+          </div>
+        </div>
+
         {/* ─── TOP KPI SUMMARY STRIP ─── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl font-bold">
-              👤
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
+          {/* Card 1: Total KOLs */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-slate-300 hover:shadow-sm transition flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 Total KOLs
               </p>
-              <h3 className="text-2xl font-black text-slate-900 leading-tight">
-                {data.kpis.totalKols}
+              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center ring-1 ring-blue-500/20">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+                {formatNumber(data.kpis.totalKols)}
               </h3>
+              <p className="text-[11px] text-slate-400 font-medium mt-1 truncate">
+                Verified Athletes
+              </p>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold">
-              📈
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+          {/* Card 2: Total Reach */}
+          <div
+            className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-slate-300 hover:shadow-sm transition flex flex-col justify-between"
+            title={`${formatNumber(data.kpis.totalReach)} combined audience reach`}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 Total Reach
               </p>
-              <h3 className="text-2xl font-black text-slate-900 leading-tight">
-                {formatNumber(data.kpis.totalReach)}
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center ring-1 ring-emerald-500/20">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none truncate">
+                {formatCompactNumber(data.kpis.totalReach)}
               </h3>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl font-bold">
-              ⭐
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Avg Partner Score
+              <p className="text-[11px] text-slate-400 font-medium mt-1 truncate">
+                Audience Network
               </p>
-              <h3 className="text-2xl font-black text-slate-900 leading-tight">
-                {data.kpis.avgScore ? Number(data.kpis.avgScore).toFixed(1) : "5.0"}
-                <span className="text-xs text-slate-400 font-normal ml-0.5">/5</span>
-              </h3>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl font-bold">
-              👥
+          {/* Card 3: Avg Partner Score */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-slate-300 hover:shadow-sm transition flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Partner Score
+              </p>
+              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center ring-1 ring-amber-500/20">
+                <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+              </div>
             </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            <div className="mt-3">
+              <div className="flex items-baseline gap-1">
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+                  {data.kpis.avgScore ? Number(data.kpis.avgScore).toFixed(1) : "5.0"}
+                </h3>
+                <span className="text-xs text-slate-400 font-semibold">/ 5.0</span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium mt-1 truncate">
+                Quality & SLA
+              </p>
+            </div>
+          </div>
+
+          {/* Card 4: Clubs & Groups */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-slate-300 hover:shadow-sm transition flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Communities
+              </p>
+              <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center ring-1 ring-purple-500/20">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+                {formatNumber(data.kpis.totalCommunities)}
+              </h3>
+              <p className="text-[11px] text-slate-400 font-medium mt-1 truncate">
                 Clubs & Groups
               </p>
-              <h3 className="text-2xl font-black text-slate-900 leading-tight">
-                {data.kpis.totalCommunities}
-              </h3>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">
-              🔥
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Trending Posts
+          {/* Card 5: Trending Posts */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-slate-300 hover:shadow-sm transition flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Viral Posts
               </p>
-              <h3 className="text-2xl font-black text-slate-900 leading-tight">
-                {data.kpis.totalPosts}
+              <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center ring-1 ring-rose-500/20">
+                <Flame className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+                {formatNumber(data.kpis.totalPosts)}
               </h3>
+              <p className="text-[11px] text-slate-400 font-medium mt-1 truncate">
+                Scouted Content
+              </p>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center space-x-3.5">
-            <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl font-bold">
-              💼
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+          {/* Card 6: Active Projects */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:border-slate-300 hover:shadow-sm transition flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 Active Projects
               </p>
-              <h3 className="text-2xl font-black text-slate-900 leading-tight">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center ring-1 ring-indigo-500/20">
+                <Briefcase className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-none">
                 {activeProjectsCount}
               </h3>
+              <p className="text-[11px] text-slate-400 font-medium mt-1 truncate">
+                Campaign Pipelines
+              </p>
             </div>
           </div>
         </div>
 
-        {/* ─── QUICK NAVIGATION CARDS (SUB-PAGE SHORTCUTS) ─── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* KOLs Card */}
-          <Link
-            href="/kols"
-            className="group bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-500 hover:shadow-lg transition flex flex-col justify-between"
-          >
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-blue-50 group-hover:bg-blue-600 group-hover:text-white text-blue-600 flex items-center justify-center transition shadow-xs">
-                <Users className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition">
-                    KOLs Directory
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                    {data.kols.length} profiles
-                  </span>
+        {/* ─── OPERATIONAL WORKSPACE HUBS ─── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* KOLs Directory */}
+          <div className="group bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-blue-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition">
+                  <Users className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Browse athletes & content creators. Filter by sports discipline, tier, reach, rate card, and open 360° dossier.
-                </p>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
+                  {data.kols.length} profiles
+                </span>
               </div>
+              <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition">
+                Creator Directory
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                Filter athletes by sport, audience tier, rate card, and inspect 360° panoramic dossiers.
+              </p>
             </div>
-            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600 group-hover:translate-x-1 transition">
-              <span>Open KOL Directory</span>
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </Link>
 
-          {/* Communities Card */}
-          <Link
-            href="/community"
-            className="group bg-white p-6 rounded-2xl border border-slate-200 hover:border-purple-500 hover:shadow-lg transition flex flex-col justify-between"
-          >
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-purple-50 group-hover:bg-purple-600 group-hover:text-white text-purple-600 flex items-center justify-center transition shadow-xs">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900 group-hover:text-purple-600 transition">
-                    Community & Clubs
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">
-                    {data.communities.length} clubs
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Sports clubs, amateur leagues, and Facebook groups. Direct contact with admins, activity rating, and pin pricing.
-                </p>
-              </div>
+            <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between">
+              <Link
+                href="/kols"
+                className="text-xs font-bold text-blue-600 group-hover:text-blue-700 flex items-center gap-1 group-hover:translate-x-0.5 transition"
+              >
+                <span>Explore Roster</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setIsAddKolModalOpen(true)}
+                className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                title="Add new KOL profile"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
             </div>
-            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-purple-600 group-hover:translate-x-1 transition">
-              <span>Browse Communities</span>
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </Link>
+          </div>
 
-          {/* Campaigns Card */}
-          <Link
-            href="/projects"
-            className="group bg-white p-6 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:shadow-lg transition flex flex-col justify-between"
-          >
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-indigo-50 group-hover:bg-indigo-600 group-hover:text-white text-indigo-600 flex items-center justify-center transition shadow-xs">
-                <Briefcase className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition">
-                    Campaigns & Projects
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
-                    {activeProjectsCount} active
-                  </span>
+          {/* Communities */}
+          <div className="group bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-purple-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Track campaign deliverables, milestone sign-offs, and quality score cards linked directly to creator contracts.
-                </p>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
+                  {data.communities.length} clubs
+                </span>
               </div>
+              <h3 className="text-base font-bold text-slate-900 group-hover:text-purple-600 transition">
+                Sports Communities
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                Grassroots sports clubs, amateur leagues, Facebook groups, and admin contact channels.
+              </p>
             </div>
-            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-indigo-600 group-hover:translate-x-1 transition">
-              <span>Manage Projects</span>
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </Link>
 
-          {/* Trending Card */}
-          <Link
-            href="/trending"
-            className="group bg-white p-6 rounded-2xl border border-slate-200 hover:border-rose-500 hover:shadow-lg transition flex flex-col justify-between"
-          >
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-rose-50 group-hover:bg-rose-600 group-hover:text-white text-rose-600 flex items-center justify-center transition shadow-xs">
-                <Flame className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900 group-hover:text-rose-600 transition">
-                    Trending Viral Posts
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800">
-                    {data.posts.length} reels
-                  </span>
+            <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between">
+              <Link
+                href="/community"
+                className="text-xs font-bold text-purple-600 group-hover:text-purple-700 flex items-center gap-1 group-hover:translate-x-0.5 transition"
+              >
+                <span>Browse Clubs</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setIsAddCommunityModalOpen(true)}
+                className="p-1 rounded-md text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition cursor-pointer"
+                title="Add new community"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Campaigns */}
+          <div className="group bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-indigo-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition">
+                  <Briefcase className="w-5 h-5" />
                 </div>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Real-time viral content scouted across TikTok and Reels. Filter by engagement rate, viral grade, and creator link.
-                </p>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                  {activeProjectsCount} active
+                </span>
               </div>
+              <h3 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition">
+                Campaign Projects
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                Track deliverables, contracts, milestone sign-offs, and quality score evaluations.
+              </p>
             </div>
-            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-rose-600 group-hover:translate-x-1 transition">
-              <span>View Trending Feed</span>
-              <ArrowRight className="w-4 h-4" />
+
+            <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between">
+              <Link
+                href="/projects"
+                className="text-xs font-bold text-indigo-600 group-hover:text-indigo-700 flex items-center gap-1 group-hover:translate-x-0.5 transition"
+              >
+                <span>Track Pipelines</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setIsAddProjectModalOpen(true)}
+                className="p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                title="Create new project"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
             </div>
-          </Link>
+          </div>
+
+          {/* Viral Pulse */}
+          <div className="group bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-rose-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center group-hover:bg-rose-600 group-hover:text-white transition">
+                  <Flame className="w-5 h-5" />
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200/60">
+                  {data.posts.length} reels
+                </span>
+              </div>
+              <h3 className="text-base font-bold text-slate-900 group-hover:text-rose-600 transition">
+                Viral Pulse Radar
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                Real-time viral sports content scouted from TikTok & Reels with engagement benchmarks.
+              </p>
+            </div>
+
+            <div className="pt-3.5 mt-3.5 border-t border-slate-100 flex items-center justify-between">
+              <Link
+                href="/trending"
+                className="text-xs font-bold text-rose-600 group-hover:text-rose-700 flex items-center gap-1 group-hover:translate-x-0.5 transition"
+              >
+                <span>View Viral Feed</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setIsScoutModalOpen(true)}
+                className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                title="Scout viral content"
+              >
+                <Sparkles className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* ─── ANALYTICS & DISTRIBUTION SUMMARY SECTION ─── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Sports Discipline Distribution */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
-                  🏅
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Award className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Sports Discipline Breakdown
+                  </h3>
                 </div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Sports Discipline Breakdown
-                </h3>
+                <span className="text-[11px] font-semibold text-slate-400">
+                  Top 6 Categories
+                </span>
               </div>
-              <span className="text-xs font-semibold text-slate-400">
-                Top Categories
-              </span>
+
+              <div className="space-y-3 pt-4">
+                {sportStats.map((item) => {
+                  const maxTotal = sportStats[0]?.total || 1;
+                  const pct = Math.max(12, Math.round((item.total / maxTotal) * 100));
+                  return (
+                    <div key={item.sport} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-800">{t(item.sport)}</span>
+                        <div className="flex items-center gap-1.5 text-[11px]">
+                          <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">
+                            {item.kols} KOLs
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold">
+                            {item.communities} Clubs
+                          </span>
+                          <span className="font-bold text-slate-900 ml-1">
+                            {item.total}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="space-y-3 pt-2">
-              {sportStats.map((item) => {
-                const maxTotal = sportStats[0]?.total || 1;
-                const pct = Math.round((item.total / maxTotal) * 100);
-                return (
-                  <div key={item.sport} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700">{t(item.sport)}</span>
-                      <span className="text-slate-500">
-                        <span className="font-semibold text-blue-600">{item.kols} KOLs</span>
-                        {" · "}
-                        <span className="text-purple-600">{item.communities} Clubs</span>
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>Monitored in Roster</span>
+              <span className="font-bold text-slate-800">
+                {data.kols.length + data.communities.length} Total Entities
+              </span>
             </div>
           </div>
 
           {/* Platform Share */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-sm">
-                  📱
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                    <Activity className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Platform Reach Distribution
+                  </h3>
                 </div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Platform Reach Distribution
-                </h3>
+                <span className="text-[11px] font-semibold text-slate-400">
+                  Audience & Roster
+                </span>
               </div>
-              <span className="text-xs font-semibold text-slate-400">
-                Audience Share
-              </span>
+
+              <div className="space-y-3 pt-4">
+                {platformStats.map(([platform, stat]) => {
+                  const totalReachAll = data.kpis.totalReach || 1;
+                  const totalKolsCount = data.kols.length || 1;
+                  const creatorSharePct = Math.round((stat.count / totalKolsCount) * 100);
+
+                  // Brand color configs
+                  let gradient = "from-purple-500 to-indigo-500";
+                  let badgeColor = "bg-purple-50 text-purple-700 border-purple-200/60";
+                  if (platform.toLowerCase().includes("instagram")) {
+                    gradient = "from-rose-500 via-pink-500 to-purple-600";
+                    badgeColor = "bg-pink-50 text-pink-700 border-pink-200/60";
+                  } else if (platform.toLowerCase().includes("tiktok")) {
+                    gradient = "from-slate-700 to-slate-900";
+                    badgeColor = "bg-slate-100 text-slate-800 border-slate-200/80";
+                  } else if (platform.toLowerCase().includes("facebook")) {
+                    gradient = "from-blue-600 to-indigo-600";
+                    badgeColor = "bg-blue-50 text-blue-700 border-blue-200/60";
+                  } else if (platform.toLowerCase().includes("youtube")) {
+                    gradient = "from-red-500 to-rose-600";
+                    badgeColor = "bg-rose-50 text-rose-700 border-rose-200/60";
+                  }
+
+                  const barWidth = Math.max(12, creatorSharePct);
+
+                  return (
+                    <div key={platform} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}
+                          >
+                            {platform}
+                          </span>
+                          <span className="font-semibold text-slate-600 text-[11px]">
+                            {stat.count} KOLs ({creatorSharePct}%)
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-slate-900 text-xs">
+                            {stat.followers > 0
+                              ? `${formatCompactNumber(stat.followers)} reach`
+                              : "Audience Pending"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`bg-gradient-to-r ${gradient} h-full rounded-full transition-all duration-500`}
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="space-y-3 pt-2">
-              {platformStats.map(([platform, stat]) => {
-                const totalReachAll = data.kpis.totalReach || 1;
-                const pct = Math.min(100, Math.round((stat.followers / totalReachAll) * 100));
-                return (
-                  <div key={platform} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700">{platform}</span>
-                      <span className="text-slate-500">
-                        <span className="font-semibold text-slate-800">
-                          {formatNumber(stat.followers)} reach
-                        </span>
-                        {" ("}
-                        <span className="text-blue-600 font-bold">{stat.count} KOLs</span>
-                        {")"}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-gradient-to-r from-purple-500 to-pink-500 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.max(5, pct)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>Total Audience Reach</span>
+              <span
+                className="font-bold text-slate-800"
+                title={`${formatNumber(data.kpis.totalReach)} followers`}
+              >
+                {formatCompactNumber(data.kpis.totalReach)} followers
+              </span>
             </div>
           </div>
 
           {/* Creator Tiers & Campaign Overview */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-sm">
-                  ⭐
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <Crown className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Creator Tier Matrix
+                  </h3>
                 </div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Creator Tier Matrix
-                </h3>
+                <span className="text-[11px] font-semibold text-slate-400">
+                  {data.kols.length} Profiles
+                </span>
               </div>
-              <span className="text-xs font-semibold text-slate-400">
-                Total: {data.kols.length}
-              </span>
-            </div>
 
-            <div className="grid grid-cols-2 gap-2.5 pt-2">
-              {tierStats.map(([tier, count]) => (
-                <div
-                  key={tier}
-                  className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col justify-between"
-                >
-                  <span className="text-xs font-semibold text-slate-500">{t(tier)}</span>
-                  <div className="flex items-baseline space-x-1.5 mt-1">
-                    <span className="text-xl font-black text-slate-900">{count}</span>
-                    <span className="text-[10px] text-slate-400">creators</span>
+              {/* 4 Primary Tier Cards Grid */}
+              <div className="grid grid-cols-2 gap-2.5 pt-3.5">
+                {tierMatrix.slice(0, 4).map((tier) => {
+                  return (
+                    <div
+                      key={tier.key}
+                      className={`p-3 rounded-xl border ${tier.bg} flex flex-col justify-between transition hover:shadow-xs`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${tier.dot}`} />
+                          {tier.name.split(" ")[0]}
+                        </span>
+                        <span className="text-[10px] font-semibold opacity-75">
+                          {tier.pct}%
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between mt-2">
+                        <span className="text-xl font-black tracking-tight">
+                          {tier.count}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {tier.range}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Pending Classification if any */}
+              {tierMatrix[4] && tierMatrix[4].count > 0 && (
+                <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="font-semibold text-slate-600">
+                      Pending Classification
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-slate-900">
+                      {tierMatrix[4].count} profiles
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      ({tierMatrix[4].pct}%)
+                    </span>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
 
-            <div className="pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-                <span>Total Tracked Budget:</span>
-                {isAdmin ? (
-                  <span className="font-bold text-emerald-600">
-                    {formatCurrency(totalBudget)}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 font-semibold text-slate-400">
-                    <Lock className="w-3 h-3 text-slate-400" />
-                    <span>Admin Only</span>
-                  </span>
-                )}
-              </div>
+            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-600">
+              <span>Tracked Budget:</span>
+              {isAdmin ? (
+                <span className="font-bold text-emerald-600">
+                  {formatCurrency(totalBudget)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 font-semibold text-slate-400">
+                  <Lock className="w-3 h-3 text-slate-400" />
+                  <span>Admin Only</span>
+                </span>
+              )}
             </div>
           </div>
         </div>
 
         {/* ─── TOP CREATORS LEADERBOARD ─── */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center space-x-2">
-                <Award className="w-5 h-5 text-amber-500" />
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center ring-1 ring-amber-500/20">
+                <Award className="w-4 h-4" />
+              </div>
+              <div>
                 <h3 className="text-base font-bold text-slate-900">
                   Top Performing Creators Leaderboard
                 </h3>
+                <p className="text-xs text-slate-500">
+                  Ranked by total audience reach, video views, and engagement benchmarks.
+                </p>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Highest reach athletes and sports influencers with quick 360° panoramic preview.
-              </p>
             </div>
 
             <Link
               href="/kols"
-              className="inline-flex items-center space-x-1 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200"
+              className="inline-flex items-center space-x-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/80 hover:bg-blue-100/80 px-3 py-1.5 rounded-lg border border-blue-200/60 transition self-start sm:self-auto"
             >
-              <span>View Full Directory ({data.kols.length})</span>
+              <span>Full Directory ({data.kols.length})</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -542,16 +837,40 @@ export function DashboardView({ initialData }: DashboardViewProps) {
           <div className="divide-y divide-slate-100">
             {topCreators.map((kol, idx) => {
               const avatar = kol.avatarUrl || getKolAvatar(kol.name);
+
+              let rankBadge = (
+                <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-black">
+                  #{idx + 1}
+                </span>
+              );
+              if (idx === 0) {
+                rankBadge = (
+                  <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center text-xs font-black shadow-2xs">
+                    🥇
+                  </span>
+                );
+              } else if (idx === 1) {
+                rankBadge = (
+                  <span className="w-7 h-7 rounded-lg bg-slate-200 text-slate-700 border border-slate-300 flex items-center justify-center text-xs font-black shadow-2xs">
+                    🥈
+                  </span>
+                );
+              } else if (idx === 2) {
+                rankBadge = (
+                  <span className="w-7 h-7 rounded-lg bg-orange-100 text-orange-800 border border-orange-300 flex items-center justify-center text-xs font-black shadow-2xs">
+                    🥉
+                  </span>
+                );
+              }
+
               return (
                 <div
                   key={kol.id}
-                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 px-2 rounded-xl transition"
+                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 px-2 rounded-xl transition-all"
                 >
                   <div className="flex items-center space-x-3.5">
-                    <span className="w-6 text-center text-sm font-black text-slate-400">
-                      #{idx + 1}
-                    </span>
-                    <div className="w-11 h-11 rounded-full overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
+                    {rankBadge}
+                    <div className="w-11 h-11 rounded-full overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80 ring-2 ring-slate-100">
                       {avatar ? (
                         <img
                           src={avatar}
@@ -559,7 +878,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center font-bold text-slate-500">
+                        <div className="w-full h-full flex items-center justify-center font-bold text-slate-500 bg-gradient-to-br from-slate-100 to-slate-200">
                           {kol.name.charAt(0)}
                         </div>
                       )}
@@ -567,38 +886,50 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                     <div>
                       <div className="flex items-center space-x-2">
                         <h4 className="text-sm font-bold text-slate-900">{kol.name}</h4>
-                        <span className="px-2 py-0.2 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
                           {kol.platform}
                         </span>
-                        <span className="px-2 py-0.2 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
                           {t(kol.tier)}
                         </span>
                       </div>
                       <div className="flex items-center space-x-2 text-xs text-slate-500 mt-0.5">
-                        <span>{(kol.sport || []).map((s) => t(s)).join(", ")}</span>
+                        <span>{(kol.sport || []).map((s) => t(s)).join(", ") || "General Sports"}</span>
                         <span>·</span>
-                        <span>{t(kol.geography)}</span>
+                        <span>{t(kol.geography) || "Nationwide"}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between sm:justify-end space-x-4 pl-9 sm:pl-0">
-                    <div className="text-right">
-                      <span className="text-xs text-slate-400 block font-medium">Followers</span>
+                  <div className="flex items-center justify-between sm:justify-end space-x-5 pl-10 sm:pl-0">
+                    <div
+                      className="text-right"
+                      title={`${formatNumber(kol.followers)} followers`}
+                    >
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">
+                        Followers
+                      </span>
                       <span className="text-sm font-bold text-slate-900">
-                        {formatNumber(kol.followers)}
+                        {formatCompactNumber(kol.followers)}
                       </span>
                     </div>
 
-                    <div className="text-right">
-                      <span className="text-xs text-slate-400 block font-medium">Avg Views</span>
+                    <div
+                      className="text-right"
+                      title={`${formatNumber(kol.avgViews)} avg views`}
+                    >
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">
+                        Avg Views
+                      </span>
                       <span className="text-sm font-bold text-slate-900">
-                        {formatNumber(kol.avgViews)}
+                        {formatCompactNumber(kol.avgViews)}
                       </span>
                     </div>
 
                     <div className="text-right hidden md:block">
-                      <span className="text-xs text-slate-400 block font-medium">ER%</span>
+                      <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">
+                        ER%
+                      </span>
                       <span className="text-sm font-bold text-emerald-600">
                         {kol.er ? `${kol.er}%` : "—"}
                       </span>
@@ -607,7 +938,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                     <button
                       type="button"
                       onClick={() => setSelectedKolFor360(kol)}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer border border-indigo-200/60 shadow-2xs"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       <span>360° Dossier</span>
@@ -622,11 +953,11 @@ export function DashboardView({ initialData }: DashboardViewProps) {
         {/* ─── RECENT DELIVERABLES & VIRAL POSTS SNAPSHOT ─── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent Sign-offs Widget */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4 flex flex-col justify-between">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center space-x-2">
-                  <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
                   <h3 className="text-base font-bold text-slate-900">
                     Recent Evaluation Sign-offs
                   </h3>
@@ -645,8 +976,8 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                     <div key={r.id} className="py-3 space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-900">{r.title}</span>
-                        <span className="text-xs font-bold text-amber-600">
-                          ★ {r.score ? r.score.toFixed(1) : "5.0"}/5.0
+                        <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                          ★ {r.score ? r.score.toFixed(1) : "5.0"} / 5.0
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-xs text-slate-500">
@@ -658,7 +989,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                         </span>
                       </div>
                       {r.notes && (
-                        <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2 rounded-lg">
+                        <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                           "{r.notes}"
                         </p>
                       )}
@@ -688,11 +1019,11 @@ export function DashboardView({ initialData }: DashboardViewProps) {
           </div>
 
           {/* Top Trending Reels Highlight */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4 flex flex-col justify-between">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center space-x-2">
-                  <Flame className="w-5 h-5 text-rose-500" />
+                  <Flame className="w-4 h-4 text-rose-500" />
                   <h3 className="text-base font-bold text-slate-900">
                     Latest Viral Reels Highlights
                   </h3>
@@ -706,7 +1037,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
               </div>
 
               {data.posts && data.posts.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {data.posts.slice(0, 3).map((p) => (
                     <div
                       key={p.id}
@@ -714,10 +1045,10 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center space-x-2">
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 text-purple-800">
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-800">
                             {p.platform}
                           </span>
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-rose-50 text-rose-600 border border-rose-100">
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-rose-50 text-rose-600 border border-rose-100">
                             {t(p.viralGrade)}
                           </span>
                           <span className="text-[11px] font-bold text-slate-700 truncate">
@@ -730,10 +1061,12 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                       </div>
 
                       <div className="text-right shrink-0 flex items-center space-x-3">
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">Views</span>
+                        <div title={`${formatNumber(p.views)} views`}>
+                          <span className="text-[10px] text-slate-400 block font-semibold">Views</span>
                           <span className="text-xs font-bold text-slate-900">
-                            {p.missingMetrics?.includes("views") ? "Unknown" : formatNumber(p.views)}
+                            {p.missingMetrics?.includes("views")
+                              ? "Unknown"
+                              : formatCompactNumber(p.views)}
                           </span>
                         </div>
                         {p.postUrl && p.postUrl !== "#" && (
@@ -779,9 +1112,29 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       </main>
 
       {/* ─── MODALS ─── */}
-      {isScoutModalOpen && <ScoutTaskLauncher context={{ intent: "content", mode: "search", entityType: "kol", source: "/" }} onClose={() => setIsScoutModalOpen(false)} onSuccess={handleRefresh} />}
+      {isScoutModalOpen && (
+        <ScoutTaskLauncher
+          context={{ intent: "content", mode: "search", entityType: "kol", source: "/" }}
+          onClose={() => setIsScoutModalOpen(false)}
+          onSuccess={handleRefresh}
+        />
+      )}
 
-      {scoutTargetKol && <ScoutTaskLauncher context={{ intent: "content", mode: "entity", entityType: "kol", source: "/", ids: [scoutTargetKol.id] }} entity={scoutTargetKol} key={scoutTargetKol.id} onClose={() => setScoutTargetKol(null)} onSuccess={handleRefresh} />}
+      {scoutTargetKol && (
+        <ScoutTaskLauncher
+          context={{
+            intent: "content",
+            mode: "entity",
+            entityType: "kol",
+            source: "/",
+            ids: [scoutTargetKol.id],
+          }}
+          entity={scoutTargetKol}
+          key={scoutTargetKol.id}
+          onClose={() => setScoutTargetKol(null)}
+          onSuccess={handleRefresh}
+        />
+      )}
 
       <ReportModal
         isOpen={isReportModalOpen}

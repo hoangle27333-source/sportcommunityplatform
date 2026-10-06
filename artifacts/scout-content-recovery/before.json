@@ -1,0 +1,37 @@
+{
+  "sessionId": "377e209d-7798-48ec-92b7-29706e40c077",
+  "result": {
+    "posts": [],
+    "counts": {
+      "failed": 0,
+      "excluded": 2,
+      "inserted": 0,
+      "duplicate": 0,
+      "refreshed": 0,
+      "unverified": 1
+    },
+    "keyword": "Badminton Vietnam",
+    "message": "Inserted 0; refreshed 0; duplicate 0; excluded 2; unverified 1; failed 0.",
+    "partial": false,
+    "success": true,
+    "coverage": {
+      "tasks": 2,
+      "warningCount": 0,
+      "missingFields": [],
+      "cachedEvidence": 0,
+      "completedTasks": 2
+    },
+    "progress": {
+      "stage": "complete"
+    },
+    "warnings": [],
+    "allFailed": false,
+    "sessionId": "377e209d-7798-48ec-92b7-29706e40c077",
+    "totalScouted": 0,
+    "sourceFreshness": [
+      "2026-10-06T03:31:11.289+00:00",
+      "2026-10-06T03:31:25.426+00:00"
+    ],
+    "matchedKolsCount": 0
+  }
+}

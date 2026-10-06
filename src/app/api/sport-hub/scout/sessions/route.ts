@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
     const db = createAdminClient();
     function list(runtimeReady: boolean) {
       let query = runtimeReady
-        ? db.from('scout_sessions').select('id,kind,params,status,candidates,result,progress,warnings,created_at', { count: 'exact' })
-        : db.from('scout_sessions').select('id,kind,params,status,candidates,result,created_at', { count: 'exact' });
+        ? db.from('scout_sessions').select('id,kind,params,status,candidates,review_decisions,result,progress,warnings,created_at', { count: 'exact' })
+        : db.from('scout_sessions').select('id,kind,params,status,candidates,review_decisions,result,created_at', { count: 'exact' });
       query = query.eq('owner_id', owner).neq('kind', 'verification').order('created_at', { ascending: false }).order('id', { ascending: false });
       if (runtimeReady) query = query.eq('verification', false);
       if (status) query = query.eq('status', status);

@@ -1,0 +1,22 @@
+{
+  "verifiedAt": "2026-10-05T14:15:05.945000+00:00",
+  "browser": "Chrome Hoang",
+  "role": "admin",
+  "mode": "existing live data; no collection or save submitted",
+  "mainAppAssetStatus": 200,
+  "checks": [
+    "Activity View Results",
+    "stored No Results",
+    "verified Nike observations",
+    "result reload",
+    "Open Directory",
+    "Search Profiles launcher",
+    "Add from Link launcher",
+    "Collect Posts selection and connected channels",
+    "Choose Accounts launcher",
+    "saved record dossier destination",
+    "dossier Collect Posts shortcut",
+    "Escape returns to dossier"
+  ],
+  "screenshot": "chrome-admin-results.png"
+}

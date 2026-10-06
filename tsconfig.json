@@ -37,6 +37,8 @@
   ],
   "exclude": [
     "node_modules",
+    "tmp",
+    "artifacts",
     "test*.ts",
     "create-admin.mjs",
     "scratch",

@@ -1,0 +1,45 @@
+{
+  "sessionId": "377e209d-7798-48ec-92b7-29706e40c077",
+  "counts": {
+    "inserted": 1,
+    "refreshed": 0,
+    "duplicate": 0,
+    "excluded": 2,
+    "unverified": 2,
+    "failed": 0
+  },
+  "posts": [
+    {
+      "id": "cec2dc41-755f-486f-a0e6-3d27a3d233a6",
+      "url": "https://facebook.com/permalink.php?story_fbid=pfbid02zEk4WqAzCR6Lr1BfZsUS2gbq43NXtdSTgf4oTxuLVxHFjgX8N1RSQgzaQ5aPsbHJl&id=61567170710558",
+      "publishedAt": "2026-09-08T15:54:28+00:00"
+    }
+  ],
+  "skipped": [
+    {
+      "url": "https://facebook.com/groups/3621789061433335/permalink/4679291062349791",
+      "state": "Needs Verification",
+      "reason": "The caption and provider location do not verify the selected geography."
+    },
+    {
+      "url": "https://facebook.com/groups/tapchoicaulong/permalink/4386834188270699",
+      "state": "Excluded",
+      "reason": "The post is older than this collection window."
+    },
+    {
+      "url": "https://tiktok.com/@embecaulong911/video/7693369612615961874",
+      "state": "Needs Verification",
+      "reason": "The caption and provider location do not verify the selected geography."
+    },
+    {
+      "url": "https://tiktok.com/@ht.badminton/video/7693322292289359110",
+      "state": "Excluded",
+      "reason": "Observed city evidence does not match the selected geography."
+    }
+  ],
+  "reusedProviderRuns": [
+    "8AAqUJmWDuJtiQqkh",
+    "q6fwArVB9UEW5JWwT"
+  ],
+  "newProviderRuns": 0
+}

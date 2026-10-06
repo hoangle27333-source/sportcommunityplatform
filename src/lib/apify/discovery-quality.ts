@@ -60,6 +60,7 @@ export function urlKind(url: string): 'profile' | 'group' | 'post' | 'unknown' {
     const path = u.pathname;
     if (/\/(p|reel|reels|posts|videos|video|photo|photos)(\/|$)/.test(path) || /^(\/story\.php|\/permalink\.php|\/watch\/?|\/photo\.php)$/.test(path)) return 'post';
     if (!parts.length || /^(search|explore|login|login\.php|logout|share|sharer|sharer\.php|l\.php|home\.php|help|settings|marketplace|gaming|events|hashtag|hashtags|tag|tags|reel|reels)$/i.test(parts[0])) return 'unknown';
+    if (parts[0] === 'groups' && parts.length === 4 && ['permalink','posts'].includes(parts[2])) return 'post';
     if (parts[0] === 'groups') return parts.length === 2 && !['feed', 'discover', 'joins', 'create'].includes(parts[1]) ? 'group' : 'unknown';
     if (parts[0] === 'profile.php') return /^\d+$/.test(u.searchParams.get('id') || '') ? 'profile' : 'unknown';
     if (parts[0] === 'people') return parts.length === 3 ? 'profile' : 'unknown';

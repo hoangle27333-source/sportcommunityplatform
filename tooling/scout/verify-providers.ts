@@ -16,7 +16,7 @@ try {
  const {data:budget,error:migration}=await db.from('scout_budget_settings').select('id,run_usd,tiktok_run_usd').single();if(migration)throw new Error('Runtime migration is unavailable. No paid verification was started.');
  const {data:owner,error}=await db.from('profiles').select('id').eq('role','admin').limit(1).single();if(error)throw error;
  for(const platform of ['Instagram','Facebook','TikTok']) {
-  for(const task of (platform==='TikTok' ? ['profiles','hashtag'] : platform==='Facebook' ? ['profiles','hashtag','communities','keyword'] : ['profiles','hashtag','communities']) as Array<'profiles'|'hashtag'|'communities'|'keyword'>)for(const [index,plan] of providerPlans(platform,task,['profiles','communities'].includes(task)?'running':'#chaybo',1,'Nationwide').entries())checks.push({name:`${platform.toLowerCase()}-${task}-${index}`,platform,task,plan});
+  for(const task of (platform==='TikTok' ? ['profiles','hashtag','keyword'] : platform==='Facebook' ? ['profiles','hashtag','communities','keyword'] : ['profiles','hashtag','communities']) as Array<'profiles'|'hashtag'|'communities'|'keyword'>)for(const [index,plan] of providerPlans(platform,task,['profiles','communities','keyword'].includes(task)?'running':'#chaybo',1,'Nationwide').entries())checks.push({name:`${platform.toLowerCase()}-${task}-${index}`,platform,task,plan});
   const url=platform==='Instagram'?'https://www.instagram.com/nike/':platform==='Facebook'?'https://www.facebook.com/nike/':'https://www.tiktok.com/@nike';
   for(const task of ['profile-details','profile-posts'] as const)checks.push({name:`${platform.toLowerCase()}-${task}`,platform,task,plan:providerPlans(platform,task,url,1)[0]});
  }

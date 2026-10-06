@@ -1,0 +1,77 @@
+[
+  {
+    "sessionId": "377e209d-7798-48ec-92b7-29706e40c077",
+    "createdAt": "2026-10-06T03:31:00.014519+00:00",
+    "keyword": "Badminton Vietnam",
+    "status": "complete",
+    "saved": {
+      "failed": 0,
+      "excluded": 2,
+      "inserted": 1,
+      "duplicate": 0,
+      "refreshed": 0,
+      "unverified": 2
+    },
+    "posts": [
+      {
+        "url": "https://facebook.com/groups/3621789061433335/permalink/4679291062349791",
+        "publishedAt": "2026-10-06T03:12:26.000Z",
+        "likes": 0,
+        "comments": 0,
+        "views": null,
+        "quality": {
+          "state": "excluded",
+          "reason": "Observed metrics do not meet 100 likes + comments or 10,000 views. Missing metrics remain unknown."
+        }
+      },
+      {
+        "url": "https://facebook.com/permalink.php?story_fbid=pfbid02zEk4WqAzCR6Lr1BfZsUS2gbq43NXtdSTgf4oTxuLVxHFjgX8N1RSQgzaQ5aPsbHJl&id=61567170710558",
+        "publishedAt": "2026-09-08T15:54:28.000Z",
+        "likes": 12,
+        "comments": null,
+        "views": null,
+        "quality": {
+          "state": "excluded",
+          "reason": "Observed metrics do not meet 100 likes + comments or 10,000 views. Missing metrics remain unknown."
+        }
+      },
+      {
+        "url": "https://facebook.com/groups/tapchoicaulong/permalink/4386834188270699",
+        "publishedAt": "2026-04-17T06:31:35.000Z",
+        "likes": 8,
+        "comments": 0,
+        "views": null,
+        "quality": {
+          "state": "excluded",
+          "reason": "Observed metrics do not meet 100 likes + comments or 10,000 views. Missing metrics remain unknown."
+        }
+      },
+      {
+        "url": "https://tiktok.com/@embecaulong911/video/7693369612615961874",
+        "publishedAt": "2026-10-06T02:03:29.000Z",
+        "likes": 64,
+        "comments": 1,
+        "views": 659,
+        "quality": {
+          "state": "excluded",
+          "reason": "Observed metrics do not meet 100 likes + comments or 10,000 views. Missing metrics remain unknown."
+        }
+      },
+      {
+        "url": "https://tiktok.com/@ht.badminton/video/7693322292289359110",
+        "publishedAt": "2026-10-05T22:59:51.000Z",
+        "likes": 43,
+        "comments": 0,
+        "views": 2474,
+        "quality": {
+          "state": "excluded",
+          "reason": "Observed metrics do not meet 100 likes + comments or 10,000 views. Missing metrics remain unknown."
+        }
+      }
+    ],
+    "providerRuns": [
+      "8AAqUJmWDuJtiQqkh",
+      "q6fwArVB9UEW5JWwT"
+    ]
+  }
+]
