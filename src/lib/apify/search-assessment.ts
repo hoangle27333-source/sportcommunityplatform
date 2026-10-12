@@ -5,6 +5,7 @@ import { assessProfile } from './discovery-quality';
 import { canonicalScopes } from './geography';
 import { assessEngagement, hasTopicEvidence, type ContentQuality } from './content-quality';
 import type { SocialPost, SocialProfile } from './providers';
+import { contentInputHash } from '../scout-experimental/evidence';
 export type ResultGroup='Qualified'|'Needs Verification'|'Below Target'|'Excluded';
 export type Dimension={state:'passed'|'failed'|'unknown';reason:string;evidence:string[]};
 export function assessAccountSize(profile:Pick<SocialProfile,'followers'|'members'>,criteria:AccountSizeCriteria):Dimension | undefined {
@@ -20,6 +21,10 @@ export function assessProfileFollowers(profile:Pick<SocialProfile,'followers'>,m
 }
 export type AccountAssessmentOptions=AccountSizeCriteria & {version?:number;entityTypes?:EntityType[];geographyMode?:'profile'|'profile-or-recent-posts';entityAssessment?:EntityAssessment};
 export function assessSearchProfile(profile:SocialProfile,keyword:string,geography:string,target:string, options?: AccountAssessmentOptions) {
+ if((options?.version || 0)>=7)return assessExperimentalProfile(profile,keyword,geography,target,options!);
+ return assessLegacyProfile(profile,keyword,geography,target,options);
+}
+function assessLegacyProfile(profile:SocialProfile,keyword:string,geography:string,target:string,options?:AccountAssessmentOptions) {
  const ownedPosts=profile.posts.filter(p=>p.authorUrl===profile.url);
  const evidenceBio=[profile.bio,...ownedPosts.map(p=>p.caption)].filter(Boolean).join('\n');
  const result=assessProfile(profile,keyword,geography,target);
@@ -54,6 +59,29 @@ export function assessSearchProfile(profile:SocialProfile,keyword:string,geograp
  }
  const resultGroup:ResultGroup=result.reviewState==='Matched'?'Qualified':result.reviewState==='Needs Review'?'Needs Verification':'Excluded';
  return {...result,resultGroup,assessment:{topic:{state:result.relevant?'passed':resultGroup==='Needs Verification'?'unknown':'failed',reason:result.reasons[0],evidence:result.evidence},geography:{state:result.locationMatch?'passed':result.reasons.includes('Observed location conflicts with selected geography')?'failed':'unknown',reason:result.reasons[result.reasons.length-1],evidence:[profile.location].filter(Boolean)},entityType:{state:result.classification==='Unknown'?'unknown':result.classification===(target==='Communities & Clubs'?'Community':'Individual')?'passed':'failed',reason:`Entity type: ${result.classification}`,evidence:[profile.entityType,profile.category].filter(Boolean)}}};
+}
+
+function assessExperimentalProfile(profile:SocialProfile,keyword:string,geography:string,target:string,options:AccountAssessmentOptions) {
+ const base=assessLegacyProfile(profile,keyword,geography,target,{...options,version:6});
+ const e=profile.contentEvidence;
+ const valid=e?.revision==='seed-content-1' && e.inputHash===contentInputHash(profile,keyword);
+ const owned=profile.posts.filter(p=>p.authorUrl===profile.url&&!p.isRepost);
+ const cited=new Set(valid?e.posts.filter(p=>p.topic&&owned.some(o=>o.url===p.url)).map(p=>p.url):[]);
+ const selfRole=valid && ['Athlete','Coach'].includes(e.role || '') && e.roleEvidence.includes(profile.url) && /athlete|coach|huấn luyện viên|vận động viên|\bvdv\b/i.test(`${profile.bio} ${profile.category}`);
+ const roleSupported=!!selfRole&&cited.size>=1;
+ const topic:Dimension={state:cited.size>=3||roleSupported?'passed':'unknown',reason:cited.size>=3?'Multiple owned posts support the sport.':roleSupported?'Declared athlete or coach role and owned content support the sport.':'More owned content or verified sport-role evidence is needed.',evidence:[...cited]};
+ // A media sample has no authority to identify faces. Only explicit profile/post evidence is used.
+ const reviewed=options.entityAssessment?.source==='review'?options.entityAssessment:undefined;
+ const type=reviewed?.suggestedType || (valid?e.entityType:'Unknown');
+ const entityAssessment:EntityAssessment=reviewed || {suggestedType:type,status:type==='Unknown'?'uncertain':'supported',source:'model',modelVersion:valid?e.model:'unavailable',evidence:valid?e.identityEvidence:[],missingInformation:type==='Unknown'?['Account identity is unverified.']:[]};
+ const entityType:Dimension={state:type==='Unknown'?'unknown':selectedEntityTypes(target,options.entityTypes).includes(type)?'passed':'failed',reason:`Entity type: ${type}`,evidence:entityAssessment.evidence};
+ const sportProfile={...profile,posts:owned.filter(p=>cited.has(p.url))};
+ const geo=assessAccountGeography(sportProfile,geography,'profile-or-recent-posts');
+ const geographyDimension:Dimension={state:geo.state,reason:geo.state==='passed'&&geo.observations.some(o=>o.source==='geotag')?`Content observed in ${geography}.`:geo.reason,evidence:geo.observations.filter(o=>o.source!=='mention').map(o=>o.postUrl || o.raw)};
+ const assessment={...base.assessment,topic,entityType,geography:geographyDimension};
+ const dimensions=Object.values(assessment) as Dimension[];
+ const reviewState=dimensions.some(d=>d.state==='failed')?'Excluded':dimensions.every(d=>d.state==='passed')?'Matched':'Needs Review';
+ return {...base,relevant:topic.state==='passed',classification:legacyClassification(type),entityAssessment,geographyAssessment:{...geo,reason:geographyDimension.reason},assessmentVersion:7,assessment,evidence:topic.evidence,locationMatch:geo.state==='passed',verifiedGeography:geo.verifiedGeography,reasons:[topic.reason,entityType.reason,geographyDimension.reason,...Object.entries(assessment).filter(([k])=>['followers','members'].includes(k)).map(([,d])=>d!.reason),...(valid&&e.commercialActivity?['Commercial activity']:[])],reviewState,resultGroup:reviewState==='Matched'?'Qualified':reviewState==='Excluded'?'Excluded':'Needs Verification'} as typeof base;
 }
 /** Shared review feedback is applied before counting, previewing or importing an account. */
 export function assessReviewedProfile(profile:SocialProfile,keyword:string,geography:string,target:string,options:AccountAssessmentOptions | undefined,feedback:any[]=[]) {

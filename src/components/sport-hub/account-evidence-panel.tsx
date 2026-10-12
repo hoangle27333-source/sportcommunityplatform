@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ENTITY_TYPES, type EntityType } from '@/lib/apify/account-evidence';
 import type { DiscoveryCandidate } from '@/lib/apify/scout';
 import { t, formatNumber } from '@/lib/i18n';
@@ -7,6 +7,9 @@ import { t, formatNumber } from '@/lib/i18n';
 export function AccountEvidencePanel({candidate,disabled,onCorrect}:{candidate:DiscoveryCandidate;disabled:boolean;onCorrect:(type:EntityType)=>void}) {
   const entity=candidate.entityAssessment,geo=candidate.geographyAssessment;
   const [type,setType]=useState<EntityType>(entity?.reviewedType || entity?.suggestedType || 'Unknown');
+  useEffect(()=>{
+    setType(entity?.reviewedType || entity?.suggestedType || 'Unknown');
+  },[entity?.reviewedType,entity?.suggestedType]);
   if(!entity)return null;
   const groups=new Map<string,{label:string;source:string;posts:Set<string>;url?:string}>();
   for(const observation of geo?.observations || []) {
@@ -23,10 +26,17 @@ export function AccountEvidencePanel({candidate,disabled,onCorrect}:{candidate:D
       </select>
       <button type="button" disabled={disabled} onClick={()=>onCorrect(type)} className="rounded border border-indigo-300 px-2 py-1 text-indigo-700">Save type correction</button>
     </label>
-    {entity.status!=='supported' && !entity.reviewedType && <p>Confirm the account type with a saved correction before approving import.</p>}
+    {entity.status!=='supported' && !entity.reviewedType && <p className="text-slate-500">Account type requires confirmation before CRM import.</p>}
     {candidate.assessment?.followers && <p><strong>Followers range:</strong> {candidate.assessment.followers.reason}</p>}
     {candidate.assessment?.members && <p><strong>Members range:</strong> {candidate.assessment.members.reason}</p>}
     {candidate.assessment?.topic && <div><p><strong>Topic evidence:</strong> {candidate.assessment.topic.reason}</p><ul>{candidate.assessment.topic.evidence.map((value,index)=><li key={index}>{/^https?:\/\//.test(value)?<a href={value} target="_blank" rel="noreferrer" className="underline">View topic evidence</a>:value}</li>)}</ul></div>}
+    {candidate.contentEvidence && <details><summary>Content analysis and discovery sources</summary>
+      <p>{candidate.contentEvidence.model} · {candidate.contentEvidence.observedAt}</p>
+      {candidate.contentEvidence.commercialActivity && <p>Commercial activity</p>}
+      {candidate.contentEvidence.posts.map(post=><p key={post.url}><a className="underline" href={post.url} target="_blank" rel="noreferrer">{post.modality} evidence{post.timestamp!==undefined?` at ${post.timestamp.toLocaleString('en-US')}s`:''}</a>: {post.excerpt}</p>)}
+      {candidate.discoveryPaths?.map((path,index)=><p key={index}>{path.method} · <a href={path.sourceUrl} className="underline" target="_blank" rel="noreferrer">Discovery source</a>{path.query?` · ${path.query}`:''}</p>)}
+      <p>Media samples: {Object.keys(candidate.contentEvidence.mediaHashes || {}).length.toLocaleString('en-US')}. Content similarity prioritizes collection; it does not verify eligibility.</p>
+    </details>}
     <p>Metrics observed: {candidate.provenance.fetchedAt || 'Unknown'}</p>
     {geo && <><p><strong>Profile location:</strong> {t(geo.profileLocation || 'Unknown')}</p>
       <p><strong>Recent-post coverage:</strong> {formatNumber(geo.coverage.collected)} / 10 posts · {formatNumber(geo.coverage.dated)} dated · {geo.coverage.partial?'Partial sample':'Latest sample verified'}</p>

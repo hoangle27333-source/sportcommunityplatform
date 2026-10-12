@@ -42,6 +42,7 @@
     "test*.ts",
     "create-admin.mjs",
     "scratch",
-    "upload-vercel-env.mjs"
+    "upload-vercel-env.mjs",
+    "src/app/templates"
   ]
 }

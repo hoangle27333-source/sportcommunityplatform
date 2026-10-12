@@ -1,4 +1,5 @@
 "use client";
+import { ExperimentalScoutFields,emptyExperimental,type ExperimentalInputs } from './experimental-scout-fields';
 import { AccountEvidencePanel } from './account-evidence-panel';
 import { AccountSizeFields,savedSizeCriteria } from './account-size-fields';
 import type {AccountSizeCriteria} from '@/lib/apify/account-criteria';
@@ -85,6 +86,10 @@ export function DiscoveryScoutModal({
     defaultTargetType === "Communities & Clubs" ? "Communities & Clubs" : "Individual KOLs";
   const [targetType, setTargetType] = useState<"Individual KOLs" | "Communities & Clubs">(initialType);
   const [keyword, setKeyword] = useState("");
+  const [searchStrategy,setSearchStrategy]=useState<'apify'|'seed_content_v1'>('apify');
+  const [experimentalInputs,setExperimentalInputs]=useState<ExperimentalInputs>(emptyExperimental);
+  const experimental=searchStrategy==='seed_content_v1';
+  const platformAvailable=(p:string)=>experimental || availability(p).available;
   const [platform, setPlatform] = useState<string[]>([]);
   const { availability, platforms, loading: capabilitiesLoading } = useScoutCapabilities(targetType === "Communities & Clubs" ? "communities" : "profiles");
   const mounted = useRef(true);
@@ -102,8 +107,10 @@ export function DiscoveryScoutModal({
 
   const [queryVariants,setQueryVariants]=useState<string|undefined>();
   const [maxSessionUsd,setMaxSessionUsd]=useState<number|undefined>();
-  const planCriteria={accountPolicyVersion:5,assessmentRevision:6,...sizeCriteria,entityTypes:selectedEntityTypes(targetType,entityTypes),geographyMode,keyword:keyword.trim(),targetType,platform,geography,limit,notes,queryVariants:queryVariants===undefined?undefined:queryVariants.split('\n').map(v=>v.trim()).filter(Boolean),maxSessionUsd};
-  const searchPlan=useSearchPlan('preview',planCriteria,isOpen && step===1 && !!keyword.trim() && !!platform.length);
+  const planCriteria={searchStrategy,...(experimental?{...experimentalInputs,seedUrls:experimentalInputs.seedUrls.map(u=>u.trim()).filter(Boolean),approvedKeywords:experimentalInputs.approvedKeywords.map(u=>u.trim()).filter(Boolean)}:{}),accountPolicyVersion:5,assessmentRevision:experimental?7:6,...sizeCriteria,entityTypes:selectedEntityTypes(targetType,entityTypes),geographyMode,keyword:keyword.trim(),targetType,platform,geography,limit,notes,queryVariants:queryVariants===undefined?undefined:queryVariants.split('\n').map(v=>v.trim()).filter(Boolean),maxSessionUsd};
+  const searchPlan=useSearchPlan('preview',planCriteria,isOpen && step===1 && !!keyword.trim() && !!platform.length && (!experimental || experimentalInputs.keywordsApproved));
+
+  useEffect(()=>{if(step===1 && !resumeSessionId)setExperimentalInputs(v=>({...v,keywordsApproved:false}));},[keyword,geography,targetType]);
 
   // Loading States
   const [searching, setSearching] = useState(false);
@@ -128,6 +135,7 @@ export function DiscoveryScoutModal({
 
   useEffect(() => {
     if (initialCriteria) {
+      setSearchStrategy(initialCriteria.searchStrategy || 'apify');setExperimentalInputs({...emptyExperimental,...initialCriteria});
       setKeyword(initialCriteria.keyword || ""); setTargetType(initialCriteria.targetType || initialType);
       setPlatform(Array.isArray(initialCriteria.platform) ? initialCriteria.platform : initialCriteria.platform ? [initialCriteria.platform] : []); setGeography(initialCriteria.geography || "Vietnam");
       setMaxSessionUsd(initialCriteria.maxSessionUsd);setQueryVariants(initialCriteria.queryVariants?.join('\n'));setSizeCriteria(savedSizeCriteria(initialCriteria));setEntityTypes(initialCriteria.entityTypes || []);setGeographyMode(initialCriteria.geographyMode || 'profile-or-recent-posts');setLimit(initialCriteria.limit || 5); setNotes(initialCriteria.notes || "");
@@ -135,8 +143,8 @@ export function DiscoveryScoutModal({
     if (resumeSessionId && isOpen) void handleSearchPreview({ preventDefault() {} } as React.FormEvent, resumeSessionId);
   }, [resumeSessionId, isOpen]);
   useEffect(() => {
-    if (!resumeSessionId && !capabilitiesLoading) setPlatform(previous => { const available = previous.filter(p => availability(p).available); return available.length ? available : platforms.slice(0, 1); });
-  }, [platforms.join(","), targetType, capabilitiesLoading]);
+    if (!resumeSessionId && !capabilitiesLoading && !experimental) setPlatform(previous => { const available = previous.filter(p => availability(p).available); return available.length ? available : platforms.slice(0, 1); });
+  }, [platforms.join(","), targetType, capabilitiesLoading,experimental]);
 
   // Reset modal state on close
   const resetAndClose = () => {
@@ -168,7 +176,7 @@ export function DiscoveryScoutModal({
       return;
     }
 
-    if (!resumeId && (!platform.length || platform.some(p => !availability(p).available))) { toast.error("Choose an available platform before searching."); return; }
+    if (!resumeId && (!platform.length || platform.some(p => !platformAvailable(p)))) { toast.error("Choose an available platform before searching."); return; }
     if(!resumeId && !searchPlan.plan){toast.error(searchPlan.error || "Wait for the search plan to be ready.");return;}
     setSearching(true);
     try {
@@ -202,7 +210,7 @@ export function DiscoveryScoutModal({
         : fetchedCandidates.some(c => c.reviewState === 'Needs Review')
         ? 'Needs Review'
         : 'All';
-      if (result.criteria) { const p = result.criteria; setKeyword(p.keyword); setTargetType(p.targetType); setPlatform(Array.isArray(p.platform) ? p.platform : [p.platform]); setGeography(p.geography); setLimit(p.limit);setSizeCriteria(savedSizeCriteria(p));setMaxSessionUsd(p.maxSessionUsd);setQueryVariants(p.queryVariants?.join('\n'));setAssessmentFilter(defaultAssessment);setEntityTypes(p.entityTypes || []);setGeographyMode(p.geographyMode || 'profile'); }
+      if (result.criteria) { const p = result.criteria; setSearchStrategy(p.searchStrategy || 'apify');setExperimentalInputs({...emptyExperimental,...p}); setKeyword(p.keyword); setTargetType(p.targetType); setPlatform(Array.isArray(p.platform) ? p.platform : [p.platform]); setGeography(p.geography); setLimit(p.limit);setSizeCriteria(savedSizeCriteria(p));setMaxSessionUsd(p.maxSessionUsd);setQueryVariants(p.queryVariants?.join('\n'));setAssessmentFilter(defaultAssessment);setEntityTypes(p.entityTypes || []);setGeographyMode(p.geographyMode || 'profile'); }
       else { setAssessmentFilter(defaultAssessment); }
       setDiscoveryWarnings(result.warnings || []);
       setDiscoveryCounts(result.diagnostics || null);
@@ -295,22 +303,33 @@ export function DiscoveryScoutModal({
 
   // Helper: Check if candidate meets requirements to be approved
   const isCandidateReadyToApprove = (candidate: DiscoveryCandidate) => {
-    if(['followers','members'].some(metric=>candidate.assessment?.[metric] && candidate.assessment[metric].state!=='passed'))return false;
-    if (candidate.reviewState === "Excluded" || candidate.entityAssessment && !['Individual','Community','Club','Unknown'].includes(candidate.entityAssessment.suggestedType)) return false;
-    if(candidate.entityAssessment?.status!=='supported' && candidate.entityAssessment && !candidate.entityAssessment.reviewedType)return false;
+    // 1. Audience size metric check: must pass if evaluated
+    if (['followers', 'members'].some(metric => candidate.assessment?.[metric] && candidate.assessment[metric].state !== 'passed')) {
+      return false;
+    }
+    if(candidate.assessmentVersion===7 && (candidate as any).resultGroup!=='Qualified')return false;
+    // 2. Excluded candidates cannot be approved
+    if (candidate.reviewState === "Excluded") return false;
+
     const edit = getCandidateEdit(candidate);
     const expected = getExpectedClassification();
-    if (candidate.reviewState === "Needs Review") {
-      return (
-        edit.classification === expected &&
-        edit.relevant === true &&
-        edit.locationConfirmed === true
-      );
+
+    // 3. Entity type / classification must match expected CRM destination
+    if (edit.classification !== expected) return false;
+
+    // 4. If candidate's suggested type was completely incompatible (e.g. Media/Event, Brand/Business)
+    // and user has NOT explicitly reclassified it to expected, cannot approve
+    if (candidate.entityAssessment && !['Individual', 'Community', 'Club', 'Unknown'].includes(candidate.entityAssessment.suggestedType) && candidateEdits[candidate.candidateId]?.classification !== expected) {
+      return false;
     }
-    if (candidate.reviewState === "Matched") {
-      return edit.classification === expected && edit.relevant !== false;
-    }
-    return false;
+
+    // 5. If user explicitly marked candidate as off-topic in editor
+    if (candidateEdits[candidate.candidateId]?.relevant === false) return false;
+
+    // 6. If user explicitly marked candidate as wrong location in editor
+    if (candidateEdits[candidate.candidateId]?.locationConfirmed === false) return false;
+
+    return true;
   };
 
   // Quick feedback submission and candidate exclusion
@@ -344,7 +363,11 @@ export function DiscoveryScoutModal({
         return next;
       });
     } catch (error: any) {
-      toast.error(error.message || "Failed to record feedback");
+      const rawMsg = error?.message || "Failed to record feedback";
+      const msg = typeof rawMsg === 'string' && /^<html/i.test(rawMsg.trim())
+        ? rawMsg.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || "Failed to record feedback"
+        : rawMsg;
+      toast.error(msg);
     } finally {
       setSavingReview(false);
     }
@@ -462,21 +485,40 @@ export function DiscoveryScoutModal({
     const expected = getExpectedClassification();
     const eligible = targetCandidates.filter((c) => decision !== "approved" || isCandidateReadyToApprove(c));
     if (eligible.length === 0) {
-      toast.error("None of the selected profiles meet the approval criteria. Check entity type, topic, and location.");
+      const wrongType = targetCandidates.filter((c) => getCandidateEdit(c).classification !== expected);
+      const failedMetric = targetCandidates.filter((c) => ['followers', 'members'].some(m => c.assessment?.[m] && c.assessment[m].state !== 'passed'));
+      if (wrongType.length > 0) {
+        toast.error(`${wrongType.length} selected profile(s) have entity types that do not match '${expected === "Community" ? "Community / Club" : "Individual Creator"}'. Please update their entity type first.`);
+      } else if (failedMetric.length > 0) {
+        toast.error(`${failedMetric.length} selected profile(s) do not meet the follower/member requirements.`);
+      } else {
+        toast.error("None of the selected profiles meet the approval criteria. Check entity type, topic, and location.");
+      }
       return;
     }
 
     setSavingReview(true);
     try {
+      const isApproving = decision === "approved";
       const reviews = eligible.map((c) => {
         const edit = getCandidateEdit(c);
+        const targetEntityType: EntityType | undefined = c.entityAssessment
+          ? (edit.classification === 'Individual'
+              ? 'Individual'
+              : edit.classification === 'Community'
+              ? (c.entityAssessment.suggestedType === 'Club' ? 'Club' : 'Community')
+              : edit.classification === 'Brand/Business'
+              ? 'Brand/Business'
+              : c.entityAssessment.reviewedType || c.entityAssessment.suggestedType || 'Unknown')
+          : undefined;
+
         return {
           candidateId: c.candidateId,
           decision,
-          typeConfirmed: edit.classification === expected,
-          entityType:c.entityAssessment?(c.entityAssessment.reviewedType || (c.entityAssessment.suggestedType==='Club'?'Club':edit.classification==='Community'?'Community':edit.classification==='Individual'?'Individual':'Unknown')):undefined,
-          relevant: edit.relevant,
-          locationConfirmed: edit.locationConfirmed,
+          typeConfirmed: isApproving ? true : (edit.classification === expected),
+          entityType: targetEntityType,
+          relevant: isApproving ? (edit.relevant !== false) : edit.relevant,
+          locationConfirmed: isApproving ? (edit.locationConfirmed !== false) : edit.locationConfirmed,
         };
       });
 
@@ -497,6 +539,20 @@ export function DiscoveryScoutModal({
 
       const newDecisions = result.decisions || {};
       setDecisions((prev) => ({ ...prev, ...newDecisions }));
+      if (isApproving) {
+        setCandidateEdits((prev) => {
+          const next = { ...prev };
+          for (const c of eligible) {
+            next[c.candidateId] = {
+              ...getCandidateEdit(c),
+              classification: expected,
+              relevant: true,
+              locationConfirmed: true,
+            };
+          }
+          return next;
+        });
+      }
       setReviewed((prev) => {
         const next = new Set(prev);
         for (const c of eligible) {
@@ -539,7 +595,21 @@ export function DiscoveryScoutModal({
     try {
       const edit = getCandidateEdit(candidate);
       const expected = getExpectedClassification();
-      const typeConfirmed = edit.classification === expected;
+      const isApproving = decision === "approved";
+      const typeConfirmed = isApproving ? true : (edit.classification === expected);
+
+      const targetEntityType: EntityType | undefined = candidate.entityAssessment
+        ? (edit.classification === 'Individual'
+            ? 'Individual'
+            : edit.classification === 'Community'
+            ? (candidate.entityAssessment.suggestedType === 'Club' ? 'Club' : 'Community')
+            : edit.classification === 'Brand/Business'
+            ? 'Brand/Business'
+            : candidate.entityAssessment.reviewedType || candidate.entityAssessment.suggestedType || 'Unknown')
+        : undefined;
+
+      const relevant = isApproving ? (edit.relevant !== false) : edit.relevant;
+      const locationConfirmed = isApproving ? (edit.locationConfirmed !== false) : edit.locationConfirmed;
 
       const response = await scoutFetch("/api/sport-hub/scout/review", {
         method: "POST",
@@ -549,15 +619,26 @@ export function DiscoveryScoutModal({
           candidateId: candidate.candidateId,
           decision,
           typeConfirmed,
-          entityType:candidate.entityAssessment?(candidate.entityAssessment.reviewedType || (candidate.entityAssessment.suggestedType==='Club'?'Club':edit.classification==='Community'?'Community':edit.classification==='Individual'?'Individual':'Unknown')):undefined,
-          relevant: edit.relevant,
-          locationConfirmed: edit.locationConfirmed,
+          entityType: targetEntityType,
+          relevant,
+          locationConfirmed,
         }),
       });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error || "Unable to save the review decision.");
       if (!mounted.current) return;
       setDecisions(previous => ({ ...previous, [candidate.candidateId]: result.decision }));
+      if (isApproving) {
+        setCandidateEdits(prev => ({
+          ...prev,
+          [candidate.candidateId]: {
+            ...edit,
+            classification: expected,
+            relevant: true,
+            locationConfirmed: true,
+          }
+        }));
+      }
       setReviewed(previous => {
         const next = new Set(previous);
         if (decision === "approved") next.add(candidate.candidateId);
@@ -758,6 +839,7 @@ export function DiscoveryScoutModal({
 
             <form onSubmit={handleSearchPreview} className="space-y-4 pt-1">
               <p className="text-xs text-slate-500">Running tasks and saved previews are available in <a href="/scout" className="underline">Scout Activity</a>.</p>
+              <label className="block text-xs font-semibold">Search strategy<select className="ml-2 rounded-lg border p-2" value={searchStrategy} onChange={e=>{setSearchStrategy(e.target.value as 'apify'|'seed_content_v1');setExperimentalInputs(v=>({...v,keywordsApproved:false}));}}><option value="apify">Current Search (Apify)</option><option value="seed_content_v1">Experimental Search</option></select></label>
               {/* Search Keyword */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -805,8 +887,8 @@ export function DiscoveryScoutModal({
                   </label>
                   <fieldset aria-label="Platforms" className="space-y-2">
                     {SCOUT_PLATFORMS.map(p => <label key={p} className="flex items-start gap-2 text-xs text-slate-700">
-                      <input type="checkbox" checked={platform.includes(p)} disabled={!availability(p).available || searching} onChange={e => setPlatform(previous => e.target.checked ? [...previous, p] : previous.filter(value => value !== p))} className="mt-0.5 accent-indigo-600" />
-                      <span>{p}{!availability(p).available && <span className="block text-slate-500">{availability(p).reason}</span>}</span>
+                      <input type="checkbox" checked={platform.includes(p)} disabled={!platformAvailable(p) || searching} onChange={e => setPlatform(previous => e.target.checked ? [...previous, p] : previous.filter(value => value !== p))} className="mt-0.5 accent-indigo-600" />
+                      <span>{p}{!platformAvailable(p) && <span className="block text-slate-500">{availability(p).reason}</span>}</span>
                     </label>)}
                   </fieldset>
                   <p className="mt-2 text-xs text-slate-500">Select one or more platforms. All eligible profiles collected across these platforms are returned.</p>
@@ -873,8 +955,9 @@ export function DiscoveryScoutModal({
                 <p>Locations mentioned in captions or hashtags remain available for verification. Account followers are separate from club members.</p>
               </fieldset>
               <AccountSizeFields value={sizeCriteria} onChange={setSizeCriteria}/>
+              {experimental && <ExperimentalScoutFields value={experimentalInputs} onChange={setExperimentalInputs} topic={keyword} geography={geography} target={targetType}/>}
               <ScoutSearchPlan {...searchPlan} variants={queryVariants} onVariants={setQueryVariants} budget={maxSessionUsd} onBudget={setMaxSessionUsd}/>
-              {!platforms.length && <p role="status" className="text-xs text-amber-800">{SCOUT_PLATFORMS.map(p => `${p}: ${availability(p).reason}`).join(" · ")}</p>}
+              {!experimental && !platforms.length && <p role="status" className="text-xs text-amber-800">{SCOUT_PLATFORMS.map(p => `${p}: ${availability(p).reason}`).join(" · ")}</p>}
 
               {/* Progress Indicator when Searching */}
               {searching && (
@@ -901,7 +984,7 @@ export function DiscoveryScoutModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={searching || !searchPlan.plan || searchPlan.loading || (!platform.length || platform.some(p => !availability(p).available))}
+                  disabled={searching || !searchPlan.plan || searchPlan.loading || (!platform.length || platform.some(p => !platformAvailable(p)))}
                   className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-95 rounded-xl transition shadow-md flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {searching ? (
@@ -1457,14 +1540,24 @@ export function DiscoveryScoutModal({
                               <div className="text-amber-800">
                                 Classified as <strong>{t(edit.classification)}</strong>. Cannot be imported as <strong>{expected === "Community" ? "Community" : "Individual Creator"}</strong>.
                               </div>
-                              <button
-                                type="button"
-                                disabled={savingReview || importing}
-                                onClick={() => handleFeedbackAndReject(candidate, "Wrong Entity Type", edit.classification)}
-                                className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] transition shadow-xs cursor-pointer"
-                              >
-                                Reject & Flag as {t(edit.classification)}
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={savingReview || importing}
+                                  onClick={() => updateCandidateEdit(candidate.candidateId, candidate, { classification: expected })}
+                                  className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[11px] transition shadow-xs cursor-pointer"
+                                >
+                                  Confirm as {expected === "Community" ? "Community" : "Individual Creator"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={savingReview || importing}
+                                  onClick={() => handleFeedbackAndReject(candidate, "Wrong Entity Type", edit.classification)}
+                                  className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] transition shadow-xs cursor-pointer"
+                                >
+                                  Reject & Flag as {t(edit.classification)}
+                                </button>
+                              </div>
                             </div>
                           )}
 
@@ -1487,14 +1580,24 @@ export function DiscoveryScoutModal({
                           {!edit.locationConfirmed && isNeedsReview && edit.classification === expected && edit.relevant && (
                             <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-slate-100 text-slate-700 text-[11px]">
                               <span>Confirm whether candidate operates in <strong>{geography}</strong> to approve.</span>
-                              <button
-                                type="button"
-                                disabled={savingReview || importing}
-                                onClick={() => handleFeedbackAndReject(candidate, "Wrong Location")}
-                                className="px-2 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold text-[10px] transition cursor-pointer"
-                              >
-                                Reject (Wrong Location)
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={savingReview || importing}
+                                  onClick={() => updateCandidateEdit(candidate.candidateId, candidate, { locationConfirmed: true })}
+                                  className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[10px] transition cursor-pointer"
+                                >
+                                  Confirm Location ({geography})
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={savingReview || importing}
+                                  onClick={() => handleFeedbackAndReject(candidate, "Wrong Location")}
+                                  className="px-2 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold text-[10px] transition cursor-pointer"
+                                >
+                                  Reject (Wrong Location)
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1511,7 +1614,9 @@ export function DiscoveryScoutModal({
                               className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1.5 cursor-pointer"
                               title={
                                 !readyToApprove
-                                  ? "Verify entity type, relevance, and location before approving"
+                                  ? (edit.classification !== expected
+                                      ? `Update entity type to ${expected === "Community" ? "Community" : "Individual Creator"} before approving`
+                                      : "Audience or attributes do not meet approval criteria")
                                   : "Approve candidate for import"
                               }
                             >

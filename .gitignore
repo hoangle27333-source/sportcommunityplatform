@@ -46,6 +46,7 @@ portal/
 /models/scout-account/
 /artifacts/scout-account-private/
 /.next-scout-account-qa/
+src/app/templates/
 !tooling/scout/train-account-classifier.py
 
 /private/scout-dataset/

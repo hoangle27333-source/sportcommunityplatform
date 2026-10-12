@@ -1,3 +1,4 @@
+import { savedExperimentalProfiles } from '../scout-experimental/saved';
 import { executeStoredReassessment } from './reassessment';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { randomUUID } from 'node:crypto';
@@ -25,8 +26,10 @@ export async function executeSession(id: string) {
     if(p.searchPlan && Date.now()-Date.parse(executionStartedAt)>=15*60000 && ['preview','trends'].includes(s.kind)) {
       const {data:saved,error:savedError}=await db.from('scout_provider_runs').select('platform,task,state,normalized_rows,raw_rows,warnings').eq('session_id',id).eq('state','succeeded');
       if(savedError)throw savedError;
-      if(saved?.some(run=>(run.normalized_rows || run.raw_rows || []).length)) {
-        result=await withStoredEvidence<any>(saved,()=>s.kind==='preview'?previewDiscoveryCandidates(p):scoutMarketTrends(p));
+      const experimental=p.searchPlan?.version===6;
+      const savedProfiles=experimental?await savedExperimentalProfiles(id,p.searchPlan.experimental?.knownSeedUrls):undefined;
+      if(savedProfiles || saved?.some(run=>(run.normalized_rows || run.raw_rows || []).length)) {
+        result=await withStoredEvidence<any>(saved,()=>s.kind==='preview'?previewDiscoveryCandidates({...p,...(savedProfiles?{savedExperimentalProfiles:savedProfiles}:{})}):scoutMarketTrends(p));
         result={...result,partial:true,stopReason:'time-limit',diagnostics:{...result.diagnostics,stopReason:'time-limit'},...(result.searchExecution?{searchExecution:{...result.searchExecution,stopReason:'time-limit'}}:{}),warnings:[...(result.warnings || []).filter((w:string)=>!w.startsWith('Found ')),s.kind==='preview'?`The search time limit was reached. ${result.counts?.qualifiedNew ?? 0}/${s.params.limit} qualified new accounts are retained for review; no further provider runs were started.`:'The search time limit was reached. Available results are retained for review; no further provider runs were started.']};
       } else result={success:false,code:'SEARCH_TIME_LIMIT',error:'The search time limit was reached before usable provider evidence was available.',httpStatus:408};
     }
@@ -37,15 +40,18 @@ export async function executeSession(id: string) {
     else if(s.kind==='community-posts') result=p.collectionMode==='latest-30' ? await scoutLatestCommunityPosts(p.communityId,p.platform,id,p.channelUrls) : await scoutSingleCommunityPosts(p.communityId,p.limit,p.platform,id);
     else result=await executeExtendedSession(s);
     const {data:runs,error:runError}=await db.from('scout_provider_runs').select('warnings,state,observed_at,actual_usd,reserved_usd').eq('session_id',id); if(runError) throw runError;
+    let external:any[]=[];
+    if(s.params.searchPlan?.version===6){const {data,error}=await db.from('scout_external_runs').select('state,actual_usd,reserved_usd,created_at,reserved_units').eq('session_id',id);if(error)throw error;external=data || [];}
+    const allRuns=[...(runs || []),...external];
     const {data:latest,error:warningError}=await db.from('scout_sessions').select('warnings').eq('id',id).single(); if(warningError) throw warningError;
     const runWarnings=(runs || []).flatMap(r=>r.warnings || []);
     const evidence=[...(result.candidates || []),...(result.posts || []),...(result.updatedRecords || []),...(result.data ? [result.data] : [])];
     const warnings=[...new Set([...(latest?.warnings || []).filter((w:string)=>!['Starting Scout workflow.','Dispatch needs reconciliation','Waiting for the worker queue to recover.'].includes(w)),...runWarnings,...evidence.flatMap(e=>e.provenance?.warnings || e.scout_provenance?.warnings || [])])] as string[];
     const sourceFreshness=[...new Set([...(runs || []).map(r=>r.observed_at),...evidence.map(e=>e.provenance?.fetchedAt || e.scout_provenance?.fetchedAt)].filter(Boolean))];
     const coverage={tasks:(runs || []).length,completedTasks:(runs || []).filter(r=>r.state==='succeeded').length,warningCount:warnings.length,cachedEvidence:evidence.filter(e=>e.provenance?.cached).length,missingFields:evidence.flatMap(e=>e.missingMetrics || e.provenance?.missingFields || [])};
-    const actualUsd=(runs || []).some(r=>r.actual_usd==null)?null:(runs || []).reduce((sum,r)=>sum+Number(r.actual_usd),0);
+    const actualUsd=allRuns.some(r=>r.actual_usd==null)?null:allRuns.reduce((sum,r)=>sum+Number(r.actual_usd),0);
     const qualifiedNew=s.kind==='preview' ? result.groups?.qualified?.filter((c:any)=>!c.isExisting).length || 0 : result.counts?.inserted || 0;
-    result={...result,...(s.params.searchPlan?{searchCost:{actualUsd,reservedUsd:(runs || []).reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),approvedCapUsd:s.params.searchPlan.maxSessionUsd,costPerQualifiedNew:actualUsd!==null && qualifiedNew?actualUsd/qualifiedNew:null}}:{}),progress:{stage:'complete'},coverage,counts:result.counts || {found:result.totalFound || 0,excluded:result.excludedCount || 0},sessionId:id,partial:!!result.partial || warnings.length>0,warnings:[...(result.warnings || []),...warnings],sourceFreshness};
+    result={...result,...(s.params.searchPlan?{searchCost:{actualUsd,trialCreditValueUsd:external.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),reservedUsd:allRuns.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),approvedCapUsd:s.params.searchPlan.maxSessionUsd,costPerQualifiedNew:actualUsd!==null && qualifiedNew?actualUsd/qualifiedNew:null}}:{}),progress:{stage:'complete'},coverage,counts:result.counts || {found:result.totalFound || 0,excluded:result.excludedCount || 0},sessionId:id,partial:!!result.partial || warnings.length>0,warnings:[...(result.warnings || []),...warnings],sourceFreshness};
     const outcome=result.success===false ? 'failed' : 'complete';
     const {error:save}=await db.from('scout_sessions').update({status:outcome,result,warnings:result.warnings,lease_until:null,lease_token:null,progress:{stage:outcome}}).eq('id',id).eq('lease_token',leaseToken); if(save) throw save;
     return false;

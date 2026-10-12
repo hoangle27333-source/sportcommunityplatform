@@ -1,4 +1,4 @@
-import {assessAccountSize} from '@/lib/apify/search-assessment';
+import {assessAccountSize,assessReviewedProfile} from '@/lib/apify/search-assessment';
 import { ENTITY_TYPES } from '@/lib/apify/account-evidence';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -49,7 +49,12 @@ export async function POST(req: NextRequest) {
         if (!isBatch) throw new ScoutError('Candidate not found in this preview.', 'INVALID_SELECTION', 400);
         continue;
       }
-      if(item.decision==='approved' && (session.params.assessmentRevision===6 || session.params.searchPlan?.version===5)){const size=assessAccountSize(candidate,{...session.params.searchPlan?.criteria,...session.params});if(size && size.state!=='passed')throw new ScoutError('Observed audience size must meet the selected range before approval.','FOLLOWER_THRESHOLD_REQUIRED',400);}
+      if(item.decision==='approved' && (session.params.assessmentRevision>=6 || [5,6].includes(session.params.searchPlan?.version))){const size=assessAccountSize(candidate,{...session.params.searchPlan?.criteria,...session.params});if(size && size.state!=='passed')throw new ScoutError('Observed audience size must meet the selected range before approval.','FOLLOWER_THRESHOLD_REQUIRED',400);}
+      if(item.decision==='approved' && (session.params.assessmentRevision===7 || session.params.searchPlan?.version===6)) {
+        const {data:feedback,error}=await db.from('scout_feedback').select('*').order('created_at',{ascending:false});if(error)throw error;
+        const checked=assessReviewedProfile(candidate,session.params.keyword,session.params.geography,session.params.targetType,{...session.params.searchPlan?.criteria,...session.params,version:7},feedback || []);
+        if(checked.resultGroup!=='Qualified')throw new ScoutError('Collect the missing evidence before approving this experimental result.','EVIDENCE_REQUIRED',400);
+      }
       const decision = profileReviewDecision(candidate, session.params.targetType, item, actorId);
       next[item.candidateId] = decision;
       applied[item.candidateId] = decision;

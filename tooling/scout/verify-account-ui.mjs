@@ -16,7 +16,7 @@ let browser, page;
 try {
  browser=await chromium.launch({headless:true,...(process.env.SCOUT_CHROME_PATH?{executablePath:process.env.SCOUT_CHROME_PATH}:{})});
  page=await browser.newPage({viewport:{width:1280,height:1000}}); const errors=[],requests=[];
- page.on('pageerror',error=>{errors.push(error.message);console.error('Page error:',error.message);});
+ page.on('pageerror',error=>{errors.push(error.message);console.error('Page error:',error.stack);});
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname,body=route.request().method()==='POST'?route.request().postDataJSON():{};let result={success:true};
   if(path.endsWith('/capabilities'))result={success:true,capabilities:Object.fromEntries(['Instagram','TikTok','Facebook'].map(p=>[p,Object.fromEntries(['profiles','communities'].map(task=>[task,{available:true}]))]))};
@@ -37,6 +37,7 @@ try {
  await page.getByRole('region',{name:'Account evidence'}).waitFor();
  if(requests[0]?.body.accountPolicyVersion!==5 || requests[0]?.body.geographyMode!=='profile-or-recent-posts' || !requests[0]?.body.entityTypes.includes('Individual'))throw new Error('Account settings were not submitted.');
  await page.getByText('Recent post location meets the selected scope.',{exact:true}).last().waitFor();
+ await page.getByLabel('Assessment',{exact:true}).selectOption('All');
  await page.getByLabel('Correct account type for Alex Runner').selectOption('Brand/Business');
  await page.getByRole('button',{name:'Save type correction',exact:true}).click();
  await page.getByText('This type is retained for Scout review and cannot be imported into the current CRM.').waitFor();

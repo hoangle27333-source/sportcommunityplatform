@@ -1,3 +1,4 @@
+import { collectExperimental } from '../scout-experimental/execution';
 import { collectPlannedAccounts } from './account-search-execution';
 import { plannedAccountModelPolicy, assertAccountModelPolicy, accountModelPolicyKey } from './account-model-policy';
 import { classifyAccount, evidenceHash } from './account-model';
@@ -12,9 +13,10 @@ import { checkpointTask } from './task-checkpoint';
 import { sessionSnapshot } from './session-snapshot';
 import { PendingScout, ScoutError } from './errors';
 import { quotas } from './collection';
-export type SearchExecution={rounds:any[];stopReason:string;requestedRows:number;providerCount:number;uniqueCount:number;duplicateCount:number;unparseableCount:number;hydratedProfiles:number;warnings:string[];rows:Record<string,any[]>;profiles:Record<string,SocialProfile[]>};
+export type SearchExecution={seedAssessments?:any[];rounds:any[];stopReason:string;requestedRows:number;providerCount:number;uniqueCount:number;duplicateCount:number;unparseableCount:number;hydratedProfiles:number;warnings:string[];rows:Record<string,any[]>;profiles:Record<string,SocialProfile[]>};
 /** Round checkpoints are reused by durable Workflow retries; provider receipts fence starts within a round. */
 export async function collectPlannedSearch(params:Record<string,any>,existing:Set<string>,feedback:any[]=[]):Promise<SearchExecution> {
+ if(params.searchPlan.version===6)return collectExperimental(params,existing,feedback);
  if(params.searchPlan.version===5 && params.searchPlan.kind==='preview')return collectPlannedAccounts(params,existing,feedback);
  const plan:SearchPlan=params.searchPlan;const accountV5=plan.accountPolicyVersion===5;const assessmentOptions=accountV5?{version:5,minFollowers:plan.criteria.minFollowers,entityTypes:plan.criteria.entityTypes,geographyMode:plan.criteria.geographyMode}:undefined;const db=createAdminClient();
  const modelPolicy=accountV5?plannedAccountModelPolicy(plan):undefined;

@@ -1,3 +1,4 @@
+import { buildExperimentalPlan } from '../scout-experimental/plan';
 import {sizeRange, topicQueries} from './account-criteria';
 import { currentAccountModelPolicy, type AccountModelPolicy } from './account-model-policy';
 import { selectedEntityTypes, type EntityType } from './account-evidence';
@@ -10,7 +11,7 @@ import { capabilityKey, stableJson } from './runtime';
 import { ScoutError } from './errors';
 import type { VerifiedSearchOptions } from './search-input';
 export type SearchPlan = {
- version:4 | 5; hash:string; kind:'preview'|'trends'; criteria:Record<string,any>;
+ version:4 | 5 | 6; experimental?:{revision:string;capabilities:import('../scout-experimental/types').TrialCapability[];units:{platform:string;query:string;method:string}[];seeds:string[];knownSeedUrls:string[];maxQueries:number;maxCandidates:number;maxMedia:number}; hash:string; kind:'preview'|'trends'; criteria:Record<string,any>;
  maxSessionUsd:number; allowedMaxSessionUsd?:number; maxSearchRows:number; maxHydratedProfiles:number; maxPostsPerProfile:5 | 10; accountPolicyVersion?:5; modelRevision?:string; modelMode?:AccountModelPolicy['mode']; appliedFilters?:{platform:string;setting:string;mode:'Provider filter'|'Search hint'|'Local verification';detail:string}[];
  rounds:{label:string;queries:string[]}[];
  sources:{platform:string; task:ScoutTask; keys:string[]; builds:Record<string,string>; options:Record<string,VerifiedSearchOptions>; authorSearch:boolean; rounds?:{task:ScoutTask;queries:string[]}[]; warnings:string[]}[];
@@ -34,6 +35,7 @@ export function instagramTopicTags(keyword:string) {
  return tokens(keyword).includes('running') || normalized(keyword)==='chaybo' ? ['chaybo','runningvietnam','marathonvietnam'] : [normalized(keyword).replace(/ /g,'')];
 }
 export async function buildSearchPlan(kind:'preview'|'trends',params:Record<string,any>):Promise<SearchPlan> {
+ if(params.searchStrategy==='seed_content_v1'){if(kind!=='preview')throw new ScoutError('Experimental Search supports profiles only.','INVALID_TASK',400);return buildExperimentalPlan(params);}
  const db=createAdminClient();
  const {data:policy,error:policyError}=await db.rpc('scout_search_budget_policy');
  if(policyError || policy!==4)throw new ScoutError('Adaptive search requires the Scout budget migration.', 'SEARCH_POLICY_UNAVAILABLE',503);
