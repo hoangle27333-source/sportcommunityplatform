@@ -21,11 +21,13 @@ import {
 import { PlatformHeader } from "../platform-header";
 import { ColumnInfoTooltip } from "../column-info-tooltip";
 import { createClient } from "@/lib/supabase/client";
+import { AddMemberDialog } from "../add-member-dialog";
 
 export interface TeamMember {
   id: string;
   name: string;
   email: string;
+  username?: string;
   role: "admin" | "editor" | "viewer";
   createdAt: string;
   picProjectsCount: number;
@@ -134,9 +136,11 @@ export function TeamPageView() {
   };
 
   const filteredMembers = members.filter((m) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.email.toLowerCase().includes(searchQuery.toLowerCase());
+      m.name.toLowerCase().includes(q) ||
+      m.email.toLowerCase().includes(q) ||
+      (m.username ? m.username.toLowerCase().includes(q) : false);
     const matchesRole = roleFilter === "all" || m.role === roleFilter;
     return matchesSearch && matchesRole;
   });
@@ -164,7 +168,7 @@ export function TeamPageView() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* Page Title & Controls (Strictly Single Line) */}
-        <div className="bg-white px-5 py-3 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-4 flex-nowrap">
+        <div className="bg-white px-5 py-3 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center space-x-3 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-blue-100/80 text-blue-600 flex items-center justify-center font-bold shrink-0">
               <Users className="w-4 h-4" />
@@ -284,6 +288,14 @@ export function TeamPageView() {
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
+                {currentRole === "admin" && (
+                  <AddMemberDialog onCreated={(member) => {
+                    setMembers((previous) => [...previous, member]);
+                    setSearchQuery("");
+                    setRoleFilter("all");
+                    void fetchData();
+                  }} />
+                )}
                 <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <select
                   value={roleFilter}
@@ -347,13 +359,15 @@ export function TeamPageView() {
                     filteredMembers.map((member) => (
                       <tr key={member.id} className="hover:bg-slate-50/70 transition h-11">
                         <td className="py-2 px-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2 max-w-[280px]" title={`${member.name} (${member.email})`}>
+                          <div className="flex items-center gap-2 max-w-[280px]" title={`${member.name} (${member.username ? `@${member.username}` : member.email})`}>
                             <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs shrink-0">
                               {member.name.charAt(0).toUpperCase()}
                             </div>
                             <span className="font-bold text-slate-900 truncate text-xs">{member.name}</span>
                             <span className="text-slate-300 shrink-0">·</span>
-                            <span className="text-[11px] text-slate-400 truncate">{member.email}</span>
+                            <span className="text-[11px] text-slate-400 truncate">
+                              {member.username ? `@${member.username}` : member.email}
+                            </span>
                           </div>
                         </td>
 

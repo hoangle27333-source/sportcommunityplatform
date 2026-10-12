@@ -19,12 +19,12 @@ export const TASK_LABELS: Record<string, string> = {
   comments: 'Collect Comments', inspect: 'Fetch Verified Details',
 };
 export type ScoutCapabilityTask = 'profiles' | 'communities' | 'hashtag' | 'keyword' | 'profile-posts' | 'group-posts' | 'profile-details' | 'group-details' | 'sync' | 'group-sync' | 'comments';
-export type ScoutCapabilities = Record<ScoutPlatform, Record<ScoutCapabilityTask, { available: boolean; reason?: string }>>;
+export type ScoutCapabilities = Record<ScoutPlatform, Record<ScoutCapabilityTask, { available: boolean; reason?: string; partial?: boolean }>>;
 export type ScoutSessionSummary = {
   id: string; kind: ScoutKind; title: string; subject: string; createdAt: string;
   status: 'pending' | 'running' | 'complete' | 'failed'; partial: boolean; empty?: boolean;
   reviewState: 'needs-review' | 'reviewed' | 'none'; remainingCandidates: number;
-  progress: { stage?: string }; warnings: string[]; counts: Record<string, number>;
+  progress: { stage?: string }; dispatchState?: string; warnings: string[]; counts: Record<string, number>;
   params: Record<string, unknown>; result?: Record<string, unknown>;
 };
 
@@ -40,12 +40,12 @@ export function sessionSummary(session: any, subjects: Record<string, string> = 
   const subject = params.keyword || params.url || (names.length ? `${names.slice(0, 2).join(', ')}${ids.length > 2 ? ` +${ids.length - 2}` : ''}` : `${ids.length} saved ${params.entityType === 'community' ? 'communities' : 'accounts'}`);
   return {
     id: session.id, kind: session.kind, title: TASK_LABELS[session.kind] || 'Scout Task', subject,
-    createdAt: session.created_at, status, partial: !!outcome?.partial, empty:status==='complete' && ['trends','kol-posts','community-posts'].includes(session.kind) && Array.isArray(outcome?.posts) && !outcome.posts.length && !outcome.counts?.refreshed && !outcome.counts?.duplicate,
-    reviewState: session.kind === 'preview' && status === 'complete' ? remainingCandidates ? 'needs-review' : 'reviewed' : 'none',
-    remainingCandidates, progress: { stage: session.progress?.stage },
+    createdAt: session.created_at, status, partial: !!outcome?.partial, empty:status==='complete' && !outcome?.groups?.needsVerification?.length && !outcome?.groups?.belowTarget?.length && (session.kind==='preview' ? !candidates.length : ['trends','kol-posts','community-posts'].includes(session.kind) && Array.isArray(outcome?.posts) && !outcome.posts.length && !outcome.counts?.refreshed && !outcome.counts?.duplicate),
+    reviewState: session.kind === 'trends' && status==='complete' && (outcome?.groups?.needsVerification?.length || outcome?.groups?.belowTarget?.length) ? 'needs-review' : session.kind === 'preview' && status === 'complete' ? remainingCandidates ? 'needs-review' : 'reviewed' : 'none',
+    remainingCandidates:session.kind==='trends'?(outcome?.groups?.needsVerification?.length || 0)+(outcome?.groups?.belowTarget?.length || 0):remainingCandidates, dispatchState:session.dispatch_state, progress: { stage: session.progress?.stage },
     warnings: explainSavedProviderWarnings([...(status==='pending' ? session.warnings || [] : (session.warnings || []).filter((w:string)=>w!=='Waiting for the worker queue to recover.')), ...(session.result?.warnings || [])], []),
     counts: Object.fromEntries(Object.entries(session.result?.counts || {}).filter((entry):entry is [string,number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))),
-    params: Object.fromEntries(Object.entries(params).filter(([key]) => ['keyword','targetType','platform','geography','limit','searchMode','sport','kolId','communityId','forceRefresh','ids','entityType','trackedAccountId','url','selectedPostIds','notes','uiContext'].includes(key))),
+    params: Object.fromEntries(Object.entries(params).filter(([key]) => ['assessmentRevision','accountPolicyVersion','sizeMetric','minFollowers','maxFollowers','minMembers','maxMembers','entityTypes','geographyMode','searchPlan','maxSessionUsd','planHash','parentSessionId','executionMode','queryVariants','qualityMode','recentDays','minInteractions','minViews','keyword','targetType','platform','geography','limit','searchMode','sport','kolId','communityId','forceRefresh','ids','entityType','trackedAccountId','url','selectedPostIds','notes','uiContext','collectionMode','channelUrls'].includes(key))),
   };
 }
 

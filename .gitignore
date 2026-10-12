@@ -40,3 +40,13 @@ scripts/
 *.py
 portal_data.json
 portal/
+/.swc
+
+# Keep model weights, reviewed datasets and local UI build output out of Git.
+/models/scout-account/
+/artifacts/scout-account-private/
+/.next-scout-account-qa/
+!tooling/scout/train-account-classifier.py
+
+/private/scout-dataset/
+Database raw/

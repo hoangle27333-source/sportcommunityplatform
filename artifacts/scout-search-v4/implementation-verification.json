@@ -1,0 +1,16 @@
+{
+  "tests": {
+    "files": 39,
+    "passed": 319
+  },
+  "typecheck": "passed",
+  "scoutTypecheck": "passed",
+  "frozenProductionBuild": "passed",
+  "browserFixture": "passed",
+  "disposablePostgresBudgetAssertions": "passed",
+  "paidProviderStarts": 0,
+  "productionMigrationApplied": false,
+  "productionDeployed": false,
+  "optionalFilterLiveVerification": "pending approved budget",
+  "freshProviderPrecisionAB": "pending approved budget and human review"
+}

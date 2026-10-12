@@ -1,0 +1,48 @@
+Vercel CLI 59.25.4 (Node.js 24.19.0)
+Fetching deployment "sportcommunityplatform-lozgs3ej8-hoang-le2.vercel.app" in hoang-le2
+> Fetched deployment "sportcommunityplatform-lozgs3ej8-hoang-le2.vercel.app" in hoang-le2 [502ms]
+
+  General
+
+    id		dpl_fhDA9bbqmpKMr9n4N7cM8XGWbTYH
+    name	sportcommunityplatform
+    target	production
+    status	● Ready
+    url		https://sportcommunityplatform-lozgs3ej8-hoang-le2.vercel.app
+    created	Sun Oct 11 2026 13:35:56 GMT+0700 (Indochina Time) [2m ago]
+
+
+  Build Machine
+
+    requested build machine basic
+    actual assigned cores   2 vCPU (actual assignment)
+    memory                  8192 MiB
+    selection type          fixed
+    selection source        plan-default
+
+
+  Duration
+
+    build duration	1m 8s
+    post-build duration	unavailable
+    billable duration	unavailable
+    CPU Minutes Usage	unavailable
+
+
+  Aliases
+
+    ╶ https://sportcommunityplatform.vercel.app
+    ╶ https://sportcommunityplatform-hoang-le2.vercel.app
+    
+
+  Builds
+
+    ┌ .        [0ms]
+    ├── λ index (1.54MB) [iad1]
+    ├── λ community (1.54MB) [iad1]
+    ├── λ community.rsc (1.54MB) [iad1]
+    ├── λ index.rsc (1.54MB) [iad1]
+    ├── λ kols (1.54MB) [iad1]
+    └── 102 output items hidden
+    
+

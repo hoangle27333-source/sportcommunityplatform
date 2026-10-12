@@ -1,0 +1,31 @@
+{
+  "recordedAt": "2026-10-11T15:30:20.864Z",
+  "target": "darwin-arm64",
+  "encoderOnly": true,
+  "routes": [
+    {
+      "trace": "app/.well-known/workflow/v1/flow/route.js.nft.json",
+      "bytes": 192711518,
+      "megabytes": 192.71,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "trace": "app/api/sport-hub/scout/route.js.nft.json",
+      "bytes": 191162557,
+      "megabytes": 191.16,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "trace": "app/api/sport-hub/scout/reassess/route.js.nft.json",
+      "bytes": 191162670,
+      "megabytes": 191.16,
+      "passed": true,
+      "failures": []
+    }
+  ],
+  "bundleGate": true,
+  "runtimeGate": false,
+  "releaseReady": false
+}

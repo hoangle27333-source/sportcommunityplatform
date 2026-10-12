@@ -12,3 +12,10 @@ test_remix_temp
 *.log
 /specs
 /design-system
+.env
+.env.*
+!.env.example
+/private
+/artifacts
+/models/scout-account
+Database raw/

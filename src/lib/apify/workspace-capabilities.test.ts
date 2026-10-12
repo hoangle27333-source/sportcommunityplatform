@@ -20,3 +20,23 @@ it('enables verified TikTok keyword while keeping Instagram keyword unavailable'
   expect(result.TikTok.keyword.available).toBe(true);
   expect(result.Instagram.keyword.available).toBe(false);
 });
+
+it('enables Facebook community discovery from either verified source without an environment flag',async()=>{
+ delete process.env.APIFY_FACEBOOK_GROUP_SEARCH_VERIFIED;
+ state.receipts=[{capability_key:'parseforge~facebook-groups-search-scraper:communities:default',verified:true,build:'0.1.4'}];
+ expect((await workspaceCapabilities()).Facebook.communities).toMatchObject({available:true,partial:true});
+});
+it('uses verified TikTok user search for community classification without fabricating a new receipt',async()=>{
+ state.receipts=['profiles'].map(task=>({capability_key:`clockworks~tiktok-scraper:${task}:default`,verified:true,build:'0.0.612'}));
+ expect((await workspaceCapabilities()).TikTok.communities.available).toBe(true);
+});
+
+it('offers Instagram topic discovery through its verified hashtag source',async()=>{
+ state.receipts=[{capability_key:'apify~instagram-scraper:hashtag:posts',verified:true,build:'0.0.100'}];
+ expect((await workspaceCapabilities()).Instagram.keyword.available).toBe(true);
+});
+it('offers account discovery through verified content and details when profile search is unavailable',async()=>{
+ state.receipts=['keyword','profile-details'].map(task=>({capability_key:`clockworks~tiktok-scraper:${task}:default`,verified:true,build:'pinned'}));
+ expect((await workspaceCapabilities()).TikTok.profiles.available).toBe(true);
+ state.receipts.pop();expect((await workspaceCapabilities()).TikTok.profiles.available).toBe(false);
+});

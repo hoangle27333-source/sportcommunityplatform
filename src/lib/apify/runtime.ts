@@ -1,3 +1,6 @@
+import { providerResultCap } from './search-input';
+import { forbidPaidReplay } from './stored-evidence';
+import { takeProviderOperation, checkStepDeadline, workflowExecution } from './execution-budget';
 import {providerItemWarning} from './provider-warnings';
 import {sessionSnapshot} from './session-snapshot';
 import { createHash,randomUUID } from 'node:crypto';
@@ -15,7 +18,8 @@ export function stableJson(value: any): string {
 export function inputKey(actor: string, build: string, task: string, input: any) {
   return createHash('sha256').update(stableJson({ actor, build, task, input, adapter: ADAPTER_VERSION })).digest('hex');
 }
-export function capabilityKey(plan: ProviderPlan, task: string) { return [plan.actor, task, plan.input.searchType || plan.input.resultsType || 'default'].join(':'); }
+export function providerContractTask(platform: string, task: string) { return platform === 'TikTok' && task === 'communities' ? 'profiles' : task; }
+export function capabilityKey(plan: ProviderPlan, task: string) { return [plan.actor, providerContractTask(ACTOR_CONTRACTS[plan.actor]?.platform || '', task), plan.input.searchType || plan.input.resultsType || 'default'].join(':'); }
 export async function apifyApi(path: string, body?: unknown) {
   if (!process.env.APIFY_TOKEN) throw new ScoutError('Apify is not configured.', 'NOT_CONFIGURED', 503);
   const res = await fetch(`https://api.apify.com/v2/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${process.env.APIFY_TOKEN}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(body === undefined ? 15000 : 60000) }).catch((error)=>{
@@ -49,9 +53,13 @@ export function knownCharge(state: any): number | null {
   return null;
 }
 export async function executePlan(sessionId: string, platform: string, task: string, plan: ProviderPlan): Promise<any[]> {
+  forbidPaidReplay();
+  checkStepDeadline();
+  task = providerContractTask(platform, task);
   const db = createAdminClient();
   const { data: session, error: se } = await db.from('scout_sessions').select('*').eq('id', sessionId).single(); if (se) throw se;
   if(session.runtime_version===1) {
+    if(workflowExecution()) throw new ScoutError('Legacy provider evidence needs reconciliation before Workflow execution. No new paid run was started.','LEGACY_SESSION',409);
     const legacyKey=JSON.stringify([platform,task,session.params?.keyword || session.params?.url || '',plan.actor]);
     const legacy=session.runs?.[legacyKey];
     if(!legacy?.id) throw new ScoutError('This legacy task cannot be identified safely. Start a new verified session.','LEGACY_SESSION',409);
@@ -78,11 +86,17 @@ export async function executePlan(sessionId: string, platform: string, task: str
   const { data: existing, error: re } = await db.from('scout_provider_runs').select('*').eq('session_id',sessionId).eq('task_key',hash).maybeSingle(); if (re) throw re;
   let run = existing;
   if (run?.normalized_rows) return run.normalized_rows;
+  // A settled failure is immutable. Re-polling it would consume the only
+  // provider operation in every Workflow retry and starve later search sources.
+  if (run && ['failed','aborted','timed-out'].includes(run.state)) {
+    throw new ScoutError(`Provider run ${run.state}`, run.state.toUpperCase());
+  }
   if (!run && !session.params?.forceRefresh && !session.verification) {
     const { data: cache, error } = await db.from('scout_provider_cache').select('*').eq('cache_key',hash).gt('expires_at',new Date().toISOString()).maybeSingle(); if (error) throw error;
     if (cache) return cache.rows.map((r: any) => ({ ...r, _provenance: { ...r._provenance, cached: true } }));
   }
   if (!run) {
+    takeProviderOperation();
     // A new session must not bypass an unresolved start for the same provider input.
     const {data: unresolved,error: unresolvedError} = await db.from('scout_provider_runs').select('id').eq('actor',plan.actor).eq('input',JSON.stringify(plan.input)).eq('state','start-unknown').is('provider_run_id',null).limit(1).maybeSingle();
     if(unresolvedError)throw unresolvedError;
@@ -96,7 +110,7 @@ export async function executePlan(sessionId: string, platform: string, task: str
       const { error: save } = await db.from('scout_provider_runs').update({state:'starting'}).eq('id',run.id); if (save) throw save;
       let started: any;
       try {
-        started = (await apifyApi(`acts/${plan.actor}/runs?build=${encodeURIComponent(build)}&timeout=180&maxTotalChargeUsd=${run.reserved_usd}&restartOnError=false${session.verification && session.params?.memory ? `&memory=${session.params.memory}` : ''}${capability?.receipt?.pricingModel==='PAY_PER_RESULT' ? `&maxItems=${plan.input.resultsLimit || plan.input.maxProfilesPerQuery || plan.input.resultsPerPage || 1}` : ''}`,plan.input)).data;
+        started = (await apifyApi(`acts/${plan.actor}/runs?build=${encodeURIComponent(build)}&timeout=180&maxTotalChargeUsd=${run.reserved_usd}&restartOnError=false${session.verification && session.params?.memory ? `&memory=${session.params.memory}` : ''}${capability?.receipt?.pricingModel==='PAY_PER_RESULT' ? `&maxItems=${providerResultCap(plan.input)}` : ''}`,plan.input)).data;
         if(typeof started?.id!=='string') throw new Error('Start response has no run identity.');
         const identity = {provider_run_id:started.id,dataset_id:started.defaultDatasetId || started.storageIds?.datasets?.default || null,build_id:started.buildId,state:'running'};
         const { error } = await db.from('scout_provider_runs').update(identity).eq('id',run.id); if (error) throw error;
@@ -118,6 +132,7 @@ export async function executePlan(sessionId: string, platform: string, task: str
   if(run.state?.startsWith('rejected:'))throw new ScoutError('Provider start was rejected. Start a new session after resolving the provider restriction.',run.state.slice('rejected:'.length),502);
   if(!run.provider_run_id && ['reserved','starting'].includes(run.state)) throw new PendingScout();
   if (!run.provider_run_id) throw new ScoutError('The provider did not confirm whether this task started. Check Scout Activity; this task needs reconciliation before retrying.', 'START_UNKNOWN',409);
+  if(existing) takeProviderOperation();
   const state = (await apifyApi(`actor-runs/${run.provider_run_id}`)).data;
   if (!['SUCCEEDED','FAILED','ABORTED','TIMED-OUT'].includes(state.status)) throw new PendingScout();
   const {error: settlement} = await db.rpc('settle_scout_run',{p_run:run.id,p_state:state.status.toLowerCase(),p_amount:knownCharge(state),p_pricing:state.pricingInfo || null,p_usage:state.usageUsd || state.usage ? {usd:state.usageUsd,units:state.usage,totalUsd:state.usageTotalUsd} : null,p_events:state.chargedEventCounts || null}); if(settlement) throw settlement;
@@ -129,12 +144,17 @@ export async function executePlan(sessionId: string, platform: string, task: str
   try {
   const ids = state.storageIds?.datasets || {default:state.defaultDatasetId || run.dataset_id};
   const dataAliases = capability?.receipt?.dataAliases || ['default'];
-  const warnings: string[] = []; const raw: any[] = []; const rows: any[] = [];
+  const checkpoint = run.dataset_progress || {};
+  const warnings: string[] = [...(checkpoint.warnings || [])]; const raw: any[] = [...(checkpoint.raw || [])]; const rows: any[] = [...(checkpoint.rows || [])];
+  let pages = 0;
   const observedAt = state.finishedAt || new Date().toISOString();
-  for (const alias of dataAliases) {
+  for (let aliasIndex = checkpoint.aliasIndex || 0; aliasIndex < dataAliases.length; aliasIndex++) {
+    const alias = dataAliases[aliasIndex];
     const id = ids[alias] || (alias === 'default' ? run.dataset_id : null); if(!id) { warnings.push(`Missing dataset: ${alias}`); continue; }
-    let offset=0;
+    let offset=aliasIndex === (checkpoint.aliasIndex || 0) ? checkpoint.offset || 0 : 0;
     while(true) {
+      if(workflowExecution() && pages >= 1) throw new PendingScout();
+      checkStepDeadline();
       const items = await apifyApi(`datasets/${id}/items?clean=true&format=json&offset=${offset}&limit=1000`);
       if(!Array.isArray(items)) throw new ScoutError('Invalid provider dataset.','SCHEMA_MISMATCH');
       raw.push(...(task==='comments' ? items.map(item=>({id:item.id || item.cid || item.commentId,text:item.text ?? item.commentText ?? item.comment ?? item.content,timestamp:item.timestamp || item.createTimeISO || item.createTime,error:item.error})) : items));
@@ -144,8 +164,15 @@ export async function executePlan(sessionId: string, platform: string, task: str
         const normalized=task==='comments' ? {id:item.id || item.cid || item.commentId,text:item.text ?? item.commentText ?? item.comment ?? item.content,timestamp:item.timestamp || item.createTimeISO || item.createTime} : item;
         rows.push({...normalized,_provenance:{actor:plan.actor,runId:run.provider_run_id,datasetId:id,buildId:state.buildId || run.build_id,fetchedAt:observedAt,adapterVersion:ADAPTER_VERSION}});
       }
-      if(items.length<1000) break;
-      offset+=items.length;
+      pages++;
+      if(raw.length > 10000) throw new ScoutError('Provider dataset exceeds the bounded Scout limit.', 'DATASET_TOO_LARGE');
+      const ended = items.length < 1000;
+      offset += items.length;
+      if(workflowExecution()) {
+        const {error: checkpointError} = await db.from('scout_provider_runs').update({dataset_progress:{aliasIndex:ended ? aliasIndex + 1 : aliasIndex,offset:ended ? 0 : offset,rows,raw,warnings}}).eq('id',run.id).eq('dataset_token',datasetToken);
+        if(checkpointError) throw checkpointError;
+      }
+      if(ended) break;
     }
   }
   if(raw.length && !rows.length && warnings.length) {
@@ -153,7 +180,7 @@ export async function executePlan(sessionId: string, platform: string, task: str
     throw new ScoutError('Provider output could not be validated.','SCHEMA_MISMATCH');
   }
   if(warnings.length)for(const row of rows)row._provenance.warnings=warnings;
-  const {error: save} = await db.from('scout_provider_runs').update({normalized_rows:rows,raw_rows:raw,dataset_ids:ids,observed_at:observedAt,warnings}).eq('id',run.id).eq('dataset_token',datasetToken).select('id').single(); if(save) throw save;
+  const {error: save} = await db.from('scout_provider_runs').update({normalized_rows:rows,raw_rows:raw,dataset_progress:null,dataset_ids:ids,observed_at:observedAt,warnings}).eq('id',run.id).eq('dataset_token',datasetToken).select('id').single(); if(save) throw save;
   if(!warnings.length && !session.verification) {
     const ttl = task === 'profile-details' || task === 'comments' ? 86400000 : 3600000;
     const {error} = await db.from('scout_provider_cache').upsert({cache_key:hash,rows,provenance:{observedAt},expires_at:new Date(Date.now()+ttl).toISOString()}); if(error) throw error;
@@ -163,9 +190,9 @@ export async function executePlan(sessionId: string, platform: string, task: str
 }
 
 /** Billing recovery also covers known runs whose session completed via public fallback. */
-export async function reconcileProviderBilling(){
+export async function reconcileProviderBilling(limit=20){
   const db=createAdminClient();
-  const {data:runs,error}=await db.from('scout_provider_runs').select('id,provider_run_id').not('provider_run_id','is',null).is('actual_usd',null).in('state',['running','succeeded','failed','aborted','timed-out']).order('created_at',{ascending:true}).limit(20);if(error)throw error;
+  const {data:runs,error}=await db.from('scout_provider_runs').select('id,provider_run_id').not('provider_run_id','is',null).is('actual_usd',null).in('state',['running','succeeded','failed','aborted','timed-out']).order('created_at',{ascending:true}).limit(limit);if(error)throw error;
   for(const run of runs || []) {
     try {
       const state=(await apifyApi(`actor-runs/${run.provider_run_id}`)).data;

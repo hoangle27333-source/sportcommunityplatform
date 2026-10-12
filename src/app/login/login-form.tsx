@@ -36,8 +36,8 @@ export function LoginForm({ next }: { next: string }) {
     setSuccessMsg(null);
     setLoading(true);
     let loginEmail = email.trim();
-    if (loginEmail.toLowerCase() === "admin") {
-      loginEmail = "admin@sportcommunityplatform.com";
+    if (loginEmail && !loginEmail.includes("@")) {
+      loginEmail = `${loginEmail.toLowerCase()}@sportcommunityplatform.com`;
     }
     const { error } = await supabase.auth.signInWithPassword({
       email: loginEmail,
@@ -161,7 +161,7 @@ export function LoginForm({ next }: { next: string }) {
                 type="text"
                 autoComplete="username"
                 spellCheck={false}
-                placeholder="admin or email…"
+                placeholder="Username or email…"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />

@@ -1,0 +1,19 @@
+{
+  "recordedAt": "2026-10-11T15:27:32.402Z",
+  "sources": [
+    {
+      "id": "4cc9de34-2d4d-4ae7-96a2-6e39cc79ac2c",
+      "status": "complete",
+      "sourceHash": "99c3c1e5232ce4ad9f4c7c42c192cfbcd89703502fc6e8acd079aaebdcf6c6d7",
+      "providerHash": "3c9507b63ecf85a021a8c3cd95906d49bb6601e3902148598d46d3f415ba904c",
+      "runs": 3
+    },
+    {
+      "id": "9c68115e-b3f3-4cb3-8844-a5606245ef69",
+      "status": "complete",
+      "sourceHash": "f28a6d3aff08b014b6bced1f7c8b6d544879fb9a9554e3ab7a97fa8ff274d7d8",
+      "providerHash": "f3bf8304fd97ad898289dc0fbec1665999910ec4b5f1b903dbecdd2b1eba9a21",
+      "runs": 2
+    }
+  ]
+}

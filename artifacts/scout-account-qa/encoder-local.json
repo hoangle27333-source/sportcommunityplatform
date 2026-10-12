@@ -1,0 +1,15 @@
+{
+  "kind": "synthetic-encoder-smoke",
+  "target": "darwin-arm64",
+  "node": "v22.17.1",
+  "encoderRevision": "2c4055b12046f11709e9df2c122e59ffbdc2f900",
+  "accounts": 5,
+  "postsPerAccount": 5,
+  "coldMs": 737.376,
+  "warmMs": 48.8917909999999,
+  "maxRssBytes": 776814592,
+  "passedTiming": true,
+  "passedMemory": true,
+  "runtimeGate": false,
+  "qualityGate": false
+}

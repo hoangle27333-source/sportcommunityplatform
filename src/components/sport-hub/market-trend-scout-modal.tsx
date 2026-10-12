@@ -1,5 +1,6 @@
 "use client";
 
+import { ScoutSearchPlan, useSearchPlan } from "./scout-search-plan";
 import { useEffect, useState } from "react";
 import {
   Hash,
@@ -73,6 +74,8 @@ const PLATFORM_OPTIONS = [
 ];
 
 const GEO_OPTIONS = [
+  { id: "Vietnam", label: "Vietnam" },
+  { id: "Any location", label: "Any location" },
   { id: "Toàn quốc", label: "Nationwide" },
   { id: "Hà Nội", label: "Hanoi" },
   { id: "TP. Hồ Chí Minh", label: "Ho Chi Minh City" },
@@ -87,7 +90,7 @@ export function MarketTrendScoutModal({
   source,
 }: MarketTrendScoutModalProps) {
   const [searchMode, setSearchMode] = useState<"hashtag" | "keyword">(
-    initialCriteria.searchMode || "hashtag"
+    initialCriteria.searchMode || (initialCriteria.keyword?.startsWith("#") ? "hashtag" : "keyword")
   );
   const [qualityMode,setQualityMode]=useState<'high-engagement'|'topic'>(initialCriteria.qualityMode || 'high-engagement');
   const [minInteractions,setMinInteractions]=useState(initialCriteria.minInteractions ?? 100);
@@ -106,7 +109,7 @@ export function MarketTrendScoutModal({
       ? typeof initialCriteria.geography === "string"
         ? [initialCriteria.geography]
         : initialCriteria.geography
-      : ["Toàn quốc"]
+      : ["Vietnam"]
   );
   const [customSport, setCustomSport] = useState("");
   const [selected, setSelected] = useState<string[] | null>(
@@ -128,6 +131,11 @@ export function MarketTrendScoutModal({
   } = useScoutCapabilities(searchMode);
 
   const selectedPlatforms = selected || platforms.slice(0, 1);
+
+  const [queryVariants,setQueryVariants]=useState<string|undefined>();
+  const [maxSessionUsd,setMaxSessionUsd]=useState<number|undefined>();
+  const planCriteria={keyword:keyword.trim(),searchMode,qualityMode,minInteractions,minViews,recentDays,sport:sport.map(s=>s==='Other Sports'?customSport.trim():s),geography,platform:selectedPlatforms,limit,queryVariants:queryVariants===undefined?undefined:queryVariants.split('\n').map(v=>v.trim()).filter(Boolean),maxSessionUsd};
+  const searchPlan=useSearchPlan('trends',planCriteria,isOpen && !!keyword.trim() && !!selectedPlatforms.length);
 
   // Sync selected platforms when capabilities change or mode changes
   useEffect(() => {
@@ -162,9 +170,9 @@ export function MarketTrendScoutModal({
       });
     } else {
       setKeyword((prev) => prev.replace(/^#/, ""));
-      // Deselect Instagram since Instagram requires hashtag mode
+      // Instagram topic discovery uses a reviewed hashtag set.
       setSelected((prev) => {
-        const next = (prev || []).filter((p) => p !== "Instagram");
+        const next = prev || [];
         return next.length ? next : ["TikTok"];
       });
     }
@@ -202,9 +210,11 @@ export function MarketTrendScoutModal({
         throw new Error("Select a sport and enter any custom discipline.");
       }
 
+      if(!searchPlan.plan)throw new Error(searchPlan.error || "Wait for the search plan to be ready.");
       const request = taskRequest(
         { intent: "content", mode: "search", source },
         {
+          ...planCriteria,planHash:searchPlan.plan.hash,
           keyword: keyword.trim(),
           searchMode,
           qualityMode, minInteractions, minViews, recentDays,
@@ -530,6 +540,8 @@ export function MarketTrendScoutModal({
           </details>}
         </div>
 
+        <ScoutSearchPlan {...searchPlan} variants={queryVariants} onVariants={setQueryVariants} budget={maxSessionUsd} onBudget={setMaxSessionUsd}/>
+
         {/* ─── BIDIRECTIONAL SYNERGY CALLOUT ─── */}
         <div className="p-3 bg-gradient-to-br from-indigo-50/70 to-blue-50/50 rounded-xl border border-indigo-100 text-xs text-indigo-950 flex items-start space-x-2.5">
           <Link2 className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
@@ -578,6 +590,7 @@ export function MarketTrendScoutModal({
             disabled={
               busy ||
               capabilitiesLoading ||
+              !searchPlan.plan || searchPlan.loading ||
               !keyword.trim() ||
               !selectedPlatforms.length ||
               !geography.length ||
@@ -593,7 +606,7 @@ export function MarketTrendScoutModal({
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Find Content</span>
+                <span>Start Scout</span>
               </>
             )}
           </button>

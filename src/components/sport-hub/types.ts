@@ -78,6 +78,9 @@ export interface CommunityChannel {
 }
 
 export interface Community {
+  communitySubtype?: 'Community' | 'Club' | null;
+  accountFollowers?: number | null;
+  engagementSummary?: import("@/lib/sport-hub/community-engagement").EngagementSummary;
   missingMetrics?: string[];
   scoutProvenance?: {source?:string;fetchedAt?:string;runId?:string;derived?:{formula?:string;viewsSample?:number;erSample?:number}} | null;
   id: string;

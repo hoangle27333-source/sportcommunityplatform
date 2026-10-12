@@ -1,3 +1,17 @@
+import { type AccountSizeCriteria } from './account-criteria';
+import { currentAccountModelPolicy, plannedAccountModelPolicy, assertAccountModelPolicy, accountModelPolicyKey, type AccountModelPolicy } from './account-model-policy';
+import { legacyEntityType, ENTITY_TYPES, assessAccountEntity, legacyClassification, type EntityAssessment, type EntityType } from './account-evidence';
+import { classifyAccount, evidenceHash } from './account-model';
+import { createHash } from 'node:crypto';
+import { collectPlannedSearch } from './planned-search';
+import { assessSearchProfile, assessSearchContent, assessProfileFollowers, assessAccountSize, assessReviewedProfile } from './search-assessment';
+import type { SearchPlan } from './search-plan';
+import { assessSearchPost } from './content-quality';
+import { canonicalScopes } from './geography';
+import { isStoredEvidence, savedProviderRows } from './stored-evidence';
+import { checkpointTask } from './task-checkpoint';
+import { workflowExecution } from './execution-budget';
+import { getStoredEntityChannels } from '@/lib/sport-hub/channel-store';
 import {assessTopicPost,assessEngagement,comparePostEngagement,type ContentQuality} from './content-quality';
 import {sessionSnapshot} from './session-snapshot';
 import {ACTOR_CONTRACTS} from './registry';
@@ -7,7 +21,7 @@ import { quotas, roundRobin, retrievalWindow, advanceWatermark } from "./collect
 import { channelUrl } from "./tasks";
 import { randomUUID } from "node:crypto";
 import { assessProfile, canonicalUrl, platformMatches, urlKind, contextKey, normalized, tokens, hashtagMatch, type Classification } from "./discovery-quality";
-import { scrape, parseProfile, parsePost, ScoutError, type SocialProfile, type SocialPost, PendingScout } from "./providers";
+import { scrape, parseProfile, mergeProfileEvidence, parsePost, ScoutError, type SocialProfile, type SocialPost, PendingScout } from "./providers";
 
 export function detectSportNiche(text: string): string[] {
   const t = (text || "").toLowerCase();
@@ -80,7 +94,7 @@ export function buildProfileUrl(platform: string, username: string, originalUrl?
   return originalUrl || "";
 }
 
-export type DiscoveryCandidate = Omit<SocialProfile, 'provenance'> & ReturnType<typeof assessProfile> & { candidateId: string; accountKey: string; isExisting: boolean; existingId?: string; provenance: Partial<NonNullable<SocialProfile['provenance']>> & { platform: string; fetchedAt: string; profileUrl: string } };
+export type DiscoveryCandidate = Omit<SocialProfile, 'provenance'> & ReturnType<typeof assessProfile> & { assessment?:Record<string,import('./search-assessment').Dimension>; candidateId: string; accountKey: string; isExisting: boolean; existingId?: string; entityAssessment?: EntityAssessment; geographyAssessment?: ReturnType<typeof import('./account-evidence').assessAccountGeography>; assessmentVersion?:number; provenance: Partial<NonNullable<SocialProfile['provenance']>> & { platform: string; fetchedAt: string; profileUrl: string } };
 function check(error: any) { if (error) throw error; }
 function cleanTarget(target: string) { return ['Communities & Clubs', 'Cộng đồng / Group'].includes(target) ? 'Communities & Clubs' : 'Individual KOLs'; }
 /** Rank only provider-observed values; missing measurements are never treated as zero. */
@@ -94,13 +108,19 @@ export function compareDiscoveryMetrics(a: Pick<SocialProfile, 'followers' | 'av
   }
   return 0;
 }
-export async function previewDiscoveryCandidates(params: { keyword: string; targetType?: string; platform?: string | string[]; limit?: number; geography?: string; sessionId: string }) {
-  const db = createAdminClient(); const platforms = [...new Set(Array.isArray(params.platform) ? params.platform : [params.platform || 'Instagram'])]; const target = cleanTarget(params.targetType || ''); const geography = params.geography || 'Nationwide';
+export async function previewDiscoveryCandidates(params: AccountSizeCriteria & { keyword: string; assessmentRevision?:number; targetType?: string; platform?: string | string[]; limit?: number; geography?: string; queryVariants?: string[]; searchPlan?:SearchPlan; assessmentVersion?:number; accountModelPolicy?:AccountModelPolicy; accountPolicyVersion?:5; entityTypes?:EntityType[]; geographyMode?:'profile'|'profile-or-recent-posts'; sessionId: string }) {
+  const db = createAdminClient(); const platforms = [...new Set(Array.isArray(params.platform) ? params.platform : [params.platform || 'Instagram'])]; const target = cleanTarget(params.targetType || ''); const geography = canonicalScopes(params.geography || 'Nationwide') as string;
 
   const { data: existing, error } = await db.from(target === 'Communities & Clubs' ? 'communities' : 'kols').select('*'); check(error);
   const { data: feedback, error: feedbackError } = await db.from('scout_feedback').select('*').order('created_at', { ascending: false }); check(feedbackError);
+  const accountV5=params.searchPlan?.accountPolicyVersion===5 || (params.assessmentVersion || 0)>=5 || params.accountPolicyVersion===5 || params.minFollowers!==undefined;
+  const modelPolicy:AccountModelPolicy=accountV5?(params.accountModelPolicy || (params.searchPlan?.accountPolicyVersion===5?plannedAccountModelPolicy(params.searchPlan):currentAccountModelPolicy())):{version:5,revision:'rules-5',mode:'off'};
+  if(accountV5)assertAccountModelPolicy(modelPolicy);
+  const planned=params.searchPlan && !isStoredEvidence() ? await collectPlannedSearch(params,new Set([...(existing || []).map(e=>e.scout_identity || `${String(e.platform).split(' ')[0]}:${canonicalUrl(e.profile_url || e.group_url || '')}`),...(feedback || []).filter(f=>f.context_key===contextKey(params.keyword,geography) && ['Not Relevant','Wrong Location'].includes(f.reason)).map(f=>f.account_key)]),feedback || []) : null;
+  const strictCriteria=params.searchPlan?.version===5 || params.assessmentRevision===6;
+  const assessmentOptions=accountV5?{...params.searchPlan?.criteria,...params,version:strictCriteria?6:5,minFollowers:params.minFollowers ?? params.searchPlan?.criteria?.minFollowers,entityTypes:params.entityTypes || params.searchPlan?.criteria?.entityTypes,geographyMode:params.geographyMode || params.searchPlan?.criteria?.geographyMode}:undefined;
   const candidates: DiscoveryCandidate[] = []; const seen = new Set<string>();
-  const warnings:string[]=[];
+  const warnings:string[]=[...(planned?.warnings || [])];
   const providerResults = new Set<string>();
   const failures: { platform: string; error: string; code?: string; status?: number }[] = [];
   for (const platform of platforms) {
@@ -110,22 +130,28 @@ export async function previewDiscoveryCandidates(params: { keyword: string; targ
   // The requested count is a minimum target, not a cap on returned profiles.
   // Keep collection bounded by the existing provider and budget contracts.
   const poolLimit = Math.min((params.limit || 5) * (canExpand ? 3 : 1), 60);
-  const raw = await scrape(params.sessionId, platform, target === 'Communities & Clubs' ? 'communities' : 'profiles', params.keyword, poolLimit, geography);
+  const raw = planned ? planned.profiles[platform] || [] : isStoredEvidence() && strictCriteria ? ['profiles','communities','keyword','hashtag'].flatMap(task=>savedProviderRows(platform,task) || []) : await scrape(params.sessionId, platform, target === 'Communities & Clubs' ? 'communities' : 'profiles', params.keyword, poolLimit, geography, {queryVariants:params.queryVariants});
+  const savedPosts=isStoredEvidence()?(strictCriteria?['profile-posts','keyword','hashtag'].flatMap(task=>savedProviderRows(platform,task) || []):savedProviderRows(platform,'profile-posts') || []).map(row=>parsePost(row,platform)).filter((post):post is SocialPost=>!!post):[];
+  const savedDetails=isStoredEvidence() ? (savedProviderRows(platform,'profile-details') || []).map(row=>parseProfile(row,platform)).filter((p):p is SocialProfile=>!!p) : [];
   for (const row of raw) providerResults.add(`${platform}:${JSON.stringify(row)}`);
-  const authorUrls=[...new Set(raw.filter(r=>!parseProfile(r,platform)).map(r=>parsePost(r,platform)?.authorUrl).filter(Boolean))].filter(url=>!seen.has(`${platform}:${url}`)) as string[];
+  const authorUrls=planned ? [] : [...new Set(raw.filter(r=>!parseProfile(r,platform)).map(r=>parsePost(r,platform)?.authorUrl).filter(Boolean))].filter(url=>!seen.has(`${platform}:${url}`)) as string[];
   const hydrated:SocialProfile[]=[];
   for(let i=0;i<authorUrls.length;i+=10) { const urls=authorUrls.slice(i,i+10); const rows=await scrape(params.sessionId,platform,'profile-details',urls[0],1,'',{urls}); hydrated.push(...rows.map(r=>parseProfile(r,platform)).filter(Boolean) as SocialProfile[]); }
   // Facebook search supplies identities, not audience counts. Details are part of
   // this requested discovery task; durable provider runs keep worker retries safe.
   const facebookAudience = new Map<string, SocialProfile>();
-  if (platform === 'Facebook') {
-    const urls = [...new Set(raw.map(row => parseProfile(row,platform)).filter((profile): profile is SocialProfile => !!profile && profile.followers === null && !profile.url.includes('/groups/') && assessProfile(profile,params.keyword,geography,target).reviewState !== 'Excluded').map(profile => profile.url))];
+  if (!planned && platform === 'Facebook') {
+    const urls = [...new Set(raw.map(row => parseProfile(row,platform)).filter((profile): profile is SocialProfile => {
+      if(!profile || profile.url.includes('/groups/'))return false;
+      const evidence=assessProfile(profile,params.keyword,geography,target);
+      return profile.followers===null || evidence.classification==='Unknown' || !evidence.locationMatch;
+    }).map(profile => profile.url))].slice(0,10);
     for (let i=0;i<urls.length;i+=10) {
       const batch=urls.slice(i,i+10);
       try {
         const details=await scrape(params.sessionId,platform,'profile-details',batch[0],1,'',{urls:batch});
         for (const row of details) {
-          const observed=parseProfile(row,platform);if(!observed || observed.followers===null)continue;
+          const observed=parseProfile(row,platform);if(!observed)continue;
           const aliases=[observed.url,row.facebookUrl,row.pageUrl,row.url].map(value=>canonicalUrl(value || ''));
           for (const url of batch) if(aliases.includes(url))facebookAudience.set(url,observed);
         }
@@ -135,13 +161,15 @@ export async function previewDiscoveryCandidates(params: { keyword: string; targ
         break;
       }
     }
-    const missing=urls.filter(url=>!facebookAudience.has(url)).length;
+    const missing=urls.filter(url=>facebookAudience.get(url)?.followers==null).length;
     if(missing)warnings.push(`Facebook: Followers were unavailable for ${missing} profiles. Missing values remain Unknown; page likes are not used as followers.`);
   }
   for (const row of raw) {
-    let profile = parseProfile(row, platform);
+    let profile = planned ? row as SocialProfile : parseProfile(row, platform);
+    const detail=profile && savedDetails.find(p=>p.url===profile!.url);
+    if(profile && detail)profile=mergeProfileEvidence(profile,detail);
     const audience=profile && facebookAudience.get(profile.url);
-    if(profile && audience)profile={...profile,followers:audience.followers,provenance:audience.provenance};
+    if(profile && audience)profile=mergeProfileEvidence(profile,audience);
     // A post-only search hit cannot impersonate a profile: hydrate its author.
     if (!profile) {
       const post = parsePost(row, platform);
@@ -150,20 +178,31 @@ export async function previewDiscoveryCandidates(params: { keyword: string; targ
       }
     }
     if (!profile) continue;
+    if(accountV5 && savedPosts.length)profile={...profile,posts:[...profile.posts,...savedPosts.filter(post=>post.authorUrl===profile!.url)]};
     const accountKey = `${platform}:${profile.url}`; if (seen.has(accountKey)) continue; seen.add(accountKey);
-    const assessment = assessProfile(profile, params.keyword, geography, target);
+    const inferredEntity=accountV5?profile.accountEntityAssessment || await checkpointTask(params.sessionId,`account-v5:${evidenceHash(profile)}:${accountModelPolicyKey(modelPolicy)}`,()=>classifyAccount(profile!,modelPolicy.revision,modelPolicy.mode)):undefined;
+    const modelEntity=inferredEntity?{...inferredEntity,policyKey:accountModelPolicyKey(modelPolicy)}:undefined;
+    const assessment = strictCriteria ? assessReviewedProfile(profile,params.keyword,geography,target,{...assessmentOptions,entityAssessment:modelEntity},feedback || []) : (accountV5 || params.searchPlan || (params.assessmentVersion || 0)>=4) ? assessSearchProfile(profile, params.keyword, geography, target, assessmentOptions?{...assessmentOptions,entityAssessment:modelEntity}:undefined) : assessProfile(profile, params.keyword, geography, target);
     const applicable = (feedback || []).filter(f => f.account_key === accountKey);
     const classificationFeedback = applicable.find(f => f.classification && ['Correct Classification', 'Wrong Entity Type'].includes(f.reason));
-    if (classificationFeedback) {
-      assessment.classification = classificationFeedback.classification;
-      assessment.reviewState = !assessment.relevant ? 'Excluded' : assessment.classification === 'Unknown' || !assessment.locationMatch ? 'Needs Review' : 'Matched';
-      if (assessment.classification !== 'Unknown' && assessment.classification !== (target === 'Communities & Clubs' ? 'Community' : 'Individual')) assessment.reviewState = 'Excluded';
+    if (classificationFeedback && !strictCriteria) {
+      if(accountV5) {
+        const reviewedType=ENTITY_TYPES.includes(classificationFeedback.entity_type)?classificationFeedback.entity_type as EntityType:legacyEntityType(classificationFeedback.classification);
+        const corrected=assessSearchProfile(profile,params.keyword,geography,target,{...assessmentOptions,entityAssessment:{...(modelEntity || assessAccountEntity(profile)),suggestedType:reviewedType,reviewedType,status:reviewedType==='Unknown'?'uncertain':'supported',source:'review'}});
+        Object.assign(assessment,corrected);
+      } else {
+        assessment.classification = classificationFeedback.classification;
+        assessment.reviewState = !assessment.relevant ? 'Excluded' : assessment.classification === 'Unknown' || !assessment.locationMatch ? 'Needs Review' : 'Matched';
+        if (assessment.classification !== 'Unknown' && assessment.classification !== (target === 'Communities & Clubs' ? 'Community' : 'Individual')) assessment.reviewState = 'Excluded';
+        if('assessment' in assessment) {const dimensions=assessment.assessment as any;dimensions.entityType={state:assessment.classification==='Unknown'?'unknown':assessment.classification===(target==='Communities & Clubs'?'Community':'Individual')?'passed':'failed',reason:`Entity type: ${assessment.classification}`,evidence:['Team review']};}
+      }
       assessment.reasons.push('Entity type confirmed by team review');
     }
     const contextual = applicable.find(f => f.context_key === contextKey(params.keyword, geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason));
     if (contextual) { assessment.reviewState = 'Excluded'; assessment.reasons.push(`Team feedback: ${contextual.reason}`); }
+    if('resultGroup' in assessment)assessment.resultGroup=assessment.reviewState==='Matched'?'Qualified':assessment.reviewState==='Needs Review'?'Needs Verification':'Excluded';
     const match = existing?.find(e => e.scout_identity === accountKey || canonicalUrl(e.profile_url || e.group_url || '') === profile!.url);
-    candidates.push({ ...profile, ...assessment, candidateId: randomUUID(), accountKey, isExisting: !!match, existingId: match?.id, provenance: { platform, ...profile.provenance, fetchedAt: profile.provenance?.fetchedAt || new Date().toISOString(), profileUrl: profile.url } });
+    candidates.push({ ...profile, ...assessment,...(accountV5?{assessmentVersion:strictCriteria?6:5}:{}), candidateId: params.searchPlan ? stableCandidateId(params.sessionId,accountKey) : randomUUID(), accountKey, isExisting: !!match, existingId: match?.id, provenance: { platform, ...profile.provenance, fetchedAt: profile.provenance?.fetchedAt || new Date().toISOString(), profileUrl: profile.url } });
   }
   } catch (e: any) {
     if (e instanceof PendingScout) throw e;
@@ -174,12 +213,15 @@ export async function previewDiscoveryCandidates(params: { keyword: string; targ
   }
   }
   if (failures.length === platforms.length) throw new ScoutError(failures[0].error, failures[0].code || 'PROVIDER_UNAVAILABLE', failures[0].status || 502);
-  const visible = candidates.filter(c => c.reviewState !== 'Excluded').sort(compareDiscoveryMetrics);
+  const visible = candidates.filter(c => accountV5 || c.reviewState !== 'Excluded').sort((a,b)=> strictCriteria ? Number(b.reviewState==='Matched')-Number(a.reviewState==='Matched') || Number(a.isExisting)-Number(b.isExisting) || (assessmentOptions?.sizeMetric==='members'?(b.members ?? -1)-(a.members ?? -1):compareDiscoveryMetrics(a,b)) : target==='Communities & Clubs'?(b.members ?? -1)-(a.members ?? -1):compareDiscoveryMetrics(a,b));
   const requestedCount = params.limit || 5;
-  const diagnostics = { requestedCount, providerCount: providerResults.size, uniqueProfileCount: candidates.length, excludedCount: candidates.filter(c => c.reviewState === 'Excluded').length, returnedCount: visible.length };
-  if (visible.length < requestedCount) warnings.push(`Found ${visible.length} profiles, below the minimum target of ${requestedCount}, after discovery checks (${diagnostics.providerCount} provider results, ${diagnostics.excludedCount} excluded). Try a broader keyword or another location.`);
+  const qualifiedNew=visible.filter(c=>c.reviewState==='Matched' && !c.isExisting).length;
+  const reasonCounts:Record<string,number>={};
+  for(const c of candidates.filter(c=>c.reviewState==='Excluded')) for(const reason of c.reasons) if(reason==='Topic is not supported by profile evidence' || reason==='Observed location conflicts with selected geography' || reason.startsWith('Team feedback:') || reason.startsWith('Entity type:') && c.classification !== (target==='Communities & Clubs' ? 'Community' : 'Individual')) reasonCounts[reason]=(reasonCounts[reason] || 0)+1;
+  const diagnostics = { ...(accountV5?{accountModelPolicy:modelPolicy,accountModelPolicyKey:accountModelPolicyKey(modelPolicy)}:{}),qualifiedNew,shortfall:Math.max(0,requestedCount-qualifiedNew),stopReason:planned?.stopReason || 'stored-evidence',assessmentVersion:accountV5?(strictCriteria?6:5):params.searchPlan || (params.assessmentVersion || 0)>=4 ?4:3,reasonCounts,items:candidates.map(c=>({accountKey:c.accountKey,name:c.name,reviewState:c.reviewState,reasons:c.reasons,evidence:c.evidence})),requestedCount, providerCount: planned?.providerCount ?? providerResults.size, uniqueProfileCount: candidates.length, excludedCount: candidates.filter(c => c.reviewState === 'Excluded').length, returnedCount: visible.length };
+  if (qualifiedNew < requestedCount) warnings.push(`Found ${qualifiedNew}/${requestedCount} qualified new accounts; ${Math.max(0,requestedCount-qualifiedNew)} still needed. Search stopped: ${planned?.stopReason || 'available-evidence-exhausted'}. Missing evidence remains available for review.`);
   const { error: saveError } = await db.from('scout_sessions').update({ candidates: visible }).eq('id', params.sessionId); check(saveError);
-  return { success: true, sessionId: params.sessionId, criteria: { keyword: params.keyword, targetType: target, platform: platforms.length === 1 ? platforms[0] : platforms, geography, limit: requestedCount }, candidates: visible, effectiveQuery: params.keyword, totalFound: visible.length, newCount: visible.filter(c => !c.isExisting).length, existingCount: visible.filter(c => c.isExisting).length, excludedCount: diagnostics.excludedCount, diagnostics,partial:warnings.length>0,warnings, failed: failures, ranking: 'followers-members-desc,avg-views-desc,er-desc;unknown-last' };
+  return { ...((accountV5 || params.searchPlan || (params.assessmentVersion || 0)>=4)?{searchExecution:planned?{...planned,rows:undefined,profiles:undefined}:undefined,groups:{qualified:visible.filter(c=>c.reviewState==='Matched'),needsVerification:visible.filter(c=>c.reviewState==='Needs Review'),belowTarget:[],excluded:candidates.filter(c=>c.reviewState==='Excluded')},counts:{qualifiedNew,shortfall:Math.max(0,requestedCount-qualifiedNew),qualified:visible.filter(c=>c.reviewState==='Matched').length,unverified:visible.filter(c=>c.reviewState==='Needs Review').length,excluded:diagnostics.excludedCount,found:visible.length,existing:visible.filter(c=>c.isExisting).length}}:{}), success: true, sessionId: params.sessionId, criteria: { ...(accountV5?{accountPolicyVersion:5,...(strictCriteria?{assessmentRevision:6,sizeMetric:assessmentOptions?.sizeMetric || 'followers',maxFollowers:assessmentOptions?.maxFollowers,minMembers:assessmentOptions?.minMembers,maxMembers:assessmentOptions?.maxMembers}:{}),minFollowers:assessmentOptions?.minFollowers,entityTypes:assessmentOptions?.entityTypes,geographyMode:assessmentOptions?.geographyMode || 'profile-or-recent-posts'}:{}),keyword: params.keyword, targetType: target, platform: platforms.length === 1 ? platforms[0] : platforms, geography, limit: requestedCount }, candidates: visible, effectiveQuery: params.keyword, totalFound: visible.length, newCount: visible.filter(c => !c.isExisting).length, existingCount: visible.filter(c => c.isExisting).length, excludedCount: diagnostics.excludedCount, diagnostics,partial:warnings.length>0,warnings, failed: failures, ranking: 'followers-members-desc,avg-views-desc,er-desc;unknown-last' };
 }
 export async function ingestSelectedCandidates(params: { sessionId: string; selected: { candidateId: string; classification?: Classification; relevant?: boolean; locationConfirmed?: boolean }[]; actorId: string; }) {
   const db = createAdminClient(); const { data: session, error } = await db.from('scout_sessions').select('*').eq('id', params.sessionId).eq('owner_id', params.actorId).single(); if (error || !session) throw new ScoutError('Preview not found', 'NOT_FOUND', 404);
@@ -192,23 +234,32 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
   const heartbeat=setInterval(()=>void db.from('scout_sessions').update({import_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',params.sessionId).eq('import_token',importToken).then(({error})=>{if(error)console.error('[social-scout] Import lease renewal failed',error.code);}),30000);
   try {
   const expected = cleanTarget(session.params.targetType) === 'Communities & Clubs' ? 'Community' : 'Individual';
+  const audienceCriteria={...session.params.searchPlan?.criteria,...session.params};
+  const minFollowers = audienceCriteria.minFollowers;
   const { data: latestFeedback, error: feedbackError } = await db.from('scout_feedback').select('*').order('created_at', { ascending: false }); check(feedbackError);
   const selected: DiscoveryCandidate[] = params.selected.map(s => {
     const c: DiscoveryCandidate | undefined = session.candidates.find((c: DiscoveryCandidate) => c.candidateId === s.candidateId);
-    if (reviewDecisions?.[s.candidateId]?.decision && reviewDecisions[s.candidateId].decision !== 'approved') throw new ScoutError('This profile is not approved. Approve it before importing.', 'REVIEW_REQUIRED', 400);
     const savedDecision = reviewDecisions?.[s.candidateId];
     if (savedDecision?.decision === 'approved') s = { ...s, classification: savedDecision.classification, relevant: savedDecision.relevant, locationConfirmed: savedDecision.locationConfirmed };
+    if(c?.entityAssessment && !['Individual','Community','Club'].includes(savedDecision?.entityType || c.entityAssessment.suggestedType)) throw new ScoutError('This account type cannot be imported into the current CRM.', 'WRONG_TYPE',400);
+    if(c?.entityAssessment && savedDecision?.evidenceHash && savedDecision.evidenceHash!==c.entityAssessment.evidenceHash)throw new ScoutError('Account evidence changed after review.', 'PREVIEW_STALE',409);
+    if(c && (audienceCriteria.assessmentRevision===6 || session.params.searchPlan?.version===5 ? assessAccountSize(c,audienceCriteria)?.state && assessAccountSize(c,audienceCriteria)?.state!=='passed' : minFollowers > 0 && assessProfileFollowers(c,minFollowers)?.state!=='passed'))throw new ScoutError('Observed followers or members must meet the selected range before import.', 'FOLLOWER_THRESHOLD_REQUIRED',400);
+    if(c && (audienceCriteria.assessmentRevision===6 || session.params.searchPlan?.version===5)) {
+      const checked=assessReviewedProfile({...c,provenance:undefined},session.params.keyword,session.params.geography,session.params.targetType,{...audienceCriteria,version:6,entityAssessment:c.entityAssessment},latestFeedback || []);
+      if(checked.resultGroup==='Excluded')throw new ScoutError('Current account evidence does not meet the selected criteria.', 'PREVIEW_STALE',409);
+    }
     if (!c || c.reviewState === 'Excluded') throw new ScoutError('Candidate is not in this preview', 'INVALID_SELECTION', 400);
     if (!platformMatches(c.platform, c.url) || urlKind(c.url) !== (expected === 'Community' && c.url.includes('/groups/') ? 'group' : 'profile') || c.accountKey !== `${c.platform}:${canonicalUrl(c.url)}`) throw new ScoutError('This preview contains an invalid profile URL. Search again before importing.', 'INVALID_PROFILE_URL', 409);
     const feedback = (latestFeedback || []).filter(f => f.account_key === c.accountKey);
     const typeCorrection = feedback.find(f => f.classification && ['Wrong Entity Type', 'Correct Classification'].includes(f.reason));
-    if (typeCorrection && typeCorrection.classification !== c.classification || feedback.some(f => f.context_key === contextKey(session.params.keyword, session.params.geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason))) throw new ScoutError('Team feedback invalidated this candidate. Search again before importing.', 'PREVIEW_STALE', 409);
+    if (typeCorrection && (typeCorrection.classification !== c.classification || c.entityAssessment && typeCorrection.entity_type && typeCorrection.entity_type !== c.entityAssessment.suggestedType) || feedback.some(f => f.context_key === contextKey(session.params.keyword, session.params.geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason))) throw new ScoutError('Team feedback invalidated this candidate. Search again before importing.', 'PREVIEW_STALE', 409);
     if (c.reviewState === 'Needs Review' && (s.classification !== expected || s.relevant !== true || s.locationConfirmed !== true)) throw new ScoutError('Confirm entity type, relevance and location before importing Needs Review candidates', 'REVIEW_REQUIRED', 400);
     if (c.reviewState === 'Matched' && c.classification !== expected) throw new ScoutError('Candidate has the wrong entity type', 'WRONG_TYPE', 400);
+    if (reviewDecisions?.[s.candidateId]?.decision !== 'approved') throw new ScoutError('This profile is not approved. Approve it before importing.', 'REVIEW_REQUIRED', 400);
     return c;
   });
   const decisions = { ...reviewDecisions };
-  for (const s of params.selected) decisions[s.candidateId] = { ...decisions[s.candidateId], ...s, decision: 'approved', actorId: params.actorId, confirmedAt: new Date().toISOString() };
+  for (const s of params.selected) decisions[s.candidateId] = { ...decisions[s.candidateId], decision: 'approved', actorId: params.actorId, confirmedAt: new Date().toISOString() };
   const { error: reviewError } = await db.from('scout_sessions').update({ review_decisions: decisions }).eq('id', params.sessionId).eq('owner_id', params.actorId); check(reviewError);
   let insertedKols = 0, updatedKols = 0, insertedCommunities = 0, updatedCommunities = 0, insertedPosts = 0;
   const table = expected === 'Community' ? 'communities' : 'kols';
@@ -216,8 +267,9 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
     const { data: records, error: readError } = await db.from(table).select('*'); check(readError);
     const existing = records?.find(r => r.scout_identity === c.accountKey || r.id === c.existingId || canonicalUrl(r.profile_url || r.group_url || '') === c.url);
     const metrics: Record<string, any> = {};
-    if (expected === 'Community') metrics.scout_missing_metrics = c.followers === null ? ['members'] : [];
-    if (c.followers !== null) metrics[expected === 'Community' ? 'members_count' : 'followers'] = c.followers;
+    if(c.entityAssessment){ metrics.scout_entity_assessment={...c.entityAssessment,reviewedType:reviewDecisions[c.candidateId]?.entityType};metrics.scout_geography_assessment=c.geographyAssessment; if(expected==='Community'){metrics.community_subtype=reviewDecisions[c.candidateId]?.entityType || (['Community','Club'].includes(c.entityAssessment.suggestedType)?c.entityAssessment.suggestedType:null);metrics.account_followers=c.followers;} }
+    if (expected==='Community') {metrics.scout_missing_metrics=c.members==null?['members']:[];if(c.members!=null)metrics.members_count=c.members;if(c.followers!=null)metrics.account_followers=c.followers;}
+    else if(c.followers!==null)metrics.followers=c.followers;
     if (expected === 'Individual') {
       if (c.avgViews !== null) metrics.avg_views = c.avgViews;
       if (c.er !== null) metrics.er = c.er;
@@ -226,7 +278,7 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
     }
     let entityId = existing?.id;
     if (existing) {
-      if (expected === 'Community' && c.followers === null) metrics.scout_missing_metrics = existing.scout_missing_metrics || [];
+      if (expected === 'Community' && c.members == null) metrics.scout_missing_metrics = existing.scout_missing_metrics || [];
       if (expected === 'Individual') metrics.scout_missing_metrics = (existing.scout_missing_metrics || []).filter((k: string) => (c as any)[k] === null);
       const payload: any = { ...metrics, scout_identity: c.accountKey,scout_provenance:c.provenance };
       for(const field of existing.user_locked_fields || []) { const mapped:Record<string,string>={avgViews:'avg_views',followers:'followers',er:'er'}; delete payload[mapped[field] || field]; }
@@ -258,12 +310,32 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
   } finally {clearInterval(heartbeat);const {error}=await db.from('scout_sessions').update({import_lease_until:null,import_token:null}).eq('id',params.sessionId).eq('import_token',importToken);check(error);}
 }
 export async function savePosts(posts: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[], counts={inserted:0,refreshed:0,duplicate:0}) {
+  const context=workflowExecution();if(!context?.sessionId) return writePosts(posts,counts);
+  const saved:any[]=[];
+  for(const item of posts) {
+    const observation=item.post.provenance?.runId || item.post.url;
+    const result=await checkpointTask(context.sessionId,`save:${item.platform}:${item.post.url}:${observation}`,async()=>{
+      const unit={inserted:0,refreshed:0,duplicate:0};return {rows:await writePosts([item],unit),counts:unit};
+    });
+    saved.push(...result.rows);for(const key of ['inserted','refreshed','duplicate'] as const)counts[key]+=result.counts[key];
+  }
+  return saved;
+}
+async function writePosts(posts: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[], counts={inserted:0,refreshed:0,duplicate:0}) {
   const db = createAdminClient(); const saved: any[] = [];
   for (const { post: p, platform, kolId, communityId, sport, requestedScope } of posts) {
     const identity = `${platform}:${p.url}`;
-    const { data: existing, error: readError } = await db.from('scouted_posts').select('id,post_url,scout_identity,scout_provenance,scout_missing_metrics'); check(readError);
+    const selection='id,post_url,scout_identity,scout_provenance,scout_missing_metrics,community_id';
+    let existing:any[] | null;
+    if(workflowExecution()) {
+      const byIdentity=await db.from('scouted_posts').select(selection).eq('scout_identity',identity);check(byIdentity.error);
+      const byUrl=await db.from('scouted_posts').select(selection).eq('post_url',p.url);check(byUrl.error);
+      existing=[...(byIdentity.data || []),...(byUrl.data || [])];
+    } else { const result=await db.from('scouted_posts').select(selection);check(result.error);existing=result.data; }
     const match=existing?.find(e => e.scout_identity===identity || canonicalUrl(e.post_url)===p.url);
     if(match) {
+      if(communityId && match.community_id && match.community_id!==communityId) throw new ScoutError('This post is already linked to another community.', 'POST_COMMUNITY_CONFLICT', 409);
+      if(communityId && !match.community_id) { const {error}=await db.from('scouted_posts').update({community_id:communityId,requested_scope:requestedScope || null}).eq('id',match.id).is('community_id',null);check(error); }
       if(p.provenance && (!match.scout_provenance?.fetchedAt || p.provenance.fetchedAt>match.scout_provenance.fetchedAt)) {
         const update:any={scout_provenance:p.provenance,...(p.publishedAt ? {published_at:p.publishedAt} : {})};
         for(const field of ['views','likes','comments']) if((p as any)[field]!=null) update[field]=(p as any)[field];
@@ -279,61 +351,71 @@ export async function savePosts(posts: { post: SocialPost; platform: string; kol
   }
   return saved;
 }
-export async function scoutMarketTrends(params: ContentQuality & { keyword: string; searchMode?: 'hashtag' | 'keyword'; sport?: string | string[]; platform?: string | string[]; limit?: number; geography?: string | string[]; sessionId: string; }, savedEvidence?: Record<string,any[]>) {
+export async function scoutMarketTrends(params: ContentQuality & { keyword: string; searchMode?: 'hashtag' | 'keyword'; sport?: string | string[]; platform?: string | string[]; limit?: number; geography?: string | string[]; queryVariants?: string[]; searchPlan?:SearchPlan; assessmentVersion?:number; accountModelPolicy?:AccountModelPolicy; accountPolicyVersion?:5; entityTypes?:EntityType[]; geographyMode?:'profile'|'profile-or-recent-posts'; sessionId: string; }, savedEvidence?: Record<string,any[]>) {
   const platforms = Array.isArray(params.platform) ? params.platform : [params.platform || 'Instagram']; const limit = params.limit || 10;
-  const geography = Array.isArray(params.geography) ? params.geography.join(', ') : params.geography || 'Nationwide';
+  const scopes = canonicalScopes(params.geography || 'Nationwide');
+  const geography = Array.isArray(scopes) ? scopes.join(', ') : scopes;
   const mode = params.searchMode || (params.keyword.startsWith('#') ? 'hashtag' : 'keyword');
   if (mode === 'hashtag' && !/^#?[\p{L}\p{N}_]+$/u.test(params.keyword)) throw new ScoutError('Enter one hashtag without spaces', 'INVALID_HASHTAG', 400);
   const highEngagement=params.qualityMode==='high-engagement';
   const candidateLimit=highEngagement ? Math.min(limit*3,60) : limit;
-  const qualityCutoff=highEngagement ? await sessionSnapshot(params.sessionId,'retrievalWindows','engagement-cutoff',async createdAt=>new Date(Date.parse(createdAt)-(params.recentDays ?? 7)*86400000).toISOString()) : '';
+  const qualityCutoff=highEngagement || params.searchPlan ? await sessionSnapshot(params.sessionId,'retrievalWindows','engagement-cutoff',async createdAt=>new Date(Date.parse(createdAt)-(params.recentDays ?? 7)*86400000).toISOString()) : '';
   const collected: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[] = [];
   const db = createAdminClient(); const { data: kols, error } = await db.from('kols').select('id,profile_url'); check(error);
-  const groups:typeof collected[]=[]; const windows:any[]=[]; const warnings:string[]=[]; const failures:{message:string;code:string;httpStatus:number}[]=[]; let excluded=0,unverified=0; const skippedPosts:any[]=[];
+  const {data:knownPosts,error:knownError}=params.searchPlan && !isStoredEvidence()?await db.from('scouted_posts').select('platform,post_url'):{data:[],error:null};check(knownError);
+  const existingPostKeys=new Set((knownPosts || []).map(p=>`${String(p.platform).split(' ')[0]}:${canonicalUrl(p.post_url || '')}`));
+  const planned=params.searchPlan && !isStoredEvidence()?await collectPlannedSearch(params,existingPostKeys):null;
+  const groups:typeof collected[]=[]; const windows:any[]=[]; const warnings:string[]=[]; const failures:{message:string;code:string;httpStatus:number}[]=[]; let excluded=0,unverified=0,belowTarget=0; const skippedPosts:any[]=[];
   for (const allocation of quotas(platforms,candidateLimit)) {
     if(!allocation.limit) continue; const platform=allocation.platform;
     const window=await retrievalWindow(platform,mode,JSON.stringify({keyword:params.keyword,geography,sport:params.sport,qualityMode:params.qualityMode,minInteractions:params.minInteractions,minViews:params.minViews,recentDays:params.recentDays}),params.sessionId);
-    if(qualityCutoff && qualityCutoff>window.newerThan)window.newerThan=qualityCutoff;
+    if(qualityCutoff && (params.searchPlan || qualityCutoff>window.newerThan))window.newerThan=qualityCutoff;
     windows.push(window);
     let raw:any[];
-    try {raw=savedEvidence ? savedEvidence[platform] || [] : await scrape(params.sessionId,platform,mode,params.keyword,allocation.limit,geography,{newerThan:window.newerThan});}
+    try {raw=planned ? planned.rows[platform] || [] : savedEvidence ? savedEvidence[platform] || [] : await scrape(params.sessionId,platform,mode,params.keyword,allocation.limit,geography,{newerThan:window.newerThan,queryVariants:params.queryVariants});}
     catch(e:any) {if(e instanceof PendingScout) throw e;warnings.push(`${platform}: ${e.message}`);failures.push({message:e.message,code:e.code || 'PROVIDER_ERROR',httpStatus:e.status || 502});groups.push([]);continue;}
     const group:typeof collected=[];
     for(const r of raw) {
       const post=parsePost(r,platform);if(!post) continue;
-      if(mode==='hashtag' && !hashtagMatch(post.hashtags,params.keyword)) {excluded++;skippedPosts.push({...post,platform,reviewState:'Excluded',reason:'The requested hashtag is absent.'});continue;}
-      const topicAssessment=assessTopicPost(post,mode==='hashtag' ? post.caption : params.keyword,params.geography || 'Nationwide',window.newerThan);
-      const assessment=topicAssessment.state==='matched' && highEngagement ? assessEngagement(post,params) : topicAssessment;
-      if(assessment.state!=='matched') {if(assessment.state==='excluded')excluded++;else unverified++;skippedPosts.push({...post,platform,reviewState:assessment.state==='excluded'?'Excluded':'Needs Verification',reason:assessment.reason});continue;}
+      if(params.searchPlan || (params.assessmentVersion || 0)>=4) {
+        const assessment=assessSearchContent(post,{...params,searchMode:mode,geography:scopes,newerThan:window.newerThan});
+        if(assessment.resultGroup!=='Qualified'){if(assessment.resultGroup==='Excluded')excluded++;else if(assessment.resultGroup==='Below Target')belowTarget++;else unverified++;skippedPosts.push({...post,platform,...assessment});continue;}
+      } else {
+        const assessment=assessSearchPost(post,{...params,searchMode:mode,geography:scopes,newerThan:window.newerThan});
+        if(assessment.state!=='matched') {if(assessment.state==='excluded')excluded++;else unverified++;skippedPosts.push({...post,platform,reviewState:assessment.state==='excluded'?'Excluded':'Needs Verification',reason:assessment.reason});continue;}
+      }
       group.push({post,platform,requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ') || 'Unknown'});
     }
     groups.push(group);
   }
+  if(planned)warnings.push(...planned.warnings);
   const unused=Math.max(0,limit-groups.reduce((sum,g)=>sum+g.length,0));
   const allocations=quotas(platforms,limit);
   const expandable=allocations.filter((a,i)=>a.limit>0 && groups[i]?.length>=a.limit && providerPlans(a.platform,mode,params.keyword,a.limit,geography).every(plan=>ACTOR_CONTRACTS[plan.actor]?.canExpand));
-  for(const extra of quotas(savedEvidence || highEngagement ? [] : expandable.map(a=>a.platform),unused)) {
+  for(const extra of quotas(params.searchPlan || isStoredEvidence() || savedEvidence || highEngagement ? [] : expandable.map(a=>a.platform),unused)) {
     if(!extra.limit) continue;const index=allocations.findIndex(a=>a.platform===extra.platform);const window=windows[index];if(!window)continue;
     try {
       const rows=await scrape(params.sessionId,extra.platform,mode,params.keyword,allocations[index].limit+extra.limit,geography,{newerThan:window.newerThan});
       const known=new Set(groups[index].map(p=>p.post.url));
       for(const row of rows) {
         const post=parsePost(row,extra.platform);if(!post || known.has(post.url))continue;
-        if(mode==='hashtag' && !hashtagMatch(post.hashtags,params.keyword))continue;
-        if(assessTopicPost(post,mode==='hashtag' ? post.caption : params.keyword,params.geography || 'Nationwide',window.newerThan).state!=='matched')continue;
+        if(assessSearchPost(post,{...params,searchMode:mode,geography:scopes,newerThan:window.newerThan}).state!=='matched')continue;
         known.add(post.url);groups[index].push({post,platform:extra.platform,requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ')});
       }
     }catch(e:any){if(e instanceof PendingScout)throw e;warnings.push(`${extra.platform}: ${e.message}`);}
   }
   const unique=new Set<string>();const ranked=highEngagement ? groups.flat().sort((a,b)=>comparePostEngagement(a.post,b.post)) : roundRobin(groups,groups.reduce((n,g)=>n+g.length,0));
+  if(planned)ranked.sort((a,b)=>Number(existingPostKeys.has(`${a.platform}:${a.post.url}`))-Number(existingPostKeys.has(`${b.platform}:${b.post.url}`)));
   const merged=ranked.filter(p=>{if(unique.has(p.post.url))return false;unique.add(p.post.url);return true;}).slice(0,limit);
   if(highEngagement && merged.length<limit)warnings.push(`Only ${merged.length} posts met the selected topic, location, recency and engagement criteria; requested up to ${limit}. Low-engagement posts were not substituted.`);
-  const counts={inserted:0,refreshed:0,duplicate:0}; const posts=await savePosts(merged,counts);
+  const counts={inserted:0,refreshed:0,duplicate:0}; const posts=isStoredEvidence() ? merged.map(({post,platform})=>({...post,platform,reviewState:'Matched'})) : await savePosts(merged,counts);
+  if(params.searchPlan || (params.assessmentVersion || 0)>=4) for(const saved of posts as any[]) {const observed=merged.find(p=>p.post.url===canonicalUrl(saved.post_url || saved.url || ''));if(observed)Object.assign(saved,assessSearchContent(observed.post,{...params,searchMode:mode,geography:scopes,newerThan:qualityCutoff || windows.find(w=>w.platform===observed.platform)?.newerThan || windows[0]?.newerThan || ''}));}
   const {data:providerRuns,error:runError}=await db.from('scout_provider_runs').select('warnings').eq('session_id',params.sessionId);check(runError);
   const providerPartial=(providerRuns || []).some(r=>r.warnings?.length) || merged.some(p=>p.post.provenance?.warnings?.length);
-  for(let i=0;i<windows.length;i++) await advanceWatermark(windows[i].scopeKey,(groups[i] || []).map(p=>p.post),!providerPartial && !warnings.length && !unverified && merged.length<limit && (groups[i] || []).every(p=>!!p.post.publishedAt));
+  if(!params.searchPlan && !isStoredEvidence()) for(let i=0;i<windows.length;i++) await advanceWatermark(windows[i].scopeKey,(groups[i] || []).map(p=>p.post),!providerPartial && !warnings.length && !unverified && merged.length<limit && (groups[i] || []).every(p=>!!p.post.publishedAt));
   const allFailed=failures.length===allocations.filter(a=>a.limit>0).length && failures.length>0;
-  return { success: !allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),keyword: params.keyword, qualityCriteria:{mode:highEngagement?'high-engagement':'topic',...(highEngagement ? {minInteractions:params.minInteractions ?? 100,minViews:params.minViews ?? 10000,recentDays:params.recentDays ?? 7,candidateLimit,cutoff:qualityCutoff,ranking:'likes + comments, then views, then publication date'} : {})}, partial:!allFailed && (providerPartial || warnings.length>0 || unverified>0),warnings,skippedPosts,counts:{...counts,excluded,unverified,failed:failures.length},totalScouted: posts.length, matchedKolsCount: posts.filter(p => p.kol_id).length, posts, message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; unverified ${unverified}; failed ${failures.length}.` };
+  const reasonCounts:Record<string,number>={}; for(const p of skippedPosts) reasonCounts[p.reason]=(reasonCounts[p.reason] || 0)+1;
+  return { ...((planned || (params.assessmentVersion || 0)>=4)?{searchExecution:planned?{...planned,rows:undefined,profiles:undefined}:undefined,groups:{qualified:merged.map(item=>({...item.post,platform:item.platform,...assessSearchContent(item.post,{...params,searchMode:mode,geography:scopes,newerThan:qualityCutoff || windows[0]?.newerThan || ''})})),needsVerification:skippedPosts.filter(p=>p.resultGroup==='Needs Verification'),belowTarget:skippedPosts.filter(p=>p.resultGroup==='Below Target'),excluded:skippedPosts.filter(p=>p.resultGroup==='Excluded')}}:{}), diagnostics:{assessmentVersion:params.searchPlan || (params.assessmentVersion || 0)>=4 ?4:3,reasonCounts,providerCount:planned?.providerCount ?? skippedPosts.length+groups.reduce((n,g)=>n+g.length,0),returnedCount:posts.length},success: !allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),keyword: params.keyword, qualityCriteria:{mode:highEngagement?'high-engagement':'topic',...(highEngagement ? {minInteractions:params.minInteractions ?? 100,minViews:params.minViews ?? 10000,recentDays:params.recentDays ?? 7,candidateLimit,cutoff:qualityCutoff,ranking:'likes + comments, then views, then publication date'} : {})}, partial:!allFailed && (providerPartial || warnings.length>0 || unverified>0),warnings,skippedPosts,counts:{...counts,qualified:merged.length,belowTarget,excluded,unverified,failed:failures.length},totalScouted: posts.length, matchedKolsCount: posts.filter(p => p.kol_id).length, posts, message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; unverified ${unverified}; failed ${failures.length}.` };
 }
 async function scoutEntityPosts(id: string, kind: 'kol' | 'community', limit: number, platforms: string | string[], sessionId: string) {
   const db = createAdminClient(); const { data: entity, error } = await db.from(kind === 'kol' ? 'kols' : 'communities').select('*').eq('id', id).single(); check(error);
@@ -393,14 +475,68 @@ export async function processScoutRequest(requestId: string) {
   const kind = /Viral|Posts|Reels/i.test(request.target_type) ? 'trends' : 'preview';
   let sessionId = request.scout_session_id;
   if (!sessionId) {
-    const { data: session, error: sessionError } = await db.from('scout_sessions').insert({ owner_id: owner, kind,runtime_version:2, params: { keyword: request.keyword, targetType: cleanTarget(request.target_type), platform: request.platform, geography: request.geography, limit: Math.min(request.target_limit || 5, 50) } }).select('id').single(); check(sessionError); if (!session) throw new Error('Failed to create scout session'); sessionId = session.id;
+    const { data: session, error: sessionError } = await db.from('scout_sessions').insert({ owner_id: owner, kind,runtime_version:3, execution_engine:'workflow', params: { keyword: request.keyword, targetType: cleanTarget(request.target_type), platform: request.platform, geography: request.geography, limit: Math.min(request.target_limit || 5, 50) } }).select('id').single(); check(sessionError); if (!session) throw new Error('Failed to create scout session'); sessionId = session.id;
     const { error: linkError } = await db.from('scout_requests').update({ scout_session_id: sessionId }).eq('id', requestId); check(linkError);
   }
-  const {enqueue,QUEUE_NAMES}=await import('@/lib/queue');
-  await enqueue(QUEUE_NAMES.socialScout,'session',{sessionId},{jobId:sessionId,attempts:180,backoff:{type:'scout',delay:5000},removeOnComplete:true,removeOnFail:true});
+  const {dispatchScoutSession}=await import('./workflow-dispatch');
+  await dispatchScoutSession(sessionId);
   const { resumeSession } = await import('./sessions');
   const response = await resumeSession(sessionId, owner); const result = await response.json();
   const summary = result.pending ? 'Scout is running. Resume the saved preview when ready.' : kind === 'trends' ? `Saved ${result.totalScouted} trending posts.` : `Preview ready: ${result.totalFound} candidates. Human confirmation is required before import.`;
   const { error: updateError } = await db.from('scout_requests').update({ status: result.pending ? 'Đang quét dữ liệu' : result.success ? kind === 'trends' ? 'Đã hoàn thành' : 'Needs Review' : 'Failed', results_summary: result.success ? summary : result.error }).eq('id', requestId); check(updateError);
   return { summary, sessionId, ...result };
+}
+
+/** A latest sample is independent of incremental watermarks and activity thresholds. */
+export async function scoutLatestCommunityPosts(id: string, selectedPlatforms: string | string[], sessionId: string, selectedUrls?: string[]) {
+  const db = createAdminClient();
+  const {data: entity,error}=await db.from('communities').select('*').eq('id',id).single();check(error);
+  const platforms=Array.isArray(selectedPlatforms) ? selectedPlatforms : [selectedPlatforms];
+  const channels=entity.channels?.length ? entity.channels : getStoredEntityChannels('community',id,entity.name) || [];
+  const connected=[...new Set([entity.group_url,...channels.map((c:any)=>c.url || c.profileUrl)].map(u=>canonicalUrl(u || '')).filter(Boolean))];
+  const requested=selectedUrls?.map(u=>canonicalUrl(u)) || connected.filter(u=>platforms.some(p=>platformMatches(p,u)));
+  if(!requested.length || requested.some(u=>!connected.includes(u) || !platforms.some(p=>platformMatches(p,u)))) throw new ScoutError('Choose connected community channels only.','INVALID_CHANNEL',400);
+  const samples:{post:SocialPost;platform:string;communityId:string;sport:string;requestedScope:unknown}[]=[];
+  const coverage:{url:string;platform:string;status:string;posts?:number;reason?:string}[]=[];
+  for(const url of [...new Set(requested)]) {
+    const platform=platforms.find(p=>platformMatches(p,url))!;
+    try {
+      const result=await checkpointTask(sessionId,`latest-channel:${url}`,async()=>{
+        const rows=await scrape(sessionId,platform,'profile-posts',url,30);
+        const parsed=rows.map(row=>parsePost(row,platform)).filter(Boolean) as SocialPost[];
+        const group=urlKind(url)==='group';
+        const eligible=parsed.filter(p=>p.publishedAt && (group || canonicalUrl(p.authorUrl)===url))
+          .sort((a,b)=>Date.parse(b.publishedAt!) - Date.parse(a.publishedAt!)).slice(0,30);
+        const partial=parsed.some(p=>!p.publishedAt) || eligible.some(p=>p.provenance?.warnings?.length) || rows.length>30;
+        return {posts:eligible,partial};
+      });
+      samples.push(...result.posts.map(post=>({post,platform,communityId:id,sport:entity.sports?.join(', ') || 'Unknown',requestedScope:{communityId:id,url,collectionMode:'latest-30'}})));
+      coverage.push({url,platform,status:result.partial ? 'partial' : 'collected',posts:result.posts.length,...(result.partial ? {reason:'Some source posts could not be verified.'} : {})});
+    } catch(error:any) {
+      if(error instanceof PendingScout) throw error;
+      coverage.push({url,platform,status:'unavailable',posts:0,reason:error.message});
+    }
+  }
+  const seen=new Set<string>();
+  const selected=samples.sort((a,b)=>Date.parse(b.post.publishedAt!) - Date.parse(a.post.publishedAt!) || a.post.url.localeCompare(b.post.url))
+    .filter(item=>{if(seen.has(item.post.url))return false;seen.add(item.post.url);return true;}).slice(0,30);
+  const counts={inserted:0,refreshed:0,duplicate:0};const posts:any[]=[];
+  for(const item of selected) {
+    const saved=await checkpointTask(sessionId,`latest-save:${item.post.url}`,async()=>{
+      const unit={inserted:0,refreshed:0,duplicate:0};const rows=await savePosts([item],unit);return {rows,counts:unit};
+    });
+    posts.push(...saved.rows);for(const key of ['inserted','refreshed','duplicate'] as const)counts[key]+=saved.counts[key];
+  }
+  const failures=coverage.filter(c=>c.status==='unavailable');
+  const warnings=coverage.filter(c=>c.reason).map(c=>`${c.platform}: ${c.reason}`);
+  if(selected.length<30) warnings.push(`Only ${selected.length} verified dated posts were collected across the selected channels.`);
+  return {success:failures.length<coverage.length,partial:coverage.some(c=>c.status!=='collected') || selected.length<30,channelCoverage:coverage,warnings,
+    counts:{...counts,sampled:selected.length,failed:failures.length},posts,communityName:entity.name,
+    ...(failures.length===coverage.length ? {error:'No selected community channel could be collected.',code:'CHANNELS_UNAVAILABLE',httpStatus:503} : {}),
+    message:`Collected a public sample of ${selected.length} latest posts. Inaccessible source posts may be missing.`};
+}
+
+function stableCandidateId(sessionId:string,accountKey:string) {
+ const hex=createHash('sha256').update(`${sessionId}:${accountKey}`).digest('hex');
+ return `${hex.slice(0,8)}-${hex.slice(8,12)}-5${hex.slice(13,16)}-a${hex.slice(17,20)}-${hex.slice(20,32)}`;
 }

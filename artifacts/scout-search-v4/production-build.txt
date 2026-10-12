@@ -1,0 +1,87 @@
+✓ Compiled workflows in 275ms (20 steps, 2 workflows)
+   ▲ Next.js 15.5.22
+   - Environments: .env.local
+   - Experiments (use with caution):
+     · serverActions
+
+   Creating an optimized production build ...
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (106kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (258kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+ ✓ Compiled successfully in 11.4s
+   Running next.config.js provided runAfterProductionCompile ...
+ ✓ Completed runAfterProductionCompile in 3ms
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/11) ...
+   Generating static pages (2/11)
+   Generating static pages (5/11)
+   Generating static pages (8/11)
+ ✓ Generating static pages (11/11)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                                      Size  First Load JS
+┌ ƒ /                                                         7.03 kB         390 kB
+├ ○ /_not-found                                                 241 B         102 kB
+├ ƒ /.well-known/workflow/v1/flow                               241 B         102 kB
+├ ƒ /.well-known/workflow/v1/webhook/[token]                    241 B         102 kB
+├ ƒ /api/audit-log                                              241 B         102 kB
+├ ƒ /api/lark/data                                              241 B         102 kB
+├ ƒ /api/lark/record                                            241 B         102 kB
+├ ƒ /api/lark/upload-batch                                      241 B         102 kB
+├ ƒ /api/profile/telegram                                       241 B         102 kB
+├ ƒ /api/sport-hub/batch-action                                 241 B         102 kB
+├ ƒ /api/sport-hub/channels                                     241 B         102 kB
+├ ƒ /api/sport-hub/community/[id]/audience-audit                241 B         102 kB
+├ ƒ /api/sport-hub/data                                         241 B         102 kB
+├ ƒ /api/sport-hub/kol/[id]/audience-audit                      241 B         102 kB
+├ ƒ /api/sport-hub/kol/[id]/comment-evidence                    241 B         102 kB
+├ ƒ /api/sport-hub/kol/[id]/diff                                241 B         102 kB
+├ ƒ /api/sport-hub/kol/[id]/gmv                                 241 B         102 kB
+├ ƒ /api/sport-hub/kol/[id]/history                             241 B         102 kB
+├ ƒ /api/sport-hub/merge                                        241 B         102 kB
+├ ƒ /api/sport-hub/post/[id]/audience-audit                     241 B         102 kB
+├ ƒ /api/sport-hub/project/[id]/participants                    241 B         102 kB
+├ ƒ /api/sport-hub/project/[id]/participants/[participantId]    241 B         102 kB
+├ ƒ /api/sport-hub/record                                       241 B         102 kB
+├ ƒ /api/sport-hub/scout                                        241 B         102 kB
+├ ƒ /api/sport-hub/scout/budget                                 241 B         102 kB
+├ ƒ /api/sport-hub/scout/capabilities                           241 B         102 kB
+├ ƒ /api/sport-hub/scout/community-posts                        241 B         102 kB
+├ ƒ /api/sport-hub/scout/feedback                               241 B         102 kB
+├ ƒ /api/sport-hub/scout/inspect-url                            241 B         102 kB
+├ ƒ /api/sport-hub/scout/kol-posts                              241 B         102 kB
+├ ƒ /api/sport-hub/scout/maintenance                            241 B         102 kB
+├ ƒ /api/sport-hub/scout/market-trends                          241 B         102 kB
+├ ƒ /api/sport-hub/scout/plan                                   241 B         102 kB
+├ ƒ /api/sport-hub/scout/reassess                               241 B         102 kB
+├ ƒ /api/sport-hub/scout/reconcile                              241 B         102 kB
+├ ƒ /api/sport-hub/scout/recover                                241 B         102 kB
+├ ƒ /api/sport-hub/scout/review                                 241 B         102 kB
+├ ƒ /api/sport-hub/scout/sessions                               241 B         102 kB
+├ ƒ /api/sport-hub/scout/workflow-fixture                       241 B         102 kB
+├ ƒ /api/sport-hub/upload-batch                                 241 B         102 kB
+├ ƒ /api/tracked-accounts                                       241 B         102 kB
+├ ƒ /api/tracked-accounts/[id]                                  241 B         102 kB
+├ ƒ /api/tracked-accounts/[id]/scrape                           241 B         102 kB
+├ ƒ /api/users                                                  241 B         102 kB
+├ ƒ /auth/callback                                              241 B         102 kB
+├ ƒ /community                                                 9.8 kB         403 kB
+├ ƒ /kols                                                     13.1 kB         406 kB
+├ ƒ /login                                                    11.3 kB         180 kB
+├ ƒ /projects                                                 14.2 kB         288 kB
+├ ○ /reports                                                    241 B         102 kB
+├ ƒ /scout                                                    5.21 kB         255 kB
+├ ƒ /team                                                     5.84 kB         191 kB
+└ ƒ /trending                                                 7.01 kB         276 kB
++ First Load JS shared by all                                  102 kB
+  ├ chunks/8405-0d9e8ae99616ffa5.js                             46 kB
+  ├ chunks/ac2f0c0e-e409b36e8503ef10.js                       54.2 kB
+  └ other shared chunks (total)                               1.94 kB
+
+
+ƒ Middleware                                                  92.2 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

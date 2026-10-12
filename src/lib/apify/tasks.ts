@@ -1,3 +1,4 @@
+import { checkpointTask } from './task-checkpoint';
 import {getStoredEntityChannels} from '@/lib/sport-hub/channel-store';
 import { createHash } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -101,7 +102,7 @@ export async function executeExtendedSession(s:any):Promise<any> {
   if(s.kind==='verification') { const rows=await scrape(s.id,s.params.platform,s.params.task,s.params.query,s.params.limit || 1); return {success:true,rows}; }
   if(s.kind==='sync' || s.kind==='tracked') {
     const ids=s.kind==='tracked' ? [s.params.trackedAccountId] : s.params.ids; const results:any[]=[]; const failed:any[]=[];
-    for(const id of ids) { try {results.push(await syncEntity(s.id,id,s.kind==='tracked' ? 'tracked' : s.params.entityType));} catch(e:any) {if(e instanceof PendingScout) throw e; failed.push({id,error:e.message,code:e.code});} }
+    for(const id of ids) { try {results.push(await checkpointTask(s.id,`sync:${id}`,()=>syncEntity(s.id,id,s.kind==='tracked' ? 'tracked' : s.params.entityType)));} catch(e:any) {if(e instanceof PendingScout) throw e; failed.push({id,error:e.message,code:e.code});} }
     if(s.kind==='tracked' && failed.length) { const {error}=await createAdminClient().from('tracked_accounts').update({status:'error',error_message:failed[0].error}).eq('id',ids[0]); if(error) throw error; }
     return {success:results.length>0,partial:failed.length>0,counts:{refreshed:results.length,failed:failed.length},syncedCount:results.length,updatedRecords:results,failed,message:`Refreshed ${results.length}; failed ${failed.length}.`};
   }

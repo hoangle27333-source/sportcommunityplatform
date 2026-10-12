@@ -1,0 +1,15 @@
+{
+  "kind": "synthetic-encoder-smoke",
+  "target": "linux-x64",
+  "node": "v22.23.3",
+  "encoderRevision": "2c4055b12046f11709e9df2c122e59ffbdc2f900",
+  "accounts": 5,
+  "postsPerAccount": 5,
+  "coldMs": 5570.355544,
+  "warmMs": 3306.9022099999993,
+  "maxRssBytes": 561913856,
+  "passedTiming": true,
+  "passedMemory": true,
+  "runtimeGate": false,
+  "qualityGate": false
+}

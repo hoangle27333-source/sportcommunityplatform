@@ -1,0 +1,1299 @@
+{
+  "checkedAt": "2026-10-11T10:32:28.615Z",
+  "sessionId": "4cc9de34-2d4d-4ae7-96a2-6e39cc79ac2c",
+  "mode": "read-only saved evidence; zero provider requests or database writes",
+  "criteria": {
+    "limit": 5,
+    "notes": "",
+    "keyword": "HYROX",
+    "minViews": 10000,
+    "platform": [
+      "Facebook"
+    ],
+    "geography": "Ho Chi Minh City",
+    "uiContext": {
+      "source": "/scout"
+    },
+    "recentDays": 7,
+    "targetType": "Individual KOLs",
+    "qualityMode": "high-engagement",
+    "forceRefresh": false,
+    "providerBuilds": {
+      "apify~facebook-search-scraper:profiles:pages": "0.0.333",
+      "apify~facebook-search-scraper:profiles:profiles": "0.0.333",
+      "apify~facebook-pages-scraper:profile-details:default": "0.0.518"
+    },
+    "minInteractions": 100
+  },
+  "counts": {
+    "Qualified": 0,
+    "Needs Verification": 9,
+    "Excluded": 21
+  },
+  "items": [
+    {
+      "name": "Hồ Minh Chí",
+      "url": "https://facebook.com/chi.minh.437841",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Hồ Minh Chí",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Hồ Minh Chí",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "HO CHI MINH CITY LAND",
+      "url": "https://facebook.com/HoChiMinhCityLand",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "HO CHI MINH CITY LAND"
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "unknown",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "HO CHI MINH CITY LAND"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Konox Hồ Chí Minh",
+      "url": "https://facebook.com/people/Konox-H%E1%BB%93-Ch%C3%AD-Minh/pfbid0mFXPPfW9hgKM7NDUxYs8dk4dt66nS9d7QaU4S4bzohgbQzKGjbEt3mmpkwcXhGmEl",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Konox Hồ Chí Minh",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Konox Hồ Chí Minh",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Tamico Hồ Chí Minh",
+      "url": "https://facebook.com/people/Tamico-H%E1%BB%93-Ch%C3%AD-Minh/pfbid02RAUEAP6GRUuAvDWuyvJEfopXoLoCgsBDSxgvLEC2kbAnUrVWa1kNqf9QfDJbjgnvl",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Tamico Hồ Chí Minh"
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "unknown",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Tamico Hồ Chí Minh"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "CA Hồ Chí Minh",
+      "url": "https://facebook.com/people/CA-H%E1%BB%93-Ch%C3%AD-Minh/pfbid0FNFVTtTwiDYTCT3cNn1z7MabbnjpSM5u5d9u5xCLK94b5KrmNBWHCNVke3KN8YPHl",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "CA Hồ Chí Minh",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "CA Hồ Chí Minh",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Tcshn Hồ Chí Minh",
+      "url": "https://facebook.com/people/Tcshn-H%E1%BB%93-Ch%C3%AD-Minh/pfbid0284QUmM5Z7ef6AEyLhkf62QPw6C4tMPQk63RWmYiEcaBkn7FGWAeL8dSTp1Ehu6zAl",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Tcshn Hồ Chí Minh",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Tcshn Hồ Chí Minh",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Ho Chi Minh city Viet Nam bao ",
+      "url": "https://facebook.com/hochiminhcityvietnambao",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Ho Chi Minh city Viet Nam bao "
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "unknown",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Ho Chi Minh city Viet Nam bao "
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Minh Phương",
+      "url": "https://facebook.com/phuong.thanhphohochiminh",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Minh Phương",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Minh Phương",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Sống.Hôm.Nay Mai.Đell.Cần.Biết",
+      "url": "https://facebook.com/chi.con.ngay.mai",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Sống.Hôm.Nay Mai.Đell.Cần.Biết",
+        "Lives in Ho Chi Minh City, Vietnam · Works at Vk Con Vs Gia Đình Luôn2 Làm Số 1"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Sống.Hôm.Nay Mai.Đell.Cần.Biết",
+            "Lives in Ho Chi Minh City, Vietnam · Works at Vk Con Vs Gia Đình Luôn2 Làm Số 1"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Hồ Minh Chi",
+      "url": "https://facebook.com/kylieirving.golandrina",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Hồ Minh Chi",
+        "Lives in Butuan City"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Hồ Minh Chi",
+            "Lives in Butuan City"
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Hồ Minh Chí",
+      "url": "https://facebook.com/minhchi.ho.562",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Hồ Minh Chí",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Hồ Minh Chí",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Khu Phố Kim Hải",
+      "url": "https://facebook.com/people/Khu-Ph%E1%BB%91-Kim-H%E1%BA%A3i/pfbid0DVhLPfu4kWJW3Bw5vZrAKN1mjaJ7wCyzLYGieNgTsMm1V6tUUWGsWfVdanUak1TCl",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Khu Phố Kim Hải",
+        "Lives in Ba Ria"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Khu Phố Kim Hải",
+            "Lives in Ba Ria"
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "MindX Hồ Chí Minh",
+      "url": "https://facebook.com/mindx.hochiminhcity",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "MindX Hồ Chí Minh",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "MindX Hồ Chí Minh",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Hồ Chi Minh",
+      "url": "https://facebook.com/people/H%E1%BB%93-Chi-Minh/pfbid0FA8RQdL4VuUR5Wzkw2ztpHbhC9GcNaBniTm9xZwA9NSpWi6vPPzG3Vx9Y4uWaa9wl",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Hồ Chi Minh",
+        "Works at Ho Chi Minh City, Vietnam · Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Hồ Chi Minh",
+            "Works at Ho Chi Minh City, Vietnam · Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Nutri-pax Hồ Chí Minh",
+      "url": "https://facebook.com/people/Nutri-pax-H%E1%BB%93-Ch%C3%AD-Minh/pfbid02CW9ABeFg4tSAhWNXUKmE9oQ342tNH47biHE7NTw84rHrgvCaLa6GA28VGL9qA7K3l",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": true,
+      "verifiedGeography": "Ho Chi Minh City",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location supported by profile evidence"
+      ],
+      "evidence": [
+        "Nutri-pax Hồ Chí Minh",
+        "Lives in Ho Chi Minh City, Vietnam"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Nutri-pax Hồ Chí Minh",
+            "Lives in Ho Chi Minh City, Vietnam"
+          ]
+        },
+        "geography": {
+          "state": "passed",
+          "reason": "Location supported by profile evidence",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "HYROX Thailand",
+      "url": "https://facebook.com/hyroxtha",
+      "category": "Sports Event",
+      "location": "",
+      "classification": "Brand/Business",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type: Brand/Business",
+        "Observed location conflicts with selected geography"
+      ],
+      "evidence": [
+        "HYROX Thailand",
+        "🇹🇭Official HYROX Thailand Facebook Page\n⚡️The Fitness Race for Every Body⚡️",
+        "Sports Event"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "HYROX Thailand",
+            "🇹🇭Official HYROX Thailand Facebook Page\n⚡️The Fitness Race for Every Body⚡️",
+            "Sports Event"
+          ]
+        },
+        "geography": {
+          "state": "failed",
+          "reason": "Observed location conflicts with selected geography",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "failed",
+          "reason": "Entity type: Brand/Business",
+          "evidence": [
+            "Sports Event"
+          ]
+        }
+      }
+    },
+    {
+      "name": "HYROX Vietnam Community",
+      "url": "https://facebook.com/hyroxvietnamcommunity",
+      "category": "",
+      "location": "",
+      "classification": "Community",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type: Community",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "HYROX Vietnam Community",
+        "🇻🇳HYROX Vietnam Community Train Hard • Race together"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "HYROX Vietnam Community",
+            "🇻🇳HYROX Vietnam Community Train Hard • Race together"
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "failed",
+          "reason": "Entity type: Community",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "WeBorn 薈生 | Hong Kong Hong Kong",
+      "url": "https://facebook.com/WeBORNhk",
+      "category": "Health & wellness website",
+      "location": "Hong Kong, Hong Kong",
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Observed location conflicts with selected geography"
+      ],
+      "evidence": [
+        "WeBorn 薈生 | Hong Kong Hong Kong",
+        "Empower every YOU to become your own lifelong coach\n為成熟女性而設｜身體管理與生活升級\n結合肌力、功能性與活動度的精品訓練社群\n🔥BORN Strong Women System\n🔥HYROX 女性專屬訓練",
+        "Health & wellness website",
+        "Hong Kong, Hong Kong"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "WeBorn 薈生 | Hong Kong Hong Kong",
+            "Empower every YOU to become your own lifelong coach\n為成熟女性而設｜身體管理與生活升級\n結合肌力、功能性與活動度的精品訓練社群\n🔥BORN Strong Women System\n🔥HYROX 女性專屬訓練",
+            "Health & wellness website",
+            "Hong Kong, Hong Kong"
+          ]
+        },
+        "geography": {
+          "state": "failed",
+          "reason": "Observed location conflicts with selected geography",
+          "evidence": [
+            "Hong Kong, Hong Kong"
+          ]
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": [
+            "Health & wellness website"
+          ]
+        }
+      }
+    },
+    {
+      "name": "The Y Auckland City",
+      "url": "https://facebook.com/ymcaakcity",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "The Y Auckland City",
+        "▪️HYROX Training Club ▪️PRVN Fitness Affiliated ▪️Memberships $26 p/w ▪️3 Day Free Trial 📍149 Greys Ave CBD"
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "The Y Auckland City",
+            "▪️HYROX Training Club ▪️PRVN Fitness Affiliated ▪️Memberships $26 p/w ▪️3 Day Free Trial 📍149 Greys Ave CBD"
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Rock City Complete Fitness",
+      "url": "https://facebook.com/Rockccf",
+      "category": "",
+      "location": "",
+      "classification": "Brand/Business",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type: Brand/Business",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Rock City Complete Fitness",
+        "Proudly serving North Little Rock, Maumelle, Little Rock, and Conway, we offer a wide variety of programs including HYROX Training Club, CrossFit, Bootcamp, Yoga, Booty Builder Zone, Personal Training, and Small Group Sessions."
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "Rock City Complete Fitness",
+            "Proudly serving North Little Rock, Maumelle, Little Rock, and Conway, we offer a wide variety of programs including HYROX Training Club, CrossFit, Bootcamp, Yoga, Booty Builder Zone, Personal Training, and Small Group Sessions."
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "failed",
+          "reason": "Entity type: Brand/Business",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "HYROX Salt Lake City 2026 | Salt Lake City",
+      "url": "https://facebook.com/hyroxsaltlakecity2026",
+      "category": "TV channel",
+      "location": "90 South West Temple, Salt Lake City, India",
+      "classification": "Brand/Business",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type: Brand/Business",
+        "Observed location conflicts with selected geography"
+      ],
+      "evidence": [
+        "HYROX Salt Lake City 2026 | Salt Lake City",
+        "🔰🔴Watch✅👉 HYROX Salt Lake City 2026 Live Streaming👇\n🔴🎥LIVE: https://sportsgotv.com/hyrox-salt-lake-city-2026/",
+        "TV channel",
+        "90 South West Temple, Salt Lake City, India"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "HYROX Salt Lake City 2026 | Salt Lake City",
+            "🔰🔴Watch✅👉 HYROX Salt Lake City 2026 Live Streaming👇\n🔴🎥LIVE: https://sportsgotv.com/hyrox-salt-lake-city-2026/",
+            "TV channel",
+            "90 South West Temple, Salt Lake City, India"
+          ]
+        },
+        "geography": {
+          "state": "failed",
+          "reason": "Observed location conflicts with selected geography",
+          "evidence": [
+            "90 South West Temple, Salt Lake City, India"
+          ]
+        },
+        "entityType": {
+          "state": "failed",
+          "reason": "Entity type: Brand/Business",
+          "evidence": [
+            "TV channel"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Maiden City Hyrox",
+      "url": "https://facebook.com/people/Maiden-City-Hyrox/61569387836874",
+      "category": "Fitness Boot Camp",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Maiden City Hyrox",
+        "Fitness Boot Camp"
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "Maiden City Hyrox",
+            "Fitness Boot Camp"
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": [
+            "Fitness Boot Camp"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Maiden City Hyrox",
+      "url": "https://facebook.com/people/Maiden-City-Hyrox/61569041647435",
+      "category": "Sports",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Maiden City Hyrox",
+        "Sports"
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "Maiden City Hyrox",
+            "Sports"
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": [
+            "Sports"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Bull City CrossFit | Durham NC",
+      "url": "https://facebook.com/bullcitycommunityfitness",
+      "category": "Gym/Physical Fitness Center",
+      "location": "4300 Garrett Rd, Durham, NC, United States, 27707",
+      "classification": "Brand/Business",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type: Brand/Business",
+        "Observed location conflicts with selected geography"
+      ],
+      "evidence": [
+        "Bull City CrossFit | Durham NC",
+        "Bull City CrossFit is a Strength and Conditioning Program for anyone looking to get into the best shape of their life. CrossFit, strength, Olympic lifting, HYROX, 55+, and personal training available.",
+        "Gym/Physical Fitness Center",
+        "4300 Garrett Rd, Durham, NC, United States, 27707"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "Bull City CrossFit | Durham NC",
+            "Bull City CrossFit is a Strength and Conditioning Program for anyone looking to get into the best shape of their life. CrossFit, strength, Olympic lifting, HYROX, 55+, and personal training available.",
+            "Gym/Physical Fitness Center",
+            "4300 Garrett Rd, Durham, NC, United States, 27707"
+          ]
+        },
+        "geography": {
+          "state": "failed",
+          "reason": "Observed location conflicts with selected geography",
+          "evidence": [
+            "4300 Garrett Rd, Durham, NC, United States, 27707"
+          ]
+        },
+        "entityType": {
+          "state": "failed",
+          "reason": "Entity type: Brand/Business",
+          "evidence": [
+            "Gym/Physical Fitness Center"
+          ]
+        }
+      }
+    },
+    {
+      "name": "River City Fitness Club",
+      "url": "https://facebook.com/rivercityfitnessclub",
+      "category": "",
+      "location": "",
+      "classification": "Community",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type: Community",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "River City Fitness Club",
+        "Miramichi's Newest 24/7 Gym with HYROX, barbell classes, spin classes, yoga and more! "
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "River City Fitness Club",
+            "Miramichi's Newest 24/7 Gym with HYROX, barbell classes, spin classes, yoga and more! "
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "failed",
+          "reason": "Entity type: Community",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Electric City Mixed Martial Arts & Fitness",
+      "url": "https://facebook.com/ElectricCityMMA",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Electric City Mixed Martial Arts & Fitness",
+        "Everything you need under one roof. Functional Fitness. Brazilian Jiu-Jitsu. Muay Thai. Hyrox. Community. "
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "Electric City Mixed Martial Arts & Fitness",
+            "Everything you need under one roof. Functional Fitness. Brazilian Jiu-Jitsu. Muay Thai. Hyrox. Community. "
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "FitNest Culture",
+      "url": "https://facebook.com/FNCphilippines",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "FitNest Culture",
+        "🏋🏻‍♂️One one One Personal Training 👯‍♂️👯Group Classes 🥊Muay Thai 🏃Affiliated Hyrox Training Club 📍Zamboanga City "
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "FitNest Culture",
+            "🏋🏻‍♂️One one One Personal Training 👯‍♂️👯Group Classes 🥊Muay Thai 🏃Affiliated Hyrox Training Club 📍Zamboanga City "
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "GSR FIT | Johnson City NY",
+      "url": "https://facebook.com/GSRFIT",
+      "category": "Gym/Physical Fitness Center",
+      "location": "47 Riverside Drive, Johnson City, NY, United States, 13790",
+      "classification": "Brand/Business",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type: Brand/Business",
+        "Observed location conflicts with selected geography"
+      ],
+      "evidence": [
+        "GSR FIT | Johnson City NY",
+        "We offer a variety of bootcamp, CrossFit, Hyrox and Weightlifting classes. Every workout is led by a certified instructor. \nOur Personal Training / Nutrition / Accountability coaching guides your lifestyle outside of the gym. \nFree Week Message us today!",
+        "Gym/Physical Fitness Center",
+        "47 Riverside Drive, Johnson City, NY, United States, 13790"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "GSR FIT | Johnson City NY",
+            "We offer a variety of bootcamp, CrossFit, Hyrox and Weightlifting classes. Every workout is led by a certified instructor. \nOur Personal Training / Nutrition / Accountability coaching guides your lifestyle outside of the gym. \nFree Week Message us today!",
+            "Gym/Physical Fitness Center",
+            "47 Riverside Drive, Johnson City, NY, United States, 13790"
+          ]
+        },
+        "geography": {
+          "state": "failed",
+          "reason": "Observed location conflicts with selected geography",
+          "evidence": [
+            "47 Riverside Drive, Johnson City, NY, United States, 13790"
+          ]
+        },
+        "entityType": {
+          "state": "failed",
+          "reason": "Entity type: Brand/Business",
+          "evidence": [
+            "Gym/Physical Fitness Center"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Train Manchester",
+      "url": "https://facebook.com/crossfitblackfive",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": false,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Excluded",
+      "reasons": [
+        "Topic is not supported by profile evidence",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Train Manchester",
+        "Welcome to TRAIN MANCHESTER Please visit the website for all the info"
+      ],
+      "resultGroup": "Excluded",
+      "assessment": {
+        "topic": {
+          "state": "failed",
+          "reason": "Topic is not supported by profile evidence",
+          "evidence": [
+            "Train Manchester",
+            "Welcome to TRAIN MANCHESTER Please visit the website for all the info"
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "name": "Hyrox Đà Nẵng",
+      "url": "https://facebook.com/people/Hyrox-%C4%90%C3%A0-N%E1%BA%B5ng/61570727062767",
+      "category": "",
+      "location": "",
+      "classification": "Unknown",
+      "relevant": true,
+      "locationMatch": false,
+      "verifiedGeography": "",
+      "reviewState": "Needs Review",
+      "reasons": [
+        "Profile matches the search topic",
+        "Entity type is unverified",
+        "Location is unverified"
+      ],
+      "evidence": [
+        "Hyrox Đà Nẵng",
+        "HYROX ĐÀ NẴNG – STRONGER TOGETHER. NO LIMITS. HYROX Đà Nẵng là cộng đồng dành cho những người yêu thích thử thách, sức mạnh, sức bền và tinh thần vượt qua giới hạn của chính mình."
+      ],
+      "resultGroup": "Needs Verification",
+      "assessment": {
+        "topic": {
+          "state": "passed",
+          "reason": "Profile matches the search topic",
+          "evidence": [
+            "Hyrox Đà Nẵng",
+            "HYROX ĐÀ NẴNG – STRONGER TOGETHER. NO LIMITS. HYROX Đà Nẵng là cộng đồng dành cho những người yêu thích thử thách, sức mạnh, sức bền và tinh thần vượt qua giới hạn của chính mình."
+          ]
+        },
+        "geography": {
+          "state": "unknown",
+          "reason": "Location is unverified",
+          "evidence": []
+        },
+        "entityType": {
+          "state": "unknown",
+          "reason": "Entity type: Unknown",
+          "evidence": []
+        }
+      }
+    }
+  ]
+}

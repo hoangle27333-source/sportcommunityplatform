@@ -1,0 +1,36 @@
+{
+  "checkedAt": "2026-10-11T08:06:39.904Z",
+  "sessionId": "e521ae13-4d62-4234-8afe-f1d72fe0a157",
+  "originalFailure": {
+    "code": "PENDING",
+    "httpStatus": 202,
+    "reason": "15-minute session deadline"
+  },
+  "recoveredStatus": "complete",
+  "stopReason": "time-limit",
+  "counts": {
+    "found": 20,
+    "excluded": 0,
+    "existing": 1,
+    "qualified": 0,
+    "unverified": 20
+  },
+  "groupSizes": {
+    "excluded": 0,
+    "qualified": 0,
+    "belowTarget": 0,
+    "needsVerification": 20
+  },
+  "workflowRun": "wrun_41M4MZT1W10GM3XH1NJX44V658",
+  "providerRunCountBefore": 7,
+  "providerRunCountAfter": 7,
+  "providerIdentitiesUnchanged": true,
+  "additionalPaidRuns": 0,
+  "testsPassed": 245,
+  "typecheckPassed": true,
+  "deployment": {
+    "id": "dpl_oLCRDEdaXPkt3toWDFFTPawNDgG5",
+    "state": "READY",
+    "alias": "https://sportcommunityplatform.vercel.app"
+  }
+}

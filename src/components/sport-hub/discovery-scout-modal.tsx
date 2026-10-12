@@ -1,4 +1,9 @@
 "use client";
+import { AccountEvidencePanel } from './account-evidence-panel';
+import { AccountSizeFields,savedSizeCriteria } from './account-size-fields';
+import type {AccountSizeCriteria} from '@/lib/apify/account-criteria';
+import { ENTITY_TYPES, selectedEntityTypes, type EntityType } from '@/lib/apify/account-evidence';
+import { ScoutSearchPlan, useSearchPlan } from "./scout-search-plan";
 import { scoutFetch } from "@/lib/apify/scout-client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -85,8 +90,20 @@ export function DiscoveryScoutModal({
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [limit, setLimit] = useState(5);
-  const [geography, setGeography] = useState("Nationwide");
+  const [geography, setGeography] = useState("Vietnam");
+  const [entityTypes,setEntityTypes]=useState<EntityType[]>([]);
+  const [sizeCriteria,setSizeCriteria]=useState<AccountSizeCriteria>({sizeMetric:'followers'});
+  const [geographyMode,setGeographyMode]=useState<'profile'|'profile-or-recent-posts'>('profile-or-recent-posts');
+  const [typeFilter,setTypeFilter]=useState('All');
+  const [assessmentFilter,setAssessmentFilter]=useState('All');
+  const [platformFilter,setPlatformFilter]=useState('All');
+  const [locationFilter,setLocationFilter]=useState('');
   const [notes, setNotes] = useState("");
+
+  const [queryVariants,setQueryVariants]=useState<string|undefined>();
+  const [maxSessionUsd,setMaxSessionUsd]=useState<number|undefined>();
+  const planCriteria={accountPolicyVersion:5,assessmentRevision:6,...sizeCriteria,entityTypes:selectedEntityTypes(targetType,entityTypes),geographyMode,keyword:keyword.trim(),targetType,platform,geography,limit,notes,queryVariants:queryVariants===undefined?undefined:queryVariants.split('\n').map(v=>v.trim()).filter(Boolean),maxSessionUsd};
+  const searchPlan=useSearchPlan('preview',planCriteria,isOpen && step===1 && !!keyword.trim() && !!platform.length);
 
   // Loading States
   const [searching, setSearching] = useState(false);
@@ -102,6 +119,7 @@ export function DiscoveryScoutModal({
   const [expandedEdits, setExpandedEdits] = useState<Set<string>>(new Set());
   const [savingReview, setSavingReview] = useState(false);
   const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
+  const [importedQualifiedCount,setImportedQualifiedCount]=useState(0);
   const [effectiveQuery, setEffectiveQuery] = useState("");
   const [modifierApplied, setModifierApplied] = useState<string | undefined>();
   const [selectedUsernames, setSelectedUsernames] = useState<Set<string>>(new Set());
@@ -111,8 +129,8 @@ export function DiscoveryScoutModal({
   useEffect(() => {
     if (initialCriteria) {
       setKeyword(initialCriteria.keyword || ""); setTargetType(initialCriteria.targetType || initialType);
-      setPlatform(Array.isArray(initialCriteria.platform) ? initialCriteria.platform : initialCriteria.platform ? [initialCriteria.platform] : []); setGeography(initialCriteria.geography || "Nationwide");
-      setLimit(initialCriteria.limit || 5); setNotes(initialCriteria.notes || "");
+      setPlatform(Array.isArray(initialCriteria.platform) ? initialCriteria.platform : initialCriteria.platform ? [initialCriteria.platform] : []); setGeography(initialCriteria.geography || "Vietnam");
+      setMaxSessionUsd(initialCriteria.maxSessionUsd);setQueryVariants(initialCriteria.queryVariants?.join('\n'));setSizeCriteria(savedSizeCriteria(initialCriteria));setEntityTypes(initialCriteria.entityTypes || []);setGeographyMode(initialCriteria.geographyMode || 'profile-or-recent-posts');setLimit(initialCriteria.limit || 5); setNotes(initialCriteria.notes || "");
     }
     if (resumeSessionId && isOpen) void handleSearchPreview({ preventDefault() {} } as React.FormEvent, resumeSessionId);
   }, [resumeSessionId, isOpen]);
@@ -124,6 +142,7 @@ export function DiscoveryScoutModal({
   const resetAndClose = () => {
     setStep(1);
     setCandidates([]);
+    setImportedQualifiedCount(0);
     setDecisions({});
     setReviewed(new Set());
     setCandidateEdits({});
@@ -150,12 +169,14 @@ export function DiscoveryScoutModal({
     }
 
     if (!resumeId && (!platform.length || platform.some(p => !availability(p).available))) { toast.error("Choose an available platform before searching."); return; }
+    if(!resumeId && !searchPlan.plan){toast.error(searchPlan.error || "Wait for the search plan to be ready.");return;}
     setSearching(true);
     try {
       const res = await scoutFetch("/api/sport-hub/scout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(resumeId ? { action: "resume", sessionId: resumeId } : {
+          ...planCriteria,planHash:searchPlan.plan?.hash,
           action: "preview",
           keyword: cleanKeyword,
           targetType,
@@ -174,8 +195,15 @@ export function DiscoveryScoutModal({
 
       if (!mounted.current) return;
       const importedIds = new Set(result.importedCandidateIds || []);
+      setImportedQualifiedCount((result.candidates || []).filter((c:DiscoveryCandidate)=>importedIds.has(c.candidateId) && c.reviewState==='Matched' && !c.isExisting).length);
       const fetchedCandidates: DiscoveryCandidate[] = (result.candidates || []).filter((c: DiscoveryCandidate) => !importedIds.has(c.candidateId));
-      if (result.criteria) { const p = result.criteria; setKeyword(p.keyword); setTargetType(p.targetType); setPlatform(Array.isArray(p.platform) ? p.platform : [p.platform]); setGeography(p.geography); setLimit(p.limit); }
+      const defaultAssessment = fetchedCandidates.some(c => c.reviewState === 'Matched')
+        ? 'Matched'
+        : fetchedCandidates.some(c => c.reviewState === 'Needs Review')
+        ? 'Needs Review'
+        : 'All';
+      if (result.criteria) { const p = result.criteria; setKeyword(p.keyword); setTargetType(p.targetType); setPlatform(Array.isArray(p.platform) ? p.platform : [p.platform]); setGeography(p.geography); setLimit(p.limit);setSizeCriteria(savedSizeCriteria(p));setMaxSessionUsd(p.maxSessionUsd);setQueryVariants(p.queryVariants?.join('\n'));setAssessmentFilter(defaultAssessment);setEntityTypes(p.entityTypes || []);setGeographyMode(p.geographyMode || 'profile'); }
+      else { setAssessmentFilter(defaultAssessment); }
       setDiscoveryWarnings(result.warnings || []);
       setDiscoveryCounts(result.diagnostics || null);
       setCandidates(fetchedCandidates);
@@ -203,8 +231,10 @@ export function DiscoveryScoutModal({
       setSelectedUsernames(new Set(fetchedCandidates.filter(c => restored[c.candidateId]?.decision === "approved").map(c => c.candidateId)));
 
       setStep(2);
-      if (result.partial || fetchedCandidates.length < (result.criteria?.limit || limit)) toast.info(`Found ${fetchedCandidates.length} profiles (minimum target: ${result.criteria?.limit || limit}). Review discovery details below.`);
-      else toast.success(`Found ${fetchedCandidates.length} candidate profiles (${result.newCount ?? fetchedCandidates.filter(c => !c.isExisting).length} new). Please review and select profiles to import.`);
+      const qualified=result.counts?.qualifiedNew ?? fetchedCandidates.filter(c=>c.reviewState==='Matched' && !c.isExisting).length;
+      const target=result.criteria?.limit || limit;
+      if(qualified<target)toast.info(`${qualified}/${target} qualified new accounts. Missing evidence remains available for review.`);
+      else toast.success(`${qualified}/${target} qualified new accounts. Review before importing.`);
     } catch (err: any) {
       toast.error(err.message || "Server connection error during candidate discovery");
     } finally {
@@ -231,8 +261,8 @@ export function DiscoveryScoutModal({
 
     return {
       classification: defaultClassification,
-      relevant: true,
-      locationConfirmed: true,
+      relevant: candidate.relevant===true,
+      locationConfirmed: candidate.locationMatch===true,
     };
   };
 
@@ -265,7 +295,9 @@ export function DiscoveryScoutModal({
 
   // Helper: Check if candidate meets requirements to be approved
   const isCandidateReadyToApprove = (candidate: DiscoveryCandidate) => {
-    if (candidate.reviewState === "Excluded") return false;
+    if(['followers','members'].some(metric=>candidate.assessment?.[metric] && candidate.assessment[metric].state!=='passed'))return false;
+    if (candidate.reviewState === "Excluded" || candidate.entityAssessment && !['Individual','Community','Club','Unknown'].includes(candidate.entityAssessment.suggestedType)) return false;
+    if(candidate.entityAssessment?.status!=='supported' && candidate.entityAssessment && !candidate.entityAssessment.reviewedType)return false;
     const edit = getCandidateEdit(candidate);
     const expected = getExpectedClassification();
     if (candidate.reviewState === "Needs Review") {
@@ -285,7 +317,8 @@ export function DiscoveryScoutModal({
   const handleFeedbackAndReject = async (
     candidate: DiscoveryCandidate,
     reason: string,
-    classification?: string
+    classification?: string,
+    entityType?:EntityType
   ) => {
     setSavingReview(true);
     try {
@@ -297,12 +330,14 @@ export function DiscoveryScoutModal({
           candidateId: candidate.candidateId,
           reason,
           classification: classification || undefined,
+          entityType,
         }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Failed to record feedback.");
-      toast.success("Feedback recorded and profile excluded.");
-      setCandidates((prev) => prev.filter((c) => c.candidateId !== candidate.candidateId));
+      toast.success(result.candidate?'Correction saved. Review the updated assessment.':'Feedback recorded and profile excluded.');
+      setCandidates(prev=>result.candidate?prev.map(c=>c.candidateId===candidate.candidateId?result.candidate:c):prev.filter(c=>c.candidateId!==candidate.candidateId));
+      if(result.candidate){setDecisions(prev=>{const next={...prev};delete next[candidate.candidateId];return next;});setCandidateEdits(prev=>{const next={...prev};delete next[candidate.candidateId];return next;});}
       setSelectedUsernames((prev) => {
         const next = new Set(prev);
         next.delete(candidate.candidateId);
@@ -359,6 +394,12 @@ export function DiscoveryScoutModal({
           `Successfully imported ${selected.length} profile(s) into database!`
       );
 
+      if(mounted.current){
+        setImportedQualifiedCount(n=>n+selected.filter(c=>c.reviewState==='Matched' && !c.isExisting).length);
+        const imported=new Set(selected.map(c=>c.candidateId));
+        setCandidates(prev=>prev.filter(c=>!imported.has(c.candidateId)));
+        setSelectedUsernames(new Set());
+      }
       if (mounted.current && onSuccess) onSuccess({ ...result, sessionId });
       if (onScoutSuccess) onScoutSuccess();
       if (mounted.current && !keepResultOpen) resetAndClose();
@@ -385,7 +426,7 @@ export function DiscoveryScoutModal({
 
   // Quick Selection Helpers
   const selectAll = () => {
-    const tabCandidates = candidates.filter((c) => reviewStatus(c) === reviewTab);
+    const tabCandidates = candidates.filter((c) => reviewStatus(c) === reviewTab && matchesFilters(c));
     setSelectedUsernames((prev) => {
       const next = new Set(prev);
       for (const c of tabCandidates) next.add(c.candidateId);
@@ -394,7 +435,7 @@ export function DiscoveryScoutModal({
   };
 
   const selectAllPending = () => {
-    const pending = candidates.filter((c) => reviewStatus(c) === "Pending");
+    const pending = candidates.filter((c) => reviewStatus(c) === "Pending" && matchesFilters(c));
     setSelectedUsernames((prev) => {
       const next = new Set(prev);
       for (const c of pending) next.add(c.candidateId);
@@ -433,6 +474,7 @@ export function DiscoveryScoutModal({
           candidateId: c.candidateId,
           decision,
           typeConfirmed: edit.classification === expected,
+          entityType:c.entityAssessment?(c.entityAssessment.reviewedType || (c.entityAssessment.suggestedType==='Club'?'Club':edit.classification==='Community'?'Community':edit.classification==='Individual'?'Individual':'Unknown')):undefined,
           relevant: edit.relevant,
           locationConfirmed: edit.locationConfirmed,
         };
@@ -507,6 +549,7 @@ export function DiscoveryScoutModal({
           candidateId: candidate.candidateId,
           decision,
           typeConfirmed,
+          entityType:candidate.entityAssessment?(candidate.entityAssessment.reviewedType || (candidate.entityAssessment.suggestedType==='Club'?'Club':edit.classification==='Community'?'Community':edit.classification==='Individual'?'Individual':'Unknown')):undefined,
           relevant: edit.relevant,
           locationConfirmed: edit.locationConfirmed,
         }),
@@ -541,14 +584,17 @@ export function DiscoveryScoutModal({
     }
   }
   const reviewStatus = (candidate: DiscoveryCandidate) => decisions[candidate.candidateId]?.decision === "approved" ? "Approved" : decisions[candidate.candidateId]?.decision === "rejected" ? "Rejected" : "Pending";
-  const pendingCount = candidates.filter(c => reviewStatus(c) === "Pending").length;
+  const matchesFilters=(c:DiscoveryCandidate)=>(typeFilter==='All' || (c.entityAssessment?.suggestedType || c.classification)===typeFilter) && (assessmentFilter==='All' || assessmentFilter==='In CRM'?assessmentFilter==='All' || c.isExisting:c.reviewState===assessmentFilter && !c.isExisting) && (platformFilter==='All' || c.platform===platformFilter) && (!locationFilter.trim() || (c.geographyAssessment?.observations || []).some(o=>(o.canonical || o.raw).toLowerCase().includes(locationFilter.trim().toLowerCase())));
+  const totalPendingCount = candidates.filter(c => reviewStatus(c) === "Pending").length;
+  const pendingCount = candidates.filter(c => reviewStatus(c) === "Pending" && matchesFilters(c)).length;
   const approvedSelectedCount = candidates.filter(c => selectedUsernames.has(c.candidateId) && reviewStatus(c) === "Approved").length;
 
+  const qualifiedNewCount=importedQualifiedCount+candidates.filter(c=>c.reviewState==='Matched' && !c.isExisting).length;
   const newCandidatesCount = candidates.filter((c) => !c.isExisting).length;
   const existingCandidatesCount = candidates.filter((c) => c.isExisting).length;
 
   const reviewFooter = step === 2 ? (<>
-    <p className="mb-3 text-xs text-slate-600" role="status">{pendingCount} pending review · {candidates.filter(c => reviewStatus(c) === "Approved").length} approved. Approval allows CRM import; new profiles retain New Scout (Unverified) status.</p>
+    <p className="mb-3 text-xs text-slate-600" role="status">{totalPendingCount} pending review · {candidates.filter(c => reviewStatus(c) === "Approved").length} approved. Approval allows CRM import; new profiles retain New Scout (Unverified) status.</p>
             {/* Step 2 Bottom Action Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
               <button
@@ -765,7 +811,7 @@ export function DiscoveryScoutModal({
                   </fieldset>
                   <p className="mt-2 text-xs text-slate-500">Select one or more platforms. All eligible profiles collected across these platforms are returned.</p>
                   <p className="mt-2 text-xs text-slate-500">Highest observed followers or members first, then average views and engagement rate. Unknown metrics are placed after observed values. Ranking applies to the retrieved candidate pool.</p>
-                  {platform.includes("Facebook") && <p className="mt-2 text-xs text-slate-500">Facebook discovery also fetches audience details for eligible profiles missing followers, within the Scout budget. This may incur additional provider usage. Inaccessible metrics remain Unknown.</p>}
+                  {platform.includes("Facebook") && <p className="mt-2 text-xs text-slate-500">Facebook discovery enriches incomplete profiles before assessment, within the reviewed Scout budget. This may incur additional provider usage. Inaccessible metrics remain Unknown.</p>}
                 </div>
 
               </div>
@@ -781,7 +827,9 @@ export function DiscoveryScoutModal({
                     onChange={(e) => setGeography(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
-                    <option value="Nationwide">Nationwide</option>
+                    <option value="Vietnam">Vietnam</option>
+                    <option value="Any location">Any location</option>
+                    <option value="Nationwide">Nationwide (no location filter)</option>
                     <option value="Hanoi">Hanoi</option>
                     <option value="Ho Chi Minh City">Ho Chi Minh City</option>
                     <option value="Da Nang">Da Nang</option>
@@ -819,6 +867,13 @@ export function DiscoveryScoutModal({
                   />
                 </div>
               </details>
+              <fieldset className="rounded-xl border border-slate-200 p-3 space-y-2 text-xs"><legend className="font-semibold">Account types</legend>
+                <div className="flex flex-wrap gap-3">{ENTITY_TYPES.map(type=><label key={type} className="flex items-center gap-1"><input type="checkbox" checked={selectedEntityTypes(targetType,entityTypes).includes(type)} onChange={event=>{const current=selectedEntityTypes(targetType,entityTypes);const next=event.target.checked?[...current,type]:current.filter(value=>value!==type);if(next.length)setEntityTypes(next);}}/>{t(type)}</label>)}</div>
+                <label className="block">Geography evidence <select value={geographyMode} onChange={event=>setGeographyMode(event.target.value as typeof geographyMode)} className="rounded border p-1"><option value="profile-or-recent-posts">Profile or sampled owned posts</option><option value="profile">Profile only</option></select></label>
+                <p>Locations mentioned in captions or hashtags remain available for verification. Account followers are separate from club members.</p>
+              </fieldset>
+              <AccountSizeFields value={sizeCriteria} onChange={setSizeCriteria}/>
+              <ScoutSearchPlan {...searchPlan} variants={queryVariants} onVariants={setQueryVariants} budget={maxSessionUsd} onBudget={setMaxSessionUsd}/>
               {!platforms.length && <p role="status" className="text-xs text-amber-800">{SCOUT_PLATFORMS.map(p => `${p}: ${availability(p).reason}`).join(" · ")}</p>}
 
               {/* Progress Indicator when Searching */}
@@ -826,9 +881,9 @@ export function DiscoveryScoutModal({
                 <div className="bg-purple-50 border border-purple-200 rounded-2xl p-3.5 flex items-center space-x-3 text-xs text-purple-900 animate-pulse">
                   <RefreshCw className="w-5 h-5 text-purple-600 animate-spin shrink-0" />
                   <div>
-                    <p className="font-bold">Discovering Candidate Profiles...</p>
+                    <p className="font-bold">{resumeSessionId ? 'Loading Saved Task...' : 'Discovering Candidate Profiles...'}</p>
                     <p className="text-[11px] text-purple-700 mt-0.5 leading-relaxed">
-                      Crawling live {platform.join(", ")} profiles for &ldquo;{keyword}&rdquo;, extracting profile links and cross-checking with existing CRM records.
+                      {resumeSessionId ? 'Loading saved task status, profile evidence and review decisions.' : <>Crawling live {platform.join(", ")} profiles for &ldquo;{keyword}&rdquo;, extracting profile links and cross-checking with existing CRM records.</>}
                     </p>
                   </div>
                 </div>
@@ -846,7 +901,7 @@ export function DiscoveryScoutModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={searching || (!platform.length || platform.some(p => !availability(p).available))}
+                  disabled={searching || !searchPlan.plan || searchPlan.loading || (!platform.length || platform.some(p => !availability(p).available))}
                   className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-95 rounded-xl transition shadow-md flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {searching ? (
@@ -855,7 +910,7 @@ export function DiscoveryScoutModal({
                     <Search className="w-3.5 h-3.5 text-amber-300" />
                   )}
                   <span>
-                    {searching ? "Finding Candidate Profiles..." : "Find Candidate Profiles (Step 1)"}
+                    {searching ? (resumeSessionId ? 'Loading Saved Task...' : 'Finding Candidate Profiles...') : 'Start Scout'}
                   </span>
                 </button>
               </div>
@@ -887,7 +942,7 @@ export function DiscoveryScoutModal({
 
               <div className="flex items-center space-x-2 text-xs font-semibold">
                 <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                  {newCandidatesCount} New
+                  {qualifiedNewCount}/{limit} qualified new accounts
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
                   {existingCandidatesCount} In CRM
@@ -895,16 +950,18 @@ export function DiscoveryScoutModal({
               </div>
             </div>
 
-            {discoveryCounts && <p className="text-xs text-slate-600">Returned {candidates.length} profiles · Minimum target: {discoveryCounts.requestedCount} · {discoveryCounts.providerCount} provider results · {discoveryCounts.excludedCount} excluded</p>}
+            {importedQualifiedCount>0 && <p className="text-xs text-emerald-700">{formatNumber(importedQualifiedCount)} qualified accounts imported from this search. Saved review decisions are retained.</p>}
+            {discoveryCounts && <p className="text-xs text-slate-600">{discoveryCounts.providerCount} provider results · {candidates.filter(c => c.reviewState === 'Needs Review').length} need verification · {discoveryCounts.excludedCount} excluded</p>}
             {discoveryWarnings.length > 0 && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{discoveryWarnings.map((warning, index) => <p key={index}>{warning}</p>)}</div>}
 
+            <p className="text-xs text-slate-600">{Math.max(0,limit-qualifiedNewCount)} still needed · Search stopped: {String((discoveryCounts as any)?.stopReason || 'available-evidence-exhausted').replaceAll('-', ' ')}</p>
             {/* Review Status Tabs & Batch Action Toolbar */}
             <div className="space-y-2.5 shrink-0">
               {/* Tabs Row */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
                 <div className="flex gap-1.5">
                   {[
-                    { key: "Pending", count: pendingCount },
+                    { key: "Pending", count: totalPendingCount },
                     { key: "Approved", count: candidates.filter(c => reviewStatus(c) === "Approved").length },
                     { key: "Rejected", count: candidates.filter(c => reviewStatus(c) === "Rejected").length },
                   ].map(tab => {
@@ -943,11 +1000,11 @@ export function DiscoveryScoutModal({
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Select:</span>
                   <button
                     type="button"
-                    disabled={savingReview || importing || candidates.filter(c => reviewStatus(c) === reviewTab).length === 0}
+                    disabled={savingReview || importing || candidates.filter(c => reviewStatus(c) === reviewTab && matchesFilters(c)).length === 0}
                     onClick={selectAll}
                     className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-slate-300 text-slate-700 font-semibold text-[11px] transition shadow-2xs cursor-pointer disabled:opacity-50"
                   >
-                    All in {reviewTab} ({candidates.filter(c => reviewStatus(c) === reviewTab).length})
+                    All in {reviewTab} ({candidates.filter(c => reviewStatus(c) === reviewTab && matchesFilters(c)).length})
                   </button>
 
                   {reviewTab !== "Pending" && pendingCount > 0 && (
@@ -994,7 +1051,7 @@ export function DiscoveryScoutModal({
                     <button
                       type="button"
                       disabled={savingReview || importing}
-                      onClick={() => saveBatchReview(candidates.filter(c => reviewStatus(c) === "Pending"), "approved")}
+                      onClick={() => saveBatchReview(candidates.filter(c => reviewStatus(c) === "Pending" && matchesFilters(c)), "approved")}
                       className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                       title="Approve all pending candidates at once with verified default attributes"
                     >
@@ -1018,10 +1075,56 @@ export function DiscoveryScoutModal({
               </div>
             </div>
 
+            <div className="flex flex-wrap gap-2 text-xs" aria-label="Filter Scout results">
+              <label>Type <select aria-label="Type" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} className="border rounded p-1"><option value="All">All types</option>{ENTITY_TYPES.map(type=><option key={type} value={type}>{t(type)}</option>)}</select></label>
+              <label>Assessment <select aria-label="Assessment" value={assessmentFilter} onChange={e=>setAssessmentFilter(e.target.value)} className="border rounded p-1"><option value="All">All assessments</option><option value="Matched">Qualified</option><option value="Needs Review">Needs Verification</option><option value="Excluded">Excluded</option><option value="In CRM">In CRM</option></select></label>
+              <label>Platform <select aria-label="Platform" value={platformFilter} onChange={e=>setPlatformFilter(e.target.value)} className="border rounded p-1"><option value="All">All platforms</option>{SCOUT_PLATFORMS.map(p=><option key={p} value={p}>{t(p)}</option>)}</select></label>
+              <label>Observed location <input value={locationFilter} onChange={e=>setLocationFilter(e.target.value)} placeholder="Filter observed locations" className="border rounded p-1"/></label>
+            </div>
             {/* Candidate Cards Scrollable List */}
             <div className="space-y-2.5">
-              {!candidates.some(c => reviewStatus(c) === reviewTab) && <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">No profiles in {reviewTab.toLowerCase()}.</p>}
-              {candidates.filter(c => reviewStatus(c) === reviewTab).map((candidate) => {
+              {!candidates.some(c => reviewStatus(c) === reviewTab && matchesFilters(c)) && (
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-600 space-y-2.5">
+                  <p className="font-semibold text-slate-800">
+                    No profiles match these filters in {reviewTab} tab.
+                  </p>
+                  {candidates.some(c => reviewStatus(c) === reviewTab) && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-slate-500">
+                        {candidates.filter(c => reviewStatus(c) === reviewTab).length} profile(s) available in {reviewTab}:
+                      </span>
+                      {candidates.some(c => reviewStatus(c) === reviewTab && c.reviewState === 'Needs Review') && assessmentFilter !== 'Needs Review' && (
+                        <button
+                          type="button"
+                          onClick={() => setAssessmentFilter('Needs Review')}
+                          className="px-2.5 py-1 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold transition cursor-pointer"
+                        >
+                          Show Needs Verification ({candidates.filter(c => reviewStatus(c) === reviewTab && c.reviewState === 'Needs Review').length})
+                        </button>
+                      )}
+                      {candidates.some(c => reviewStatus(c) === reviewTab && c.reviewState === 'Matched') && assessmentFilter !== 'Matched' && (
+                        <button
+                          type="button"
+                          onClick={() => setAssessmentFilter('Matched')}
+                          className="px-2.5 py-1 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold transition cursor-pointer"
+                        >
+                          Show Qualified ({candidates.filter(c => reviewStatus(c) === reviewTab && c.reviewState === 'Matched').length})
+                        </button>
+                      )}
+                      {(assessmentFilter !== 'All' || typeFilter !== 'All' || platformFilter !== 'All' || !!locationFilter) && (
+                        <button
+                          type="button"
+                          onClick={() => { setAssessmentFilter('All'); setTypeFilter('All'); setPlatformFilter('All'); setLocationFilter(''); }}
+                          className="px-2.5 py-1 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold transition cursor-pointer"
+                        >
+                          Show All Assessments ({candidates.filter(c => reviewStatus(c) === reviewTab).length})
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {candidates.filter(c => reviewStatus(c) === reviewTab && matchesFilters(c)).map((candidate) => {
                 const isSelected = selectedUsernames.has(candidate.candidateId);
                 const edit = getCandidateEdit(candidate);
                 const expected = getExpectedClassification();
@@ -1152,8 +1255,8 @@ export function DiscoveryScoutModal({
                       <div className="flex sm:flex-col items-end sm:items-end justify-between sm:justify-center shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 gap-1 pl-8 sm:pl-0">
                         <div className="flex items-center space-x-1.5 text-xs font-extrabold text-slate-800">
                           <Users className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{candidate.followers === null ? "Unknown" : formatNumber(candidate.followers)}</span>
-                          <span className="text-[10px] text-slate-500 font-normal">followers</span>
+                          <span>{(sizeCriteria.sizeMetric==='members'?candidate.members:candidate.followers) == null ? "Unknown" : formatNumber((sizeCriteria.sizeMetric==='members'?candidate.members:candidate.followers)!)}</span>
+                          <span className="text-[10px] text-slate-500 font-normal">{sizeCriteria.sizeMetric==='members'?'members':'followers'}</span>
                         </div>
                         <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-semibold">
                           <span className="text-indigo-600 font-bold">
@@ -1220,6 +1323,7 @@ export function DiscoveryScoutModal({
                         </details>
                       )}
 
+                      <AccountEvidencePanel candidate={candidate} disabled={savingReview || importing || isApproved} onCorrect={type=>void handleFeedbackAndReject(candidate,'Wrong Entity Type',undefined,type)}/>
                       {/* Editable Verification & Classification Box */}
                       {isEditorOpen && (
                         <div

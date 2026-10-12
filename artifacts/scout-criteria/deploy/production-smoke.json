@@ -1,0 +1,48 @@
+{
+  "recordedAt": "2026-10-11T16:49:16.528Z",
+  "deployment": "dpl_GL9yhRCWiP5qXbesXzox4aGEZDSq",
+  "ready": true,
+  "productionUrl": "https://sportcommunityplatform.vercel.app",
+  "hostedBuildPassed": true,
+  "results": [
+    {
+      "name": "login",
+      "status": 200,
+      "location": null,
+      "rendered": true
+    },
+    {
+      "name": "scout",
+      "status": 307,
+      "location": "/login"
+    },
+    {
+      "name": "plan",
+      "status": 401,
+      "location": null,
+      "body": {
+        "success": false,
+        "error": "Please log in",
+        "code": "UNAUTHORIZED"
+      }
+    },
+    {
+      "name": "fixture",
+      "status": 404,
+      "location": null
+    },
+    {
+      "name": "reassessment",
+      "status": 401,
+      "location": null,
+      "body": {
+        "success": false,
+        "error": "Please log in",
+        "code": "UNAUTHORIZED"
+      }
+    }
+  ],
+  "providerStarts": 0,
+  "crmMutations": 0,
+  "authenticatedFlowVerified": false
+}

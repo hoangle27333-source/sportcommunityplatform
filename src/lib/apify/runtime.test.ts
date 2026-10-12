@@ -1,3 +1,4 @@
+import { boundedScoutStep } from './execution-budget';
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({tables:{} as Record<string,any[]>,claims:0,settlements:[] as any[]}));
 vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({from(table:string){let op='select';let value:any;const filters:((r:any)=>boolean)[]=[];
@@ -49,4 +50,39 @@ describe('Facebook audience contract validation',()=>{
   expect(validateProviderItem('apify~facebook-pages-scraper','profile-details',{pageUrl:'https://facebook.com/nike',followers:'many'})).toBe(false);
   expect(validateProviderItem('apify~facebook-pages-scraper','profile-details',{pageUrl:'https://facebook.com/nike',followers:0})).toBe(true);
  });
+});
+
+describe('bounded Workflow execution',()=>{
+ it.each(['failed','aborted','timed-out'])('replays settled %s without starving the next provider unit',async terminal=>{
+  state.tables.scout_provider_runs.push({id:'terminal',session_id:'s',task_key:inputKey(plan.actor,'1.2.3','profiles',plan.input),state:terminal,provider_run_id:'old',actual_usd:.04});
+  const fetch=provider();
+  const rows=await boundedScoutStep(async()=>{
+   await expect(executePlan('s','Instagram','profiles',plan)).rejects.toMatchObject({code:terminal.toUpperCase()});
+   return executePlan('s','Instagram','profiles',{...plan,input:{...plan.input,search:'other'}});
+  });
+  expect(rows).toHaveLength(1);expect(state.claims).toBe(1);
+  expect(fetch.mock.calls.some(([url])=>String(url).includes('/actor-runs/old'))).toBe(false);
+  expect(state.settlements.some(p=>p.p_run==='terminal')).toBe(false);
+ });
+ it('persists dataset paging and resumes without a second paid provider start',async()=>{
+  const first=Array.from({length:1000},(_,i)=>({username:`runner${i}`,followersCount:i}));
+  const fetch=vi.fn(async(url:any)=>new Response(JSON.stringify(String(url).includes('/acts/') ? {data:{id:'r',defaultDatasetId:'d',buildId:'b'}} : String(url).includes('/actor-runs/') ? {data:{status:'SUCCEEDED',finishedAt:'2026-10-11T00:00:00Z',buildId:'b',storageIds:{datasets:{default:'d'}}}} : String(url).includes('offset=0') ? first : [{username:'last',followersCount:1}])));
+  vi.stubGlobal('fetch',fetch);
+  await expect(boundedScoutStep(()=>executePlan('s','Instagram','profiles',plan))).rejects.toMatchObject({code:'PENDING'});
+  expect(state.tables.scout_provider_runs[0].dataset_progress.offset).toBe(1000);
+  const rows=await boundedScoutStep(()=>executePlan('s','Instagram','profiles',plan));
+  expect(rows).toHaveLength(1001);expect(fetch.mock.calls.filter(([url])=>String(url).includes('/acts/'))).toHaveLength(1);
+  const calls=fetch.mock.calls.length;await boundedScoutStep(()=>executePlan('s','Instagram','profiles',plan));expect(fetch).toHaveBeenCalledTimes(calls);
+ });
+ it('allows only one uncached provider unit in each step',async()=>{
+  const fetch=provider();
+  await expect(boundedScoutStep(async()=>{await executePlan('s','Instagram','profiles',plan);return executePlan('s','Instagram','profiles',{...plan,input:{...plan.input,search:'other'}});})).rejects.toMatchObject({code:'PENDING'});
+  expect(fetch.mock.calls.filter(([url])=>String(url).includes('/acts/'))).toHaveLength(1);expect(state.claims).toBe(1);
+ });
+});
+
+it('blocks every provider operation from a stored-evidence context before any reservation or network call',async()=>{
+ const {withStoredEvidence}=await import('./stored-evidence');const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+ await expect(withStoredEvidence([],()=>executePlan('s','Instagram','profiles',plan))).rejects.toMatchObject({code:'PAID_REPLAY_BLOCKED'});
+ expect(state.claims).toBe(0);expect(fetch).not.toHaveBeenCalled();
 });

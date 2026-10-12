@@ -18,12 +18,19 @@ export async function workspaceCapabilities(): Promise<ScoutCapabilities> {
     try {
       const group = task.startsWith('group-');
       const query = group ? 'https://www.facebook.com/groups/123456' : platform === 'TikTok' ? 'https://www.tiktok.com/@example' : `https://www.${platform.toLowerCase()}.com/example`;
-      const tasks: ScoutTask[] = task === 'sync' || task === 'group-sync' ? ['profile-details', ...(group ? [] : ['profile-posts'] as ScoutTask[])] : task === 'profiles' || task === 'communities' ? [task, 'profile-details'] : [task === 'group-posts' ? 'profile-posts' : task === 'group-details' ? 'profile-details' : task as ScoutTask];
+      const tasks: ScoutTask[] = platform === 'TikTok' && task === 'communities' ? ['communities'] : task === 'sync' || task === 'group-sync' ? ['profile-details', ...(group ? [] : ['profile-posts'] as ScoutTask[])] : task === 'profiles' || task === 'communities' ? [task, 'profile-details'] : [task === 'group-posts' ? 'profile-posts' : task === 'group-details' ? 'profile-details' : task==='keyword' && platform==='Instagram'?'hashtag':task as ScoutTask];
       const keys = tasks.flatMap(t => providerPlans(platform, t, ['profiles','communities','hashtag','keyword'].includes(t) ? 'sports' : query, 1).map(plan => capabilityKey(plan, t)));
-      const available = keys.every(key => verified.has(key));
+      const communitySearch = task === 'communities' && platform === 'Facebook';
+      const discoveryKeys = communitySearch ? providerPlans(platform,'communities','sports',1).map(plan=>capabilityKey(plan,'communities')) : keys;
+      const discovery=task==='profiles' || task==='communities';
+      const profileKeys=discovery?providerPlans(platform,task as ScoutTask,'sports',1).map(plan=>capabilityKey(plan,task as ScoutTask)):[];
+      const authorTask=platform==='Instagram'?'hashtag':'keyword';
+      const authorKeys=discovery?[...providerPlans(platform,authorTask,'sports',1).map(plan=>capabilityKey(plan,authorTask)),...providerPlans(platform,'profile-details',query,1).map(plan=>capabilityKey(plan,'profile-details'))]:[];
+      const available = discovery ? profileKeys.some(key=>verified.has(key)) || authorKeys.every(key=>verified.has(key)) : communitySearch ? discoveryKeys.some(key=>verified.has(key)) : keys.every(key => verified.has(key));
+      const partial = communitySearch && !discoveryKeys.every(key=>verified.has(key));
       const runCap = Number(platform === 'TikTok' ? budget?.tiktok_run_usd : budget?.run_usd);
       const policyBlocked=keys.some(key => receipts?.some(r => r.capability_key===key && !r.verified && r.receipt?.code==='ACTOR_MINIMUM_EXCEEDS_POLICY' && Number(r.receipt.minimumRunCapUsd) > runCap));
-      return [task, { available, ...(!available ? { reason: policyBlocked ? 'This Actor requires a run cap above the system policy.' : 'This collection capability has not passed provider verification.' } : {}) }];
+      return [task, { available, ...(available && partial ? {partial:true,reason:'Search covers verified Facebook sources only; unavailable sources are reported in the results.'} : {}), ...(!available ? { reason: policyBlocked ? 'This Actor requires a run cap above the system policy.' : 'This collection capability has not passed provider verification.' } : {}) }];
     } catch (e: any) { return [task, { available: false, reason: e.message || 'This task is unavailable on this platform.' }]; }
   }))])) as ScoutCapabilities;
 }

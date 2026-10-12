@@ -1,0 +1,80 @@
+{
+  "recordedAt": "2026-10-11T15:34:23.939Z",
+  "deployment": "dpl_H4qCSRUDW6PLNU3CiLV7tc5MUX8m",
+  "alias": "https://sportcommunityplatform.vercel.app",
+  "modelMode": "off",
+  "modelRevision": "rules-5",
+  "accountPolicy": 5,
+  "child": {
+    "id": "7f8d0917-ab3c-5075-a311-6d5f577933da",
+    "status": "complete",
+    "workflowRunId": "wrun_41M4NSH2Q80GJ3E8SXSRP1HGKT",
+    "providerStarts": 0,
+    "providerRuns": 0,
+    "counts": {
+      "found": 30,
+      "excluded": 19,
+      "existing": 7,
+      "qualified": 0,
+      "unverified": 11
+    },
+    "types": {
+      "Media/Event": 2,
+      "Brand/Business": 3,
+      "Unknown": 23,
+      "Community": 1,
+      "Club": 1
+    },
+    "partialGeography": 30,
+    "allPolicyKeysPresent": true
+  },
+  "sources": [
+    {
+      "id": "4cc9de34-2d4d-4ae7-96a2-6e39cc79ac2c",
+      "sourceUnchanged": true,
+      "providerLedgerUnchanged": true
+    },
+    {
+      "id": "9c68115e-b3f3-4cb3-8844-a5606245ef69",
+      "sourceUnchanged": true,
+      "providerLedgerUnchanged": true
+    }
+  ],
+  "counts": {
+    "scout_sessions": 72,
+    "scout_provider_runs": 111,
+    "kols": 85,
+    "communities": 4
+  },
+  "finalDeployment": "dpl_9vPXCdfceckmToNaFfibdYAUf1P5",
+  "finalUrl": "https://sportcommunityplatform-3znvfleci-hoang-le2.vercel.app",
+  "idempotentReassessment": true,
+  "httpChecks": {
+    "login": 200,
+    "unauthenticatedPlan": 401,
+    "unauthenticatedReassessment": 401,
+    "productionWorkflowFixture": 404
+  },
+  "uiChecks": {
+    "englishAccountTypes": true,
+    "geographyLatest10Setting": true,
+    "mixedIndividualClubQueries": true,
+    "unchangedSessionCapUsd": 1,
+    "profileEvidenceAfterReload": true,
+    "businessTypeFilter": true,
+    "businessImportBlocked": true,
+    "savedReviewLoadingCopy": true
+  },
+  "migrationPrivileges": {
+    "anon": false,
+    "authenticated": false,
+    "service_role": true
+  },
+  "finalCounts": {
+    "scout_sessions": 72,
+    "scout_provider_runs": 111,
+    "kols": 85,
+    "communities": 4
+  },
+  "finalVerifiedAt": "2026-10-11T15:43:25.282Z"
+}

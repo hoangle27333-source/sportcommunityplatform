@@ -1,0 +1,37 @@
+{
+  "checkedAt": "2026-10-11T06:49:38.370Z",
+  "sessionId": "e521ae13-4d62-4234-8afe-f1d72fe0a157",
+  "oldWorkflow": "wrun_41M4MV5GA60GY67DAYC4Z883ME",
+  "newWorkflow": "wrun_41M4MVHVX10GSJ5RPXVVDY2751",
+  "deploymentId": "dpl_FqgGhkDVDC8PS8chRicenDmHxWJ4",
+  "testsPassed": 35,
+  "typecheckPassed": true,
+  "providerRuns": [
+    {
+      "actor": "apify~instagram-scraper",
+      "state": "timed-out",
+      "provider_run_id": "Ny6GCphloRQuktO2M",
+      "actual_usd": 0.0459,
+      "input": {
+        "search": "Pickleball Vietnam",
+        "searchType": "user",
+        "resultsType": "details",
+        "searchLimit": 20,
+        "resultsLimit": 20
+      }
+    },
+    {
+      "actor": "clockworks~tiktok-scraper",
+      "state": "running",
+      "provider_run_id": "BBbtpNmM2YgudeBlJ",
+      "actual_usd": null,
+      "input": {
+        "searchQueries": [
+          "Pickleball Vietnam"
+        ],
+        "searchSection": "/user",
+        "maxProfilesPerQuery": 20
+      }
+    }
+  ]
+}

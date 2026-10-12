@@ -16,7 +16,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from(table:
   return query;
 },rpc:async()=>({data:null,error:null}) }) }));
 vi.mock('./providers', async () => { const actual = await vi.importActual<any>('./providers'); return { ...actual, scrape: vi.fn() }; });
-import { compareDiscoveryMetrics, ingestSelectedCandidates, previewDiscoveryCandidates, scoutMarketTrends, scoutSingleKolPosts } from './scout';
+import { compareDiscoveryMetrics, ingestSelectedCandidates, previewDiscoveryCandidates, scoutMarketTrends, scoutSingleKolPosts, scoutLatestCommunityPosts } from './scout';
 import { scrape } from './providers';
 import badmintonSearch from './fixtures/facebook-badminton-search.json';
 import { canonicalUrl } from './discovery-quality';
@@ -25,6 +25,28 @@ beforeEach(() => {
   state.tables = { scout_sessions: [{ id: 's', created_at:'2026-10-05T00:00:00Z', owner_id: state.owner, kind: 'preview', status: 'complete', params: { keyword: 'run', platform: 'Instagram', targetType: 'Individual KOLs', geography: 'Nationwide' }, candidates: [{ ...candidate }] }], kols: [], communities: [], scout_feedback: [], scouted_posts: [] }; state.failTable = ''; vi.mocked(scrape).mockReset();
 });
 describe('Server-owned preview and import', () => {
+  it('persists follower criteria and assessment groups from a profile preview',async()=>{
+    vi.mocked(scrape).mockResolvedValue([
+      {url:'https://instagram.com/alex',username:'alex',name:'Alex',bio:'Running athlete',category:'Athlete',followers:1000},
+      {url:'https://instagram.com/below',username:'below',name:'Below',bio:'Running athlete',category:'Athlete',followers:999},
+      {url:'https://instagram.com/unknown',username:'unknown',name:'Unknown',bio:'Running athlete',category:'Athlete'},
+    ]);
+    const result=await previewDiscoveryCandidates({sessionId:'s',keyword:'Running',platform:'Instagram',geography:'Nationwide',minFollowers:1000,limit:1});
+    expect(result.criteria.minFollowers).toBe(1000);
+    expect(result.groups?.qualified.map(c=>c.username)).toEqual(['alex']);
+    expect(result.groups?.excluded.map(c=>c.username)).toEqual(['below']);
+    expect(result.groups?.needsVerification.map(c=>c.username)).toEqual(['unknown']);
+    expect(state.tables.scout_sessions[0].candidates).toEqual(result.candidates);
+  });
+  it('blocks insufficient or unknown followers even with a saved approval',async()=>{
+    const session=state.tables.scout_sessions[0];session.params.minFollowers=1000;
+    session.review_decisions={c1:{decision:'approved',classification:'Individual',relevant:true,locationConfirmed:true}};
+    for(const followers of [999,null]){
+      session.candidates[0].followers=followers;
+      await expect(ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]})).rejects.toMatchObject({code:'FOLLOWER_THRESHOLD_REQUIRED'});
+      expect(state.tables.kols).toHaveLength(0);
+    }
+  });
   it('returns every eligible badminton profile above the minimum and imports only the reviewed selection', async () => {
     vi.mocked(scrape).mockResolvedValue(badmintonSearch);
     const preview = await previewDiscoveryCandidates({ sessionId: 's', keyword: 'badminton', platform: 'Facebook', limit: 5 });
@@ -36,6 +58,7 @@ describe('Server-owned preview and import', () => {
     expect(state.tables.scout_sessions[0].candidates).toEqual(preview.candidates);
     const selected = preview.candidates.slice(0, 5).map(c => ({candidateId: c.candidateId, classification: 'Individual' as const, relevant: true, locationConfirmed: true}));
     state.tables.scout_sessions[0].params = preview.criteria;
+    state.tables.scout_sessions[0].review_decisions=Object.fromEntries(selected.map(c=>[c.candidateId,{...c,decision:'approved'}]));
     const imported = await ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected });
     expect(imported.insertedKols).toBe(5);
     expect(state.tables.kols.map(k => k.profile_url)).toEqual(badmintonSearch.slice(0, 5).map(r => canonicalUrl(r.url)));
@@ -52,11 +75,11 @@ describe('Server-owned preview and import', () => {
     vi.mocked(scrape).mockResolvedValue(badmintonSearch.slice(0, 1));
     const preview = await previewDiscoveryCandidates({sessionId: 's', keyword: 'badminton', platform: 'Facebook', limit: 5});
     expect(preview.partial).toBe(true);
-    expect(preview.warnings.join(' ')).toContain('below the minimum target of 5');
+    expect(preview.warnings.join(' ')).toContain('0/5 qualified new accounts');
     expect(preview.diagnostics).toMatchObject({providerCount: 1, returnedCount: 1, requestedCount: 5});
   });
   it('blocks a concurrent import before CRM writes',async()=>{state.tables.scout_sessions[0].import_lease_until=new Date(Date.now()+120000).toISOString();await expect(ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]})).rejects.toMatchObject({code:'IMPORT_IN_PROGRESS'});expect(state.tables.kols).toHaveLength(0);});
-  it('imports only server snapshot values and preserves zero', async () => { const result = await ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1', followers: 900000 } as any] }); expect(result.insertedKols).toBe(1); expect(state.tables.kols[0]).toMatchObject({ followers: 0, quotation: 0, status: 'New Scout (Unverified)' }); expect(state.tables.kols[0].scout_missing_metrics).toContain('avgViews'); });
+  it('imports only server snapshot values and preserves zero', async () => { state.tables.scout_sessions[0].review_decisions={c1:{decision:'approved'}}; const result = await ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1', followers: 900000 } as any] }); expect(result.insertedKols).toBe(1); expect(state.tables.kols[0]).toMatchObject({ followers: 0, quotation: 0, status: 'New Scout (Unverified)' }); expect(state.tables.kols[0].scout_missing_metrics).toContain('avgViews'); });
   it('blocks importing a rejected profile even with explicit confirmation', async () => {
     state.tables.scout_sessions[0].review_decisions = { c1: { decision: 'rejected' } };
     await expect(ingestSelectedCandidates({sessionId:'s', actorId:state.owner, selected:[{candidateId:'c1',classification:'Individual',relevant:true,locationConfirmed:true}]})).rejects.toMatchObject({code:'REVIEW_REQUIRED'});
@@ -76,12 +99,12 @@ describe('Server-owned preview and import', () => {
   it('rejects IDs absent from the preview', async () => { await expect(ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'not-in-snapshot' }] })).rejects.toThrow('not in this preview'); expect(state.tables.kols).toHaveLength(0); });
   it('rejects a preview owned by another user', async () => { await expect(ingestSelectedCandidates({ sessionId: 's', actorId: 'other', selected: [{ candidateId: 'c1' }] })).rejects.toThrow(); expect(state.tables.kols).toHaveLength(0); });
   it('requires all three explicit Needs Review decisions', async () => { state.tables.scout_sessions[0].candidates[0].reviewState = 'Needs Review'; await expect(ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1', classification: 'Individual', relevant: true }] })).rejects.toThrow('Confirm'); });
-  it('persists explicit review and then imports', async () => { state.tables.scout_sessions[0].candidates[0].reviewState = 'Needs Review'; await ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1', classification: 'Individual', relevant: true, locationConfirmed: true }] }); expect(state.tables.scout_sessions[0].review_decisions.c1.actorId).toBe(state.owner); });
+  it('persists explicit review and then imports', async () => { state.tables.scout_sessions[0].review_decisions={c1:{decision:'approved',classification:'Individual',relevant:true,locationConfirmed:true}}; state.tables.scout_sessions[0].candidates[0].reviewState = 'Needs Review'; await ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1', classification: 'Individual', relevant: true, locationConfirmed: true }] }); expect(state.tables.scout_sessions[0].review_decisions.c1.actorId).toBe(state.owner); });
   it('rejects a known wrong entity type', async () => { state.tables.scout_sessions[0].candidates[0].classification = 'Community'; await expect(ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1' }] })).rejects.toThrow('wrong entity'); });
   it('rejects a preview invalidated by newer team feedback', async () => { state.tables.scout_feedback = [{ account_key:candidate.accountKey, reason:'Not Relevant', context_key:'running|nationwide' }]; await expect(ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]})).rejects.toMatchObject({code:'PREVIEW_STALE'}); expect(state.tables.kols).toHaveLength(0); });
   it('rejects duplicate selections before writing', async () => { await expect(ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1' },{ candidateId: 'c1' }] })).rejects.toThrow('unique candidates'); });
-  it('deduplicates previously stored www/trailing slash profile URLs', async () => { state.tables.kols = [{ id: 'existing', profile_url: 'https://www.instagram.com/alex/', scout_missing_metrics: [], user_locked_fields: [], bio: 'Original' }]; const result = await ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1' }] }); expect(result.updatedKols).toBe(1); expect(state.tables.kols).toHaveLength(1); expect(state.tables.kols[0].bio).toBe('Original'); });
-  it('does not report a successful import after a failed DB write', async () => { state.failTable = 'kols'; await expect(ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1' }] })).rejects.toThrow('Database write failed'); });
+  it('deduplicates previously stored www/trailing slash profile URLs', async () => { state.tables.scout_sessions[0].review_decisions={c1:{decision:'approved'}}; state.tables.kols = [{ id: 'existing', profile_url: 'https://www.instagram.com/alex/', scout_missing_metrics: [], user_locked_fields: [], bio: 'Original' }]; const result = await ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1' }] }); expect(result.updatedKols).toBe(1); expect(state.tables.kols).toHaveLength(1); expect(state.tables.kols[0].bio).toBe('Original'); });
+  it('does not report a successful import after a failed DB write', async () => { state.tables.scout_sessions[0].review_decisions={c1:{decision:'approved'}}; state.failTable = 'kols'; await expect(ingestSelectedCandidates({ sessionId: 's', actorId: state.owner, selected: [{ candidateId: 'c1' }] })).rejects.toThrow('Database write failed'); });
 });
 describe('Feedback replay and trending posts', () => {
   const raw = { username: 'alex', fullName: 'Alex', biography: 'Running coach Vietnam', followersCount: 100 };
@@ -140,7 +163,7 @@ describe('Multi-platform discovery ranking', () => {
     try {
     vi.mocked(scrape).mockResolvedValue([{url:'https://facebook.com/groups/123',name:'Running Club Vietnam',description:'Running community Vietnam',membersCount:100},{url:'https://facebook.com/groups/456',name:'Running Community Vietnam',description:'Running group Vietnam',membersCount:50000}]);
     const result=await previewDiscoveryCandidates({sessionId:'s',keyword:'running',targetType:'Communities & Clubs',platform:'Facebook',limit:1});
-    expect(result.candidates.map(c => c.followers)).toEqual([50000,100]);
+    expect(result.candidates.map(c => c.members)).toEqual([50000,100]);
     vi.unstubAllEnvs();
     } finally { vi.unstubAllEnvs(); }
   });
@@ -154,6 +177,7 @@ describe('Facebook discovery audience details',()=>{
   expect(result.candidates[0]).toMatchObject({followers:12000,url:'https://facebook.com/runner',provenance:{runId:'details-run'}});expect(result.partial).toBe(false);
   expect(vi.mocked(scrape).mock.calls[1][6]).toEqual({urls:['https://facebook.com/runner']});
   state.tables.scout_sessions[0].candidates=result.candidates;state.tables.scout_sessions[0].params=result.criteria;
+  state.tables.scout_sessions[0].review_decisions={[result.candidates[0].candidateId]:{decision:'approved'}};
   await ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:result.candidates[0].candidateId,classification:'Individual',relevant:true,locationConfirmed:true}]});expect(state.tables.kols[0].followers).toBe(12000);
  });
  it('does not assign another account audience or use likes as followers',async()=>{
@@ -182,7 +206,7 @@ describe('high engagement content scout',()=>{
   const row=(id:string,likes?:number,views?:number)=>({url:`https://facebook.com/posts/${id}`,text:'badminton Vietnam',time:'2026-10-04T00:00:00Z',likesCount:likes,videoViewCount:views});
   const result=await scoutMarketTrends({sessionId:'s',keyword:'badminton',platform:['Facebook'],limit:5,qualityMode:'high-engagement'}, {Facebook:[row('weak',2,10),row('good',200,10000),row('best',500,20000),row('unknown'),{...row('old',10000,100000),time:'2026-09-15T00:00:00Z'}]});
   expect(scrape).not.toHaveBeenCalled();expect(result.posts.map(p=>p.likes)).toEqual([500,200]);
-  expect(result.counts).toMatchObject({inserted:2,excluded:2,unverified:1});
+  expect(result.counts).toMatchObject({inserted:2,excluded:1,unverified:2});
   expect(result.warnings.join(' ')).toContain('Only 2 posts');expect(result.qualityCriteria).toMatchObject({candidateLimit:15,recentDays:7});
   expect(result.skippedPosts).toHaveLength(3);
  });
@@ -194,4 +218,62 @@ describe('high engagement content scout',()=>{
   expect(vi.mocked(scrape).mock.calls[0][4]).toBe(60);
   expect(first.qualityCriteria.cutoff).toBe(second.qualityCriteria.cutoff);
  });
+});
+
+
+describe('Latest community sampling', () => {
+  const communityId = '00000000-0000-0000-0000-000000000010';
+  const row = (index: number, owner = 'club') => ({ url: `https://instagram.com/p/sample${index}`, ownerUsername: owner, caption: 'Original source caption', timestamp: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(), likesCount: index, commentsCount: 0 });
+  beforeEach(() => { state.tables.communities = [{ id: communityId, name: 'CLB chạy bộ', group_url: 'https://instagram.com/club', channels: [{ url: 'https://instagram.com/club' }, { url: 'https://instagram.com/secondclub' }], sports: ['Running'] }]; });
+  it('merges channel samples, deduplicates, and saves only the newest 30 across the club without a watermark', async () => {
+    vi.mocked(scrape).mockImplementation(async (_session, _platform, _task, url) => url.endsWith('/club') ? Array.from({ length: 30 }, (_, index) => row(index)) : Array.from({ length: 30 }, (_, index) => row(index + 15, 'secondclub')));
+    const result = await scoutLatestCommunityPosts(communityId, ['Instagram'], 's');
+    expect(result.counts.sampled).toBe(30); expect(state.tables.scouted_posts).toHaveLength(30);
+    expect(state.tables.scouted_posts.every(p => p.community_id === communityId)).toBe(true);
+    expect(state.tables.scouted_posts.map(p => p.post_url)).toEqual(Array.from({ length: 30 }, (_, i) => `https://instagram.com/p/sample${44-i}`));
+    expect(scrape).toHaveBeenCalledWith('s', 'Instagram', 'profile-posts', 'https://instagram.com/club', 30);
+  });
+  it('keeps valid posts with missing metrics, excludes undated and unrelated-author posts, and reports partial coverage', async () => {
+    vi.mocked(scrape).mockResolvedValue([row(1), { ...row(2), commentsCount: undefined }, { ...row(3), timestamp: undefined }, row(4, 'unrelated')]);
+    const result = await scoutLatestCommunityPosts(communityId, ['Instagram'], 's', ['https://instagram.com/club']);
+    expect(result.counts.sampled).toBe(2); expect(result.partial).toBe(true);
+    expect(state.tables.scouted_posts.find(p => p.post_url.endsWith('sample2')).scout_missing_metrics).toContain('comments');
+    expect(state.tables.scouted_posts.find(p => p.post_url.endsWith('sample1')).comments).toBe(0);
+  });
+  it('preserves stored posts and available-channel data when another channel is private or unverified', async () => {
+    state.tables.scouted_posts = [{ id: 'old', community_id: communityId, post_url: 'https://instagram.com/p/old' }];
+    vi.mocked(scrape).mockImplementation(async (_s, _p, _t, url) => { if (url.endsWith('/secondclub')) throw new Error('Private channel'); return [row(1)]; });
+    const result = await scoutLatestCommunityPosts(communityId, ['Instagram'], 's');
+    expect(result.success).toBe(true); expect(result.channelCoverage.map(c => c.status)).toEqual(['collected', 'unavailable']);
+    expect(state.tables.scouted_posts).toHaveLength(2);
+  });
+  it('rejects an injected unconnected URL before provider execution', async () => {
+    await expect(scoutLatestCommunityPosts(communityId, ['Instagram'], 's', ['https://instagram.com/unrelated'])).rejects.toMatchObject({ code: 'INVALID_CHANNEL' });
+    expect(scrape).not.toHaveBeenCalled();
+  });
+});
+
+it('requires a persisted approval even when the candidate is Qualified',async()=>{
+ await expect(ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]})).rejects.toMatchObject({code:'REVIEW_REQUIRED'});
+ expect(state.tables.kols).toHaveLength(0);
+});
+
+it('blocks upper follower bounds and missing member counts despite saved approval',async()=>{
+ const session=state.tables.scout_sessions[0];
+ session.params={...session.params,assessmentRevision:6,maxFollowers:10};
+ session.review_decisions={c1:{decision:'approved',classification:'Individual',relevant:true,locationConfirmed:true}};
+ session.candidates[0].followers=11;
+ await expect(ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]})).rejects.toMatchObject({code:'FOLLOWER_THRESHOLD_REQUIRED'});
+ session.params={...session.params,maxFollowers:undefined,sizeMetric:'members',minMembers:100};
+ session.candidates[0].followers=1000;session.candidates[0].members=null;
+ await expect(ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]})).rejects.toMatchObject({code:'FOLLOWER_THRESHOLD_REQUIRED'});
+ expect(state.tables.kols).toHaveLength(0);
+});
+it('imports group followers and members into separate CRM fields',async()=>{
+ const session=state.tables.scout_sessions[0];
+ session.params={keyword:'Running',platform:'Facebook',targetType:'Communities & Clubs',geography:'Any location',assessmentRevision:6,sizeMetric:'members',minMembers:100,maxMembers:100};
+ session.candidates=[{...candidate,platform:'Facebook',classification:'Community',bio:'Running community',name:'Running Community',category:'',entityType:'group',posts:[],url:'https://facebook.com/groups/123',accountKey:'Facebook:https://facebook.com/groups/123',followers:25,members:100,provenance:{}}];
+ session.review_decisions={c1:{decision:'approved',classification:'Community',relevant:true,locationConfirmed:true}};
+ const result=await ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]});
+ expect(result.insertedCommunities).toBe(1);expect(state.tables.communities[0]).toMatchObject({members_count:100,account_followers:25});
 });

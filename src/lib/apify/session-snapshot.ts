@@ -8,7 +8,7 @@ export async function sessionSnapshot(sessionId:string, namespace:'retrievalWind
   if(!session)throw new Error('Scout session not found.');
   const params=session.params || {};const saved=params[namespace]?.[key];
   if(typeof saved==='string')return saved;
-  const value=await create(session.created_at);
+  const value=await create(params.executionMode==='stored-evidence' ? params.evidenceCreatedAt || session.created_at : session.created_at);
   const {data:claimed,error:writeError}=await db.from('scout_sessions').update({params:{...params,[namespace]:{...params[namespace],[key]:value}}}).eq('id',sessionId).eq('params',JSON.stringify(params)).select('id').maybeSingle(); if(writeError)throw writeError;
   if(claimed)return value;
  }

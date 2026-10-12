@@ -1,3 +1,9 @@
 {
-  "name": "sportcommunityplatform"
+  "name": "sportcommunityplatform",
+  "crons": [
+    {
+      "path": "/api/sport-hub/scout/maintenance",
+      "schedule": "0 2 * * *"
+    }
+  ]
 }

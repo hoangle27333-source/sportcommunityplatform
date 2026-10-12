@@ -1,3 +1,5 @@
+import { loadCommunityEngagement } from './community-engagement-store';
+import type { EngagementSummary } from './community-engagement';
 import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 import { latestGMV } from "./gmv";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -63,6 +65,9 @@ export interface KOLItem {
 }
 
 export interface CommunityItem {
+  communitySubtype?: 'Community' | 'Club' | null;
+  accountFollowers?: number | null;
+  engagementSummary?: EngagementSummary;
   missingMetrics?: string[];
   id: string;
   name: string;
@@ -185,6 +190,7 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
   const rawProj = projRes.data || [];
   const rawRep = repRes.data || [];
   const rawPost = postRes.data || [];
+  const engagement = await loadCommunityEngagement(rawComm.map((r:any)=>r.id));
 
   // Map KOLs with Multi-Channel Data and Cross-Platform Aggregation
   const kols: KOLItem[] = rawKols.map((r: any) => {
@@ -231,6 +237,9 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
   const communities: CommunityItem[] = rawComm.map((r: any) => {
     const storedChannels = r.scout_provenance && Array.isArray(r.channels) && r.channels.length ? r.channels : getStoredEntityChannels("community", r.id, r.name) || r.channels;
     const baseComm: CommunityItem = {
+      engagementSummary: engagement.get(r.id),
+      communitySubtype:r.community_subtype || null,
+      accountFollowers:r.account_followers ?? null,
       id: r.id,
       name: r.name || "",
       sport: Array.isArray(r.sports) ? r.sports : [],

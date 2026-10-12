@@ -1,3 +1,5 @@
+import {assessAccountSize} from '@/lib/apify/search-assessment';
+import { ENTITY_TYPES } from '@/lib/apify/account-evidence';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -7,6 +9,7 @@ import { profileReviewDecision } from '@/lib/apify/profile-review';
 
 const itemSchema = z.object({
   candidateId: z.string().uuid(),
+  entityType:z.enum(ENTITY_TYPES).optional(),
   decision: z.enum(['approved', 'rejected', 'pending']),
   typeConfirmed: z.boolean().optional(),
   relevant: z.boolean().optional(),
@@ -46,6 +49,7 @@ export async function POST(req: NextRequest) {
         if (!isBatch) throw new ScoutError('Candidate not found in this preview.', 'INVALID_SELECTION', 400);
         continue;
       }
+      if(item.decision==='approved' && (session.params.assessmentRevision===6 || session.params.searchPlan?.version===5)){const size=assessAccountSize(candidate,{...session.params.searchPlan?.criteria,...session.params});if(size && size.state!=='passed')throw new ScoutError('Observed audience size must meet the selected range before approval.','FOLLOWER_THRESHOLD_REQUIRED',400);}
       const decision = profileReviewDecision(candidate, session.params.targetType, item, actorId);
       next[item.candidateId] = decision;
       applied[item.candidateId] = decision;

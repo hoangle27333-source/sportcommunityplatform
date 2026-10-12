@@ -1,22 +1,30 @@
+import { canonicalGeography, unrestrictedGeography } from './geography';
 export type Classification = 'Individual' | 'Community' | 'Brand/Business' | 'Unknown';
 export function normalized(text: string) {
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 const aliases: Record<string, string> = { run: 'running', runner: 'running', runners: 'running', marathon: 'running', jogging: 'running', clubs: 'club', hcmc: 'hcm', saigon: 'hcm', hanoi: 'hanoi' };
 export function tokens(text: string) {
-  const n = normalized(text).replace(/chay bo/g, 'running').replace(/ho chi minh|sai gon|tp hcm/g, 'hcm').replace(/ha noi/g, 'hanoi').replace(/da nang/g, 'danang').replace(/viet nam/g, 'vietnam');
+  const n = normalized(text).replace(/chay bo|\bchaybo\b/g, 'running').replace(/\b(runningvietnam|marathonvietnam|runnervietnam)\b/g,'running').replace(/\bcaulongvietnam\b/g,'badminton').replace(/bong da/g,'football').replace(/cau long/g,'badminton').replace(/bong ro/g,'basketball').replace(/dap xe/g,'cycling').replace(/boi loi/g,'swimming').replace(/ho chi minh|sai gon|tp hcm/g, 'hcm').replace(/ha noi/g, 'hanoi').replace(/da nang/g, 'danang').replace(/viet nam/g, 'vietnam');
   return n.split(' ').filter(Boolean).map(t => aliases[t] || t);
 }
 export function contextKey(keyword: string, geography: string) { return `${tokens(keyword).join(' ')}|${tokens(geography).join(' ')}`; }
 export function assessProfile(p: { name: string; bio: string; category?: string; entityType?: string; location?: string; url: string }, keyword: string, geography: string, targetType: string) {
+  geography = canonicalGeography(geography);
+  const unrestricted = unrestrictedGeography(geography);
   const text = tokens(`${p.name} ${p.bio} ${p.category || ''}`).join(' ');
   const has = (expression: RegExp) => expression.test(text);
   let classification: Classification = 'Unknown';
-  const strongPerson = p.entityType === 'person' || /digital creator|athlete|coach|huan luyen vien/.test(text);
-  if (strongPerson) classification = 'Individual';
-  else if (p.entityType === 'group' || p.url.includes('/groups/') || has(/\b(club|community|clb|cong dong|hoi nhom|running team)\b/)) classification = 'Community';
+  const identity = tokens(`${p.name} ${p.category || ''}`).join(' ');
+  const groupIdentity = p.entityType === 'group' || p.url.includes('/groups/');
+  const communityIdentity = /\b(club|community|clb|cong dong|hoi nhom|running team|sports team)\b/.test(identity);
+  const businessIdentity = /\b(gym|fitness center|fitness centre|crossfit|studio|academy|company|business|shop|store|tv channel|sports event)\b/.test(identity) || /\b(we offer|our classes|our gym|training program|official .+ facebook page|live streaming)\b/.test(text);
+  // A service offering coaching is not evidence that the account belongs to a coach.
+  const strongPerson = p.entityType === 'person' || /\b(digital creator|athlete|coach|personal trainer|influencer|huan luyen vien|vdv)\b/.test(identity) || /^(?:i am|i m|toi la)\b/.test(tokens(p.bio).join(' ')) && /\b(coach|athlete|creator|huan luyen vien)\b/.test(text) || /^(?:running |pickleball |hyrox )?(?:coach|athlete|digital creator)\b/.test(tokens(p.bio).join(' '));
+  if (groupIdentity || communityIdentity) classification = 'Community';
+  else if (businessIdentity) classification = 'Brand/Business';
+  else if (strongPerson) classification = 'Individual';
   else if (has(/\b(brand|business|company|shop|store|academy|adidas|nike|games|gaming|retailer)\b/)) classification = 'Brand/Business';
-  else if (has(/\b(athlete|coach|creator|influencer|personal trainer|vdv|huan luyen vien|marathoner|digital creator)\b/) || p.entityType === 'person') classification = 'Individual';
   const wanted = tokens(keyword).filter(t => !['club', 'community', 'vietnam', 'hcm', 'hanoi', 'danang', 'da', 'nang'].includes(t));
   const evidenceTokens = new Set(tokens(`${p.name} ${p.bio} ${p.category || ''}`));
   const relevant = wanted.length > 0 && wanted.every(t => evidenceTokens.has(t));
@@ -24,15 +32,19 @@ export function assessProfile(p: { name: string; bio: string; category?: string;
   const queryCities = tokens(keyword).filter(t => ['hcm','hanoi','danang'].includes(t));
   const geo = queryCities.length && tokens(geography).includes('nationwide') ? queryCities : tokens(geography);
   const requiredGeo = geo.includes('nationwide') || geo.includes('toan') ? ['vietnam'] : geo.filter(t => t !== 'city');
-  const locationMatch = requiredGeo.every(t => geoTokens.includes(t)) || (requiredGeo[0] === 'vietnam' && ['hcm', 'hanoi', 'danang'].some(t => geoTokens.includes(t)));
+  const locationMatch = unrestricted || requiredGeo.every(t => geoTokens.includes(t)) || (requiredGeo[0] === 'vietnam' && ['hcm', 'hanoi', 'danang'].some(t => geoTokens.includes(t)));
   const expected = targetType === 'Communities & Clubs' ? 'Community' : 'Individual';
   const knownCities = ['hanoi', 'hcm', 'danang'];
-  const wrongLocation = !locationMatch && requiredGeo.some(t => knownCities.includes(t)) && geoTokens.some(t => knownCities.includes(t));
-  const conflictingIdentity=strongPerson && (p.entityType==='group' || p.url.includes('/groups/'));
+  const foreignPattern=/\b(usa|united states|canada|australia|singapore|thailand|japan|china|france|united kingdom|india|hong kong|taiwan|malaysia|indonesia|philippines|south korea|new zealand|salt lake city)\b/;
+  // Structured address takes precedence over mentions of travel/competitions in the biography.
+  const foreignCountry=foreignPattern.test(normalized(p.location || '')) || !p.location && foreignPattern.test(normalized(p.name));
+  const vietnamScope=requiredGeo.includes('vietnam') || requiredGeo.some(t=>knownCities.includes(t));
+  const addressCities=tokens(p.location || '').filter(t=>knownCities.includes(t));
+  const wrongLocation = foreignCountry && vietnamScope || requiredGeo.some(t=>knownCities.includes(t)) && addressCities.length>0 && !requiredGeo.some(t=>addressCities.includes(t)) || !locationMatch && requiredGeo.some(t => knownCities.includes(t)) && geoTokens.some(t => knownCities.includes(t));
   const wrongType = classification !== 'Unknown' && classification !== expected;
-  const reviewState = conflictingIdentity && relevant && !wrongLocation ? 'Needs Review' : wrongType || wrongLocation || !relevant ? 'Excluded' : classification === 'Unknown' || !locationMatch ? 'Needs Review' : 'Matched';
-  return { classification, relevant, locationMatch, verifiedGeography: locationMatch ? geography : '', reviewState,
-    reasons: [relevant ? 'Profile matches the search topic' : 'Topic is not supported by profile evidence', classification === 'Unknown' ? 'Entity type is unverified' : `Entity type: ${classification}`, locationMatch ? 'Location supported by profile evidence' : 'Location is unverified'],
+  const reviewState = wrongType || wrongLocation || !relevant ? 'Excluded' : classification === 'Unknown' || !locationMatch ? 'Needs Review' : 'Matched';
+  return { classification, relevant, locationMatch:locationMatch && !wrongLocation, verifiedGeography: locationMatch && !wrongLocation && !unrestricted ? geography : '', reviewState,
+    reasons: [relevant ? 'Profile matches the search topic' : 'Topic is not supported by profile evidence', classification === 'Unknown' ? 'Entity type is unverified' : `Entity type: ${classification}`, wrongLocation ? 'Observed location conflicts with selected geography' : unrestricted ? 'No location filter selected' : locationMatch ? 'Location supported by profile evidence' : 'Location is unverified'],
     evidence: [p.name, p.bio, p.category, p.location].filter(Boolean) as string[] };
 }
 export function canonicalUrl(value: string): string {

@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {parsePost} from './providers';
-import {assessTopicPost,assessEngagement,comparePostEngagement} from './content-quality';
+import {assessTopicPost,assessEngagement,comparePostEngagement,assessSearchPost} from './content-quality';
 const cutoff='2026-09-06T00:00:00Z';
 describe('observed content matching',()=>{
  it('recognizes group permalinks and provider time without inventing profile identities',()=>{const post=parsePost({url:'https://facebook.com/groups/123/permalink/456/',text:'Cầu lông TP. Hồ Chí Minh',time:'2026-10-06T03:12:26.000Z'},'Facebook')!;expect(post.publishedAt).toBe('2026-10-06T03:12:26.000Z');expect(assessTopicPost(post,'Badminton Vietnam',['TP. Hồ Chí Minh'],cutoff).state).toBe('matched');});
@@ -25,4 +25,25 @@ describe('observed engagement selection',()=>{
   const low={...post,likes:2,comments:0,views:1000000};const high={...post,likes:200,comments:10,views:20000};
   expect([low,post,high].sort(comparePostEngagement)).toEqual([high,low,post]);
  });
+});
+
+it('does not filter Nationwide or Toàn quốc by geography, while Vietnam remains explicit',()=>{
+ const p=parsePost({url:'https://facebook.com/posts/99',text:'#running',time:'2026-10-10',likes:100,comments:0},'Facebook')!;
+ for(const geography of ['Nationwide','Toàn quốc','Any location'])expect(assessTopicPost(p,'Running',geography,cutoff).state).toBe('matched');
+ expect(assessTopicPost(p,'Running','Vietnam',cutoff).state).toBe('unverified');
+ expect(assessTopicPost({...p,location:'Hanoi'},'Running','Ho Chi Minh City',cutoff).state).toBe('excluded');
+ expect(assessTopicPost({...p,publishedAt:'2026-01-01'},'Running','Nationwide',cutoff).state).toBe('excluded');
+});
+it('reads exact hashtags from Facebook reference URLs without treating the search URL as evidence',()=>{
+ const p=parsePost({url:'https://facebook.com/posts/99',text:'Race day',time:'2026-10-10',textReferences:[{url:'https://facebook.com/hashtag/running?__eep__=6'},{url:'https://example.com/hashtag/fake'},{url:'https://facebook.com/search/top?q=%23invented'}]},'Facebook')!;
+ expect(p.hashtags).toEqual(['running']);
+});
+
+it('keeps incomplete interactions in review but accepts observed zero and qualifying views',()=>{
+ const post=parsePost({url:'https://facebook.com/posts/99',text:'#running',time:'2026-10-10',likes:200},'Facebook')!;
+ const criteria={keyword:'#running',searchMode:'hashtag',geography:'Nationwide',newerThan:cutoff,qualityMode:'high-engagement' as const};
+ expect(assessSearchPost(post,criteria).state).toBe('unverified');
+ expect(assessSearchPost({...post,comments:0},criteria).state).toBe('matched');
+ expect(assessSearchPost({...post,views:10000},criteria).state).toBe('matched');
+ expect(assessSearchPost({...post,likes:0,comments:0,views:0},criteria).state).toBe('excluded');
 });

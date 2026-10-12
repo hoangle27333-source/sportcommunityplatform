@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { t, formatNumber, formatCurrency } from "@/lib/i18n";
 import type { Community } from "../types";
+import { CommunityEngagementCell } from "../community-engagement-cell";
 import { CommunityChannelDrawer } from "../community-channel-drawer";
 import { getCommunityAggregates } from "@/lib/sport-hub/kol-channels";
 import { MultiChannelCluster } from "../platform-icon";
@@ -48,6 +49,7 @@ export interface CommunityTableViewProps {
   onDeleteCommunity?: (community: Community) => void;
   onOpenReport?: (community: Community) => void;
   onScoutCommunity?: () => void;
+  onUpdateEngagement?: (community: Community) => void;
   onScoutCommunityPosts?: (community: Community) => void;
   onAddChannel?: (community: Community) => void;
   onMergeCommunity?: (community: Community) => void;
@@ -68,6 +70,7 @@ export function CommunityTableView({
   onDeleteCommunity,
   onOpenReport,
   onScoutCommunity,
+  onUpdateEngagement,
   onScoutCommunityPosts,
   onAddChannel,
   onMergeCommunity,
@@ -86,7 +89,7 @@ export function CommunityTableView({
   const [platformFilter, setPlatformFilter] = useState("all");
   const [activityFilter, setActivityFilter] = useState("all");
   const [geoFilter, setGeoFilter] = useState("all");
-  const [sortBy, setSortBy] = useState<"members" | "price" | "name">("members");
+  const [sortBy, setSortBy] = useState<"members" | "price" | "name" | "engagement">("members");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const hasActiveFilters =
@@ -145,6 +148,11 @@ export function CommunityTableView({
       let valA: any = a.members;
       let valB: any = b.members;
 
+      if (sortBy === "engagement") {
+        const avgA = a.engagementSummary?.average; const avgB = b.engagementSummary?.average;
+        if (avgA == null || avgB == null) return avgA == null ? avgB == null ? 0 : 1 : -1;
+        return sortOrder === "asc" ? avgA - avgB : avgB - avgA;
+      }
       if (sortBy === "price") {
         valA = a.pricePerPin;
         valB = b.pricePerPin;
@@ -163,7 +171,7 @@ export function CommunityTableView({
     [sorted]
   );
 
-  const toggleSort = (field: "members" | "price" | "name") => {
+  const toggleSort = (field: "members" | "price" | "name" | "engagement") => {
     if (field === "price" && !isAdmin) return;
     if (sortBy === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
@@ -458,6 +466,11 @@ export function CommunityTableView({
                       />
                     </div>
                   </th>
+                  <th className="py-2 px-3 text-right min-w-56" aria-sort={sortBy === 'engagement' ? sortOrder === 'asc' ? 'ascending' : 'descending' : 'none'}>
+                    <button type="button" onClick={() => toggleSort('engagement')} className="inline-flex items-center gap-1 text-right">
+                      <span>Average engagement within top latest 30 posts</span><ArrowUpDown className="w-3 h-3 shrink-0" />
+                    </button>
+                  </th>
                   <th
                     onClick={() => toggleSort("price")}
                     className={`py-2 px-3 text-right ${
@@ -601,6 +614,7 @@ export function CommunityTableView({
                             {t(comm.activityLevel)}
                           </span>
                         </td>
+                        <td className="py-2 px-3"><CommunityEngagementCell community={comm} onUpdate={onUpdateEngagement ? () => onUpdateEngagement(comm) : undefined} /></td>
                         <td className="py-2 px-3 text-right whitespace-nowrap">
                           {isAdmin ? (
                             <span className="font-bold text-slate-800 text-xs">
@@ -727,7 +741,7 @@ export function CommunityTableView({
                       {/* ─── INLINE EXPANDABLE CHANNEL BREAKDOWN DRAWER ─── */}
                       {isExpanded && (
                         <tr className="bg-slate-50/70">
-                          <td colSpan={12} className="p-0">
+                          <td colSpan={13} className="p-0">
                             <CommunityChannelDrawer
                               community={{
                                 ...comm,
@@ -746,7 +760,7 @@ export function CommunityTableView({
                 })
                 ) : (
                   <tr>
-                    <td colSpan={12} className="py-12 text-center text-slate-400">
+                    <td colSpan={13} className="py-12 text-center text-slate-400">
                       No matching sports communities found.
                     </td>
                   </tr>
@@ -906,6 +920,10 @@ export function CommunityTableView({
                       </div>
                     </div>
 
+                    <div className="mb-3 rounded-xl border border-slate-100 p-2.5">
+                      <p className="mb-1 text-[10px] text-slate-500">Average engagement within top latest 30 posts</p>
+                      <CommunityEngagementCell community={comm} onUpdate={onUpdateEngagement ? () => onUpdateEngagement(comm) : undefined} />
+                    </div>
                     {/* Price & Status */}
                     <div className="flex items-center justify-between text-xs mb-3">
                       <div>

@@ -4,6 +4,11 @@
  */
 
 export const I18N_MAP: Record<string, string> = {
+  "Individual": "Individual", "Community": "Community", "Club": "Club",
+  "Brand/Business": "Brand / Business", "Media/Event": "Media / Event", "Other": "Other",
+  "supported": "Supported", "uncertain": "Needs Verification", "unavailable": "Unavailable",
+  "rules": "Rules", "model": "Model", "review": "Team review",
+
   "Không rõ": "Unknown",
   "Unknown": "Unknown",
   // Partnership & CRM Statuses

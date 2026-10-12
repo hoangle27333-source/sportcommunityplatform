@@ -1,0 +1,22 @@
+{
+  "sessionId": "b10e0ca8-0126-4ca0-b85b-5d3ba8a0110b",
+  "basis": "Agent manual inspection of saved biographies and collected post samples; not reviewer approval or full live profile verification",
+  "topicSupported": 33,
+  "topicMisleadingLexicalMatch": 1,
+  "topicInsufficientEvidence": 23,
+  "topicRetrievalSupportedRate": 0.5789473684210527,
+  "automatedTopicPassSupportedRate": 0.9705882352941176,
+  "geographyVerified": 0,
+  "qualifiedNew": 0,
+  "approved": 0,
+  "costPerQualifiedNew": null,
+  "costPerApproved": null,
+  "misleadingTopicExample": {
+    "url": "https://tiktok.com/@badmintonsch",
+    "reason": "Biography describes a girls school; no evidence of badminton sport activity."
+  },
+  "actualUsd": 0.39480000000000004,
+  "stopReason": "time-limit",
+  "sourceUnchanged": true,
+  "providerStartsDuringAudit": 0
+}

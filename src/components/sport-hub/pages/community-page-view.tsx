@@ -39,6 +39,7 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
   const [editingCommunity, setEditingCommunity] = useState<Community | null>(null);
   const [deletingCommunity, setDeletingCommunity] = useState<Community | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [latestEngagement, setLatestEngagement] = useState(false);
   const [scoutTargetCommunity, setScoutTargetCommunity] = useState<Community | null>(null);
   const [isAddCommunityModalOpen, setIsAddCommunityModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -220,8 +221,9 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
             setReportTargetCommunity(comm);
             setIsReportModalOpen(true);
           }}
+          onUpdateEngagement={(comm) => { setLatestEngagement(true); setScoutTargetCommunity(comm); }}
           onScoutCommunity={() => setIsDiscoveryScoutOpen(true)}
-          onScoutCommunityPosts={(comm) => setScoutTargetCommunity(comm)}
+          onScoutCommunityPosts={(comm) => { setLatestEngagement(false); setScoutTargetCommunity(comm); }}
           onAddChannel={handleOpenAddChannel}
           onMergeCommunity={(comm) => handleOpenMerge([comm])}
         />
@@ -242,7 +244,7 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
             setIsReportModalOpen(true);
           }}
           onEditCommunity={(comm) => setEditingCommunity(comm)}
-          onScoutCommunityPosts={(comm) => setScoutTargetCommunity(comm)}
+          onScoutCommunityPosts={(comm) => { setLatestEngagement(false); setScoutTargetCommunity(comm); }}
           onDeleteCommunity={(comm) => setDeletingCommunity(comm)}
           onAddChannel={handleOpenAddChannel}
         />
@@ -269,7 +271,7 @@ export function CommunityPageView({ initialData }: CommunityPageViewProps) {
         onSuccess={handleRefresh}
       />
 
-      {scoutTargetCommunity && <ScoutTaskLauncher key={scoutTargetCommunity.id} context={{ intent: "content", mode: "entity", entityType: "community", ids: [scoutTargetCommunity.id], source: "/community" }} entity={scoutTargetCommunity} onClose={() => setScoutTargetCommunity(null)} onSuccess={handleRefresh} />}
+      {scoutTargetCommunity && <ScoutTaskLauncher key={`${scoutTargetCommunity.id}:${latestEngagement}`} initialCriteria={latestEngagement ? { collectionMode: "latest-30", limit: 30, forceRefresh: true } : {}} context={{ intent: "content", mode: "entity", entityType: "community", ids: [scoutTargetCommunity.id], source: "/community" }} entity={scoutTargetCommunity} onClose={() => setScoutTargetCommunity(null)} onSuccess={handleRefresh} />}
 
 
       <AddCommunityModal

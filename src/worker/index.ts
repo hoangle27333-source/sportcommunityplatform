@@ -18,6 +18,9 @@ const logger = pino({ name: "scout-worker" });
 const HEARTBEAT_FILE = process.env.WORKER_HEARTBEAT_FILE ?? "/tmp/worker-heartbeat";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+if (process.env.SCOUT_LEGACY_WORKER_ENABLED !== "true") {
+  throw new Error("Scout uses Vercel Workflows. The legacy Scout worker is disabled.");
+}
 const connection = createRedisConnection(undefined, QUEUE_NAMES.socialScout);
 connection.on("connect", () => logger.info("redis connected"));
 connection.on("error", (err) => logger.error({ err }, "redis error"));

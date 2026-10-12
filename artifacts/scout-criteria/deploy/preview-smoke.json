@@ -1,0 +1,20 @@
+{
+  "recordedAt": "2026-10-11T16:48:36.291Z",
+  "deployment": "dpl_YX5oKz9xjD4vCwXLpb24roAYg8XE",
+  "url": "https://sportcommunityplatform-hlz28hv4g-hoang-le2.vercel.app",
+  "ready": true,
+  "hostedBuildPassed": true,
+  "login": {
+    "httpStatus": 200,
+    "rendered": true
+  },
+  "planWithoutLogin": {
+    "httpStatus": 401,
+    "code": "UNAUTHORIZED"
+  },
+  "fixtureWithoutSecret": {
+    "httpStatus": 404
+  },
+  "providerStarts": 0,
+  "crmMutations": 0
+}

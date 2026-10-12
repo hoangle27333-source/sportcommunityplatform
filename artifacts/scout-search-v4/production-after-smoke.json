@@ -1,0 +1,11 @@
+{
+  "recordedAt": "2026-10-11T06:38:30.490Z",
+  "scout_provider_runs": {
+    "status": 200,
+    "count": "0-72/73"
+  },
+  "scout_sessions": {
+    "status": 200,
+    "count": "0-64/65"
+  }
+}

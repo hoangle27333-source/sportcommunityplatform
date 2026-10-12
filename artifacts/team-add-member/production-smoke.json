@@ -1,0 +1,27 @@
+{
+  "recordedAt": "2026-10-12T04:03:14.395Z",
+  "productionUrl": "https://sportcommunityplatform.vercel.app",
+  "deployment": "dpl_FQgGULeJ9rFoHDVkXMKkr96onEKW",
+  "results": [
+    {
+      "name": "login",
+      "status": 200
+    },
+    {
+      "name": "team",
+      "status": 200
+    },
+    {
+      "name": "createMemberUnauthenticated",
+      "status": 307,
+      "body": "Redirecting...\n",
+      "location": "/login?next=%2Fapi%2Fusers"
+    },
+    {
+      "name": "workflowFixture",
+      "status": 404
+    }
+  ],
+  "deployedAddMemberBundle": true,
+  "accountCreatedDuringVerification": false
+}

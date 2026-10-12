@@ -1,0 +1,30 @@
+{
+  "recordedAt": "2026-10-11T15:39:25.121Z",
+  "files": [
+    {
+      "file": "next.config.ts",
+      "sha256": "73fd629f5e9858f32150475db512a2cb70a46fe181b40ffd06278b97acf6ce35",
+      "sourceMatchesSnapshot": true
+    },
+    {
+      "file": ".vercelignore",
+      "sha256": "3733fd497514dfab9cab48de11b4d9753b78dea4ed6f436ba18b3f00e3d55cf6",
+      "sourceMatchesSnapshot": true
+    },
+    {
+      "file": "src/components/sport-hub/discovery-scout-modal.tsx",
+      "sha256": "c5b2af5484a1b5cb129cb959363fd53cdf2a02f9ae1061c845e9e6db94ec917f",
+      "sourceMatchesSnapshot": true
+    },
+    {
+      "file": "src/lib/apify/account-model-policy.ts",
+      "sha256": "b6e95cbf6a887ae4a268e1a123a41642e383deaf7f4fa8a4f9c3eeab236ea882",
+      "sourceMatchesSnapshot": true
+    },
+    {
+      "file": "src/lib/apify/reassessment.ts",
+      "sha256": "233ebfce50bd9c81b3a545216037e999711799b82c429014ff75e7edd8e8a0c1",
+      "sourceMatchesSnapshot": true
+    }
+  ]
+}

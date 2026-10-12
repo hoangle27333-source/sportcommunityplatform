@@ -25,6 +25,7 @@ import {
 import { t, formatNumber } from '@/lib/i18n';
 import { useCurrentUser } from '@/lib/auth/auth-context';
 import type { ScoutContext, ScoutSessionSummary } from '@/lib/apify/scout-workspace';
+import { BroadenSearchModal } from './broaden-search-modal';
 import { DiscoveryScoutModal } from './discovery-scout-modal';
 import { MarketTrendScoutModal } from './market-trend-scout-modal';
 import { EntityPostScoutModal } from './entity-post-scout-modal';
@@ -701,11 +702,24 @@ export function ScoutSessionResults({
   onReview: () => void;
   onRetry: () => void;
 }) {
+  const [broaden,setBroaden]=useState(false);
+  const [reassessing,setReassessing]=useState(false);
+  const [reassessError,setReassessError]=useState('');
+  async function reassess(){setReassessing(true);setReassessError('');try{const response=await fetch('/api/sport-hub/scout/reassess',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.id})});const data=await response.json();if(!response.ok)throw new Error(data.error || 'Unable to reassess saved evidence.');window.location.assign(`/scout?sessionId=${encodeURIComponent(data.sessionId)}`);}catch(e:any){setReassessError(e.message);setReassessing(false);}}
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [reconciling, setReconciling] = useState(false);
   const [reconcileMessage, setReconcileMessage] = useState('');
-  const { isEditor } = useCurrentUser();
+  const { isEditor, isAdmin } = useCurrentUser();
+  const recoverablePending = result?.code === 'PENDING' && !!session.params.searchPlan;
+  async function recoverSavedResults() {
+    setReconciling(true);setReconcileMessage('');
+    try {
+      const response=await fetch('/api/sport-hub/scout/recover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:session.id})});
+      const data=await response.json();if(!response.ok)throw new Error(data.error || 'Unable to recover saved results.');
+      setReconcileMessage(data.recovery?.[0]?.status || 'Recovery requested.');
+    } catch(e:any){setReconcileMessage(e.message);} finally{setReconciling(false);}
+  }
 
   async function reconcile() {
     setReconciling(true);
@@ -779,29 +793,30 @@ export function ScoutSessionResults({
 
   // Compute status presentation
   const isFailed =
-    error || session.status === 'failed' || result?.success === false;
-  const isRunning = result?.pending || session.status === 'running';
+    error || (result ? result.success === false : session.status === 'failed');
+  const remainingReviewCount = result?.candidates ? result.candidates.filter((candidate:any)=>!(result.importedCandidateIds || []).includes(candidate.candidateId) && result.reviewDecisions?.[candidate.candidateId]?.decision!=='rejected').length : session.remainingCandidates;
+  const isRunning = result ? !!result.pending : ['pending','running'].includes(session.status);
   const isNeedsReconciliation = result?.code === 'START_UNKNOWN';
+  const progressInfo = result?.progress || session?.progress;
   const isPartial = !!result?.partial || session.partial;
   const isNoResults =
-    result &&
-    ['trends', 'kol-posts', 'community-posts'].includes(session.kind) &&
-    !result.posts?.length &&
-    !result.counts?.refreshed &&
-    !result.counts?.duplicate;
+    result && !result.groups?.needsVerification?.length && !result.groups?.belowTarget?.length &&
+    (session.kind==='preview' ? !result.candidates?.length : ['trends', 'kol-posts', 'community-posts'].includes(session.kind) && !result.posts?.length && !result.counts?.refreshed && !result.counts?.duplicate);
 
   const statusLabel = isNeedsReconciliation
     ? 'Needs Reconciliation'
     : isRunning
     ? result?.status === 'pending'
       ? 'Queued in Cloud'
-      : 'Scanning Providers…'
-    : isPartial
-    ? 'Completed with Warnings'
+      : session.params.executionMode==='stored-evidence' ? 'Reassessing Saved Evidence…' : progressInfo?.round ? `Scanning (Round ${progressInfo.round}/${progressInfo.totalRounds})` : 'Scanning Providers…'
     : isFailed
     ? 'Task Failed'
     : isNoResults
-    ? 'No Posts Found'
+    ? 'No Results'
+    : result?.groups && !result.counts?.qualified && (result.groups.needsVerification?.length || result.groups.belowTarget?.length)
+    ? 'Needs Review'
+    : isPartial
+    ? 'Completed with Warnings'
     : result
     ? 'Completed'
     : 'Connecting…';
@@ -818,18 +833,22 @@ export function ScoutSessionResults({
 
   // Counts & metrics breakdown
   const counts = result?.counts || {};
-  const postsList: any[] = result?.posts || [];
+  const postsList: any[] = result?.groups?.qualified || result?.posts || [];
   const skippedList: any[] = result?.skippedPosts || [];
   const candidatesList: any[] = result?.candidates || [];
 
-  const savedCount = postsList.length || counts.inserted || 0;
+  const savedCount = counts.qualified ?? (session.kind==='preview'?candidatesList.filter(c=>c.reviewState==='Matched').length:(postsList.length || counts.inserted || 0));
   const refreshedCount = counts.refreshed ?? 0;
-  const unverifiedCount = counts.unverified ?? 0;
-  const excludedCount = counts.excluded ?? 0;
+  const unverifiedCount = counts.unverified ?? (session.kind==='preview'?candidatesList.filter(c=>c.reviewState==='Needs Review').length:0);
+  const excludedCount = counts.excluded ?? result?.excludedCount ?? 0;
 
   const modalFooter = (
     <div className="flex items-center justify-between w-full gap-2">
-      <div className="flex items-center space-x-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {isEditor && !isRunning && (result?.success || session.status==='complete') && !isFailed && ['preview','trends'].includes(session.kind) && <>
+          {session.params.executionMode!=='stored-evidence' && <button type="button" disabled={reassessing} onClick={reassess} className={scoutButtonClass}>{reassessing?'Reassessing…':'Reassess Saved Results'}</button>}
+          <button type="button" onClick={()=>setBroaden(true)} className={scoutButtonClass}>Broaden Search</button>
+        </>}
         {session.kind === 'preview' &&
           result?.success &&
           !result?.pending &&
@@ -843,7 +862,7 @@ export function ScoutSessionResults({
               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
               onClick={onReview}
             >
-              Review Profiles ({session.remainingCandidates})
+              Review Profiles ({remainingReviewCount})
             </button>
           )}
 
@@ -858,7 +877,8 @@ export function ScoutSessionResults({
           </button>
         )}
 
-        {(isFailed || session.status === 'failed') &&
+        {recoverablePending && isAdmin && <button type="button" disabled={reconciling} onClick={recoverSavedResults} className="px-3.5 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl disabled:opacity-50">{reconciling?'Recovering…':'Recover Saved Results'}</button>}
+        {isFailed && !recoverablePending &&
           !isNeedsReconciliation &&
           isEditor && (
             <button
@@ -912,6 +932,7 @@ export function ScoutSessionResults({
     </div>
   );
 
+  if(broaden) return <BroadenSearchModal session={session} onClose={()=>setBroaden(false)}/>;
   return (
     <ScoutDialogFrame
       title={session.title}
@@ -921,6 +942,10 @@ export function ScoutSessionResults({
       footer={modalFooter}
     >
       <div className="space-y-4">
+        {reassessError && <p role="alert" className="text-red-700">{reassessError}</p>}
+        {result?.executionMode==='stored-evidence' && <p className="text-sm text-indigo-700">Reassessed saved evidence. No provider collection was started. <Link href={`/scout?sessionId=${result.parentSessionId}`} className="underline">Original task</Link></p>}
+        {result?.diagnostics?.reasonCounts && <div className="rounded-lg border p-3 text-sm"><p className="font-semibold">Result breakdown</p><ul>{Object.entries(result.diagnostics.reasonCounts).map(([reason,count])=><li key={reason}>{Number(count).toLocaleString('en-US')} · {reason}</li>)}</ul><p className="text-xs text-slate-500">An item can have more than one assessment reason.</p></div>}
+        {result?.diagnostics?.items?.length>0 && <details className="text-sm"><summary>Profile assessment evidence</summary>{result.diagnostics.items.map((item:any)=><div key={item.accountKey} className="border-b py-2"><p>{item.name} · {item.reviewState}</p><p>{item.reasons.join(' · ')}</p><p className="text-slate-500">{item.evidence.join(' · ')}</p></div>)}</details>}
         {/* ─── STATUS & TIMESTAMP BAR ─── */}
         <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50/80 rounded-xl border border-slate-200">
           <div className="flex items-center space-x-2">
@@ -941,7 +966,7 @@ export function ScoutSessionResults({
 
             {session.reviewState === 'needs-review' && (
               <span className="text-xs font-semibold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                {session.remainingCandidates} profiles need review
+                {remainingReviewCount} {session.kind==='preview'?'profiles':'posts'} need review
               </span>
             )}
           </div>
@@ -960,6 +985,34 @@ export function ScoutSessionResults({
           )}
         </div>
 
+        {isRunning && (
+          <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200/80 text-xs text-blue-900 space-y-2">
+            <div className="flex items-center justify-between font-bold">
+              <span className="flex items-center space-x-2">
+                <RefreshCw className="w-3.5 h-3.5 text-blue-600 animate-spin" />
+                <span>
+                  {progressInfo?.round
+                    ? `Round ${progressInfo.round} of ${progressInfo.totalRounds}: ${progressInfo.roundLabel || 'Scanning'}`
+                    : 'Cloud worker processing in background…'}
+                </span>
+              </span>
+              {progressInfo?.candidatesFound !== undefined && (
+                <span className="text-[11px] font-extrabold text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200 shadow-2xs">
+                  {progressInfo.candidatesFound} candidate(s) scouted
+                </span>
+              )}
+            </div>
+            {progressInfo?.currentQuery && (
+              <p className="text-[11px] text-blue-700/90 truncate">
+                Active step: <span className="font-semibold text-slate-800">{progressInfo.currentQuery}</span>
+              </p>
+            )}
+            <p className="text-[10px] text-slate-500">
+              Provider tasks run in verified cloud workers with adaptive polling. You can keep this modal open or check Scout Activity anytime.
+            </p>
+          </div>
+        )}
+
         {result?.qualityCriteria && <p className="text-xs text-slate-600" aria-label="Content quality criteria">
           {result.qualityCriteria.mode==='high-engagement'
             ? `High Engagement: last ${result.qualityCriteria.recentDays} days; at least ${Number(result.qualityCriteria.minInteractions).toLocaleString('en-US')} likes / reactions + comments or ${Number(result.qualityCriteria.minViews).toLocaleString('en-US')} views. Ranked by interactions, then views. This is not a measured growth trend.`
@@ -967,7 +1020,7 @@ export function ScoutSessionResults({
         </p>}
 
         {/* ─── ERROR OR RECONCILE MESSAGES ─── */}
-        {error && (
+        {(error || result?.error) && (
           <div
             role="alert"
             className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-start space-x-2"
@@ -977,7 +1030,7 @@ export function ScoutSessionResults({
               <p className="font-semibold">
                 {result?.code === 'START_UNKNOWN'
                   ? 'The provider did not confirm whether the task started. Its reserved budget is still held.'
-                  : error}
+                  : error || result?.error}
               </p>
               {result?.code && (
                 <span className="text-[10px] text-red-500 block mt-0.5 font-mono">
@@ -1007,7 +1060,7 @@ export function ScoutSessionResults({
             <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 shadow-2xs flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
-                  Saved Posts
+                  {session.kind==='preview'?'Qualified Profiles':result?.executionMode==='stored-evidence'?'Matched Evidence':'Qualified Posts'}
                 </span>
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               </div>
@@ -1016,7 +1069,7 @@ export function ScoutSessionResults({
                   {savedCount.toLocaleString('en-US')}
                 </span>
                 <span className="text-[10px] text-emerald-600 mt-0.5 block truncate">
-                  Stored in database
+                  {session.kind==='preview'?'Approval required before import':result?.executionMode==='stored-evidence'?'Preview only':result?.groups?`${counts.inserted || 0} inserted · ${counts.duplicate || 0} duplicate`:'Stored in database'}
                 </span>
               </div>
             </div>
@@ -1050,7 +1103,7 @@ export function ScoutSessionResults({
                   {unverifiedCount.toLocaleString('en-US')}
                 </span>
                 <span className="text-[10px] text-amber-600 mt-0.5 block truncate">
-                  Location unconfirmed
+                  Requires review
                 </span>
               </div>
             </div>
@@ -1067,7 +1120,7 @@ export function ScoutSessionResults({
                   {excludedCount.toLocaleString('en-US')}
                 </span>
                 <span className="text-[10px] text-slate-500 mt-0.5 block truncate">
-                  Outside window / scope
+                  Outside selected scope
                 </span>
               </div>
             </div>
@@ -1097,10 +1150,10 @@ export function ScoutSessionResults({
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
                 <Flame className="w-4 h-4 text-orange-500 fill-orange-500" />
-                <span>Saved Posts ({postsList.length.toLocaleString('en-US')})</span>
+                <span>{result?.executionMode==='stored-evidence'?'Matched Saved Evidence':'Qualified Posts'} ({postsList.length.toLocaleString('en-US')})</span>
               </h3>
               <span className="text-[11px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                Ready in Trending Feed
+                {result?.executionMode==='stored-evidence'?'Preview only · not saved to Trending':'Ready in Trending Feed'}
               </span>
             </div>
 
@@ -1112,8 +1165,11 @@ export function ScoutSessionResults({
           </section>
         )}
 
+        {result?.searchExecution && <div className="rounded-xl border border-slate-200 p-3 text-xs space-y-1"><p className="font-semibold">Search summary</p><p>{result.searchExecution.rounds?.length || 0} rounds · {result.searchExecution.uniqueCount || 0} unique results · {result.searchExecution.duplicateCount || 0} duplicate observations · {result.searchExecution.unparseableCount || 0} unusable rows</p><p>Stopped: {String(result.searchExecution.stopReason).replaceAll('-', ' ')}</p>{result.searchCost && <p>Actual provider cost: {result.searchCost.actualUsd===null?'Pending reconciliation':`$${Number(result.searchCost.actualUsd).toFixed(3)}`} · Reviewed cap ${Number(result.searchCost.approvedCapUsd).toFixed(2)}</p>}</div>}
+        {result?.groups && (session.kind==='preview'?['excluded']:['needsVerification','belowTarget','excluded']).map(group=>result.groups[group]?.length>0 && <section key={group} className="mt-4 space-y-2" aria-label={group==='needsVerification'?'Needs Verification':group==='belowTarget'?'Below Target':'Excluded'}><h3 className="text-xs font-bold">{group==='needsVerification'?'Needs Verification':group==='belowTarget'?'Below Target':'Excluded'} ({result.groups[group].length.toLocaleString('en-US')})</h3><p className="text-xs text-slate-500">Saved in Scout for inspection; not added to Trending.</p><div className="max-h-64 overflow-y-auto space-y-2">{result.groups[group].map((post:any,index:number)=>session.kind==='preview'?<div key={post.accountKey || index} className="rounded-lg border p-2 text-xs"><p>{post.name}</p><p>{post.reasons?.join(' · ')}</p></div>:<ScoutSkippedPostCard key={post.url || index} post={post}/>)}</div></section>)}
+
         {/* ─── 2. POSTS NOT SAVED (Audited Skipped List with Author & Metrics) ─── */}
-        {skippedList.length > 0 && (
+        {!result?.groups && skippedList.length > 0 && (
           <section className="mt-5 space-y-2.5" aria-label="Posts not saved">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
@@ -1160,8 +1216,8 @@ export function ScoutSessionResults({
             </div>
 
             <p className="text-xs text-slate-500">
-              All saved candidates are listed below, including imported and
-              rejected profiles.
+              Candidates with missing identity or location evidence require verification.
+              Only Qualified profiles meet all selected criteria.
             </p>
 
             <div className="max-h-72 overflow-y-auto space-y-2 rounded-xl border border-slate-200 bg-slate-50/50 p-2.5">
@@ -1177,7 +1233,7 @@ export function ScoutSessionResults({
                   ? 'Approved'
                   : decision === 'rejected'
                   ? 'Rejected'
-                  : 'Pending Review';
+                  : candidate.resultGroup || (candidate.reviewState==='Needs Review'?'Needs Verification':candidate.reviewState==='Matched'?'Qualified':candidate.reviewState==='Excluded'?'Excluded':'Pending Review');
 
                 return (
                   <div
@@ -1212,6 +1268,10 @@ export function ScoutSessionResults({
                           ? 'Unknown'
                           : formatNumber(candidate.followers)}
                       </p>
+                      <p className="text-[11px] text-slate-500">
+                        {candidate.classification || 'Unknown'} · Location: {candidate.location || candidate.verifiedGeography || 'Unverified'}
+                      </p>
+                      {candidate.reasons?.length > 0 && <p className="text-[11px] text-amber-700">{candidate.reasons.join(' · ')}</p>}
                     </div>
 
                     <span
