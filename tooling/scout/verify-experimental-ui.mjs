@@ -53,13 +53,13 @@ try {
  if(await page.getByText('Entity Type',{exact:true}).count())throw new Error('Duplicate entity type editor remains');
  await page.getByLabel('Correct account type for Alex Runner').selectOption('Brand/Business');
  if(await page.getByRole('button',{name:'Approve for Import',exact:true}).isEnabled())throw new Error('Unsaved type allows approval');
- await page.getByRole('button',{name:'Save type correction',exact:true}).click();
+ await page.getByRole('button',{name:'Save corrections',exact:true}).click();
  await page.getByText('This type is retained for Scout review and cannot be imported into the current CRM.').waitFor();
  await page.getByLabel('Type',{exact:true}).selectOption('Individual');
  if(await page.getByRole('region',{name:'Account evidence'}).count())throw new Error('Entity type filter did not hide the business.');
  await page.getByLabel('Type',{exact:true}).selectOption('All');
  await page.getByLabel('Correct account type for Alex Runner').selectOption('Individual');
- await page.getByRole('button',{name:'Save type correction',exact:true}).click();
+ await page.getByRole('button',{name:'Save corrections',exact:true}).click();
  await page.getByRole('button',{name:'Approve for Import',exact:true}).click();
  await page.getByRole('button',{name:/^Approved\s/}).click();
  await page.getByText('Reviewed type:',{exact:false}).waitFor();
@@ -89,7 +89,7 @@ try {
  if(await locationControl.inputValue()!=='unknown')throw new Error('Unknown location rendered as wrong location');
  if(await page.getByText('Matches target type',{exact:true}).count())throw new Error('Unknown type appears verified');
  await page.getByLabel('Correct account type for Alex Runner').selectOption('Individual');
- await page.getByRole('button',{name:'Save type correction',exact:true}).click();
+ await page.getByRole('button',{name:'Save corrections',exact:true}).click();
  await page.getByText('Insufficient topic evidence; not marked off-topic',{exact:true}).waitFor();
  if(await page.getByRole('button',{name:'Approve for Import',exact:true}).isEnabled())throw new Error('Type correction bypassed missing topic/geography evidence');
  await page.getByText('Approval is blocked',{exact:true}).waitFor();
@@ -104,9 +104,7 @@ try {
  await page.getByLabel('Topic relevance for Alex Runner').selectOption('true');
  await page.getByLabel('Target location for Alex Runner').selectOption('true');
  if(await page.getByRole('button',{name:'Approve for Import',exact:true}).isEnabled())throw new Error('Unsaved attributes allowed approval');
- await page.getByRole('button',{name:'Save type correction',exact:true}).click();
- if(await page.getByLabel('Topic relevance for Alex Runner').inputValue()!=='true' || await page.getByLabel('Target location for Alex Runner').inputValue()!=='true')throw new Error('Saving type silently discarded topic/location drafts');
- await page.getByRole('button',{name:'Save topic and location',exact:true}).click();
+ await page.getByRole('button',{name:'Save corrections',exact:true}).click();
  await page.getByLabel('Assessment',{exact:true}).selectOption('Matched');
  await page.getByRole('button',{name:'Approve for Import',exact:true}).waitFor();
  if(!await page.getByRole('button',{name:'Approve for Import',exact:true}).isEnabled())throw new Error('Saved manual review did not enable approval');

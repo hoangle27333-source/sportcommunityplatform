@@ -348,26 +348,126 @@ export function DiscoveryScoutModal({
     });
   };
 
-  const attributesChanged = (candidate: DiscoveryCandidate) => {
-    const edit=candidateEdits[candidate.candidateId];
-    if(!edit)return false;
-    const topic=candidate.assessment?.topic?.state,location=candidate.assessment?.geography?.state;
-    return edit.relevant !== (topic==='unknown'?undefined:topic==='passed') || edit.locationConfirmed !== (location==='unknown'?undefined:location==='passed');
+  const isTypeChanged = (candidate: DiscoveryCandidate): boolean => {
+    if (candidate.entityAssessment) {
+      const draft = typeDrafts[candidate.candidateId];
+      const saved = candidate.entityAssessment.reviewedType || candidate.entityAssessment.suggestedType;
+      return Boolean(draft && draft !== saved);
+    }
+    const edit = candidateEdits[candidate.candidateId];
+    if (edit) {
+      const current = candidate.classification || 'Unknown';
+      return edit.classification !== current;
+    }
+    return false;
   };
-  const candidateApprovalBlockers = (candidate: DiscoveryCandidate) => [...(candidate.assessmentVersion===7 && attributesChanged(candidate)?['Save topic and location changes first.']:[]),...approvalBlockers(candidate,getExpectedClassification(),getCandidateEdit(candidate),typeDrafts[candidate.candidateId])];
-  async function saveAttributes(candidate: DiscoveryCandidate){
+
+  const isTopicOrLocationChanged = (candidate: DiscoveryCandidate): boolean => {
+    const edit = candidateEdits[candidate.candidateId];
+    if (!edit) return false;
+    if (candidate.assessmentVersion === 7) {
+      const topic = candidate.assessment?.topic?.state;
+      const currentTopic = topic === 'unknown' ? undefined : topic === 'passed';
+      const location = candidate.assessment?.geography?.state;
+      const currentLocation = location === 'unknown' ? undefined : location === 'passed';
+      return edit.relevant !== currentTopic || edit.locationConfirmed !== currentLocation;
+    }
+    return (edit.relevant !== undefined && edit.relevant !== (candidate.relevant === true)) ||
+           (edit.locationConfirmed !== undefined && edit.locationConfirmed !== (candidate.locationMatch === true));
+  };
+
+  const attributesChanged = (candidate: DiscoveryCandidate) => {
+    return isTypeChanged(candidate) || isTopicOrLocationChanged(candidate);
+  };
+
+  const candidateApprovalBlockers = (candidate: DiscoveryCandidate) => [
+    ...(attributesChanged(candidate) && (!typeDrafts[candidate.candidateId] || typeDrafts[candidate.candidateId] === (candidate.entityAssessment?.reviewedType || candidate.entityAssessment?.suggestedType)) ? ['Save topic and location changes first.'] : []),
+    ...approvalBlockers(candidate, getExpectedClassification(), getCandidateEdit(candidate), typeDrafts[candidate.candidateId])
+  ];
+
+  async function saveCorrections(candidate: DiscoveryCandidate) {
     setSavingReview(true);
-    try{
-      const edit=getCandidateEdit(candidate);
-      const response=await scoutFetch('/api/sport-hub/scout/attributes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId,candidateId:candidate.candidateId,topic:edit.relevant===undefined?'unknown':edit.relevant?'passed':'failed',geography:edit.locationConfirmed===undefined?'unknown':edit.locationConfirmed?'passed':'failed'})});
-      const result=await response.json();if(!response.ok || !result.success)throw new Error(result.error || 'Unable to save attributes.');
-      setCandidates(prev=>prev.map(c=>c.candidateId===candidate.candidateId?result.candidate:c));
-      setCandidateEdits(prev=>{const next={...prev};delete next[candidate.candidateId];return next;});
-      setDecisions(prev=>{const next={...prev};delete next[candidate.candidateId];return next;});
-      setSelectedUsernames(prev=>{const next=new Set(prev);next.delete(candidate.candidateId);return next;});
-      toast.success('Topic and location saved as team review. Review the updated profile before approving.');
-    }catch(error:any){toast.error(error.message);}finally{setSavingReview(false);}
+    try {
+      const expected = getExpectedClassification();
+      const draftType = typeDrafts[candidate.candidateId];
+      const savedType = candidate.entityAssessment?.reviewedType || candidate.entityAssessment?.suggestedType;
+      const typeChanged = Boolean(candidate.entityAssessment && draftType && draftType !== savedType);
+      const legacyTypeChanged = Boolean(!candidate.entityAssessment && candidateEdits[candidate.candidateId]?.classification && candidateEdits[candidate.candidateId]?.classification !== candidate.classification);
+      const topicLocationChanged = isTopicOrLocationChanged(candidate);
+
+      let updatedCandidate = candidate;
+
+      // 1. Save account type correction if changed
+      if (typeChanged && draftType) {
+        const response = await fetch("/api/sport-hub/scout/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            candidateId: candidate.candidateId,
+            reason: "Wrong Entity Type",
+            entityType: draftType,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.error || "Failed to record account type correction.");
+        if (result.candidate) {
+          updatedCandidate = result.candidate;
+        }
+      } else if (legacyTypeChanged && candidateEdits[candidate.candidateId]?.classification) {
+        const targetClass = candidateEdits[candidate.candidateId]!.classification;
+        const response = await fetch("/api/sport-hub/scout/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            candidateId: candidate.candidateId,
+            reason: targetClass === expected ? "Correct Classification" : "Wrong Entity Type",
+            classification: targetClass,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Failed to update entity classification.");
+      }
+
+      // 2. Save topic & location if changed or if candidate has v7 attribute review
+      if (topicLocationChanged || (candidate.assessmentVersion === 7 && candidateEdits[candidate.candidateId])) {
+        const edit = getCandidateEdit(updatedCandidate);
+        const response = await scoutFetch("/api/sport-hub/scout/attributes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            candidateId: candidate.candidateId,
+            topic: edit.relevant === undefined ? "unknown" : edit.relevant ? "passed" : "failed",
+            geography: edit.locationConfirmed === undefined ? "unknown" : edit.locationConfirmed ? "passed" : "failed",
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.error || "Unable to save attributes.");
+        if (result.candidate) {
+          updatedCandidate = result.candidate;
+        }
+      }
+
+      setCandidates(prev => prev.map(c => c.candidateId === candidate.candidateId ? updatedCandidate : c));
+      setTypeDrafts(prev => { const next = { ...prev }; delete next[candidate.candidateId]; return next; });
+      setCandidateEdits(prev => { const next = { ...prev }; delete next[candidate.candidateId]; return next; });
+      setDecisions(prev => { const next = { ...prev }; delete next[candidate.candidateId]; return next; });
+      setSelectedUsernames(prev => { const next = new Set(prev); next.delete(candidate.candidateId); return next; });
+      toast.success("Profile corrections saved. Review the updated assessment before approving.");
+    } catch (error: any) {
+      const rawMsg = error?.message || "Failed to save corrections";
+      const msg = typeof rawMsg === "string" && /^<html/i.test(rawMsg.trim())
+        ? rawMsg.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || "Failed to save corrections"
+        : rawMsg;
+      toast.error(msg);
+    } finally {
+      setSavingReview(false);
+    }
   }
+
+  const saveAttributes = saveCorrections;
   const isCandidateReadyToApprove = (candidate: DiscoveryCandidate) => candidateApprovalBlockers(candidate).length === 0;
 
   // Quick feedback submission and candidate exclusion
@@ -1536,33 +1636,20 @@ export function DiscoveryScoutModal({
                                 <label className="block text-[11px] font-bold text-slate-700">
                                   Correct account type
                                 </label>
-                                <div className="flex items-center gap-1.5">
-                                  <select
-                                    disabled={savingReview || importing || isApproved}
-                                    aria-label={`Correct account type for ${candidate.name}`}
-                                    value={typeDrafts[candidate.candidateId] || candidate.entityAssessment.reviewedType || candidate.entityAssessment.suggestedType || 'Unknown'}
-                                    onChange={(e) => {
-                                      const val = e.target.value as EntityType;
-                                      setTypeDrafts(prev => ({ ...prev, [candidate.candidateId]: val }));
-                                    }}
-                                    className="w-full text-xs font-semibold rounded-lg border border-slate-300 px-2.5 py-1.5 transition bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                                  >
-                                    {ENTITY_TYPES.map(val => (
-                                      <option key={val} value={val}>{t(val)}</option>
-                                    ))}
-                                  </select>
-                                  <button
-                                    type="button"
-                                    disabled={savingReview || importing || isApproved}
-                                    onClick={() => {
-                                      const val = typeDrafts[candidate.candidateId] || candidate.entityAssessment?.reviewedType || candidate.entityAssessment?.suggestedType || 'Unknown';
-                                      void handleFeedbackAndReject(candidate, 'Wrong Entity Type', undefined, val);
-                                    }}
-                                    className="shrink-0 px-2.5 py-1.5 text-[11px] font-bold rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition disabled:opacity-40 cursor-pointer shadow-2xs"
-                                  >
-                                    Save type correction
-                                  </button>
-                                </div>
+                                <select
+                                  disabled={savingReview || importing || isApproved}
+                                  aria-label={`Correct account type for ${candidate.name}`}
+                                  value={typeDrafts[candidate.candidateId] || candidate.entityAssessment.reviewedType || candidate.entityAssessment.suggestedType || 'Unknown'}
+                                  onChange={(e) => {
+                                    const val = e.target.value as EntityType;
+                                    setTypeDrafts(prev => ({ ...prev, [candidate.candidateId]: val }));
+                                  }}
+                                  className="w-full text-xs font-semibold rounded-lg border border-slate-300 px-2.5 py-1.5 transition bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                                >
+                                  {ENTITY_TYPES.map(val => (
+                                    <option key={val} value={val}>{t(val)}</option>
+                                  ))}
+                                </select>
                                 <div className="text-[10px] space-y-0.5">
                                   <div className="flex flex-wrap items-center gap-1 text-slate-500">
                                     <span>Suggested: <strong>{t(candidate.entityAssessment.suggestedType)}</strong></span>
@@ -1571,7 +1658,7 @@ export function DiscoveryScoutModal({
                                   </div>
                                   {typeDrafts[candidate.candidateId] && typeDrafts[candidate.candidateId] !== (candidate.entityAssessment.reviewedType || candidate.entityAssessment.suggestedType) && (
                                     <span className="text-amber-700 font-medium block">
-                                      Unsaved account type. Save the correction before approving.
+                                      Unsaved account type. Save corrections below before approving.
                                     </span>
                                   )}
                                   {!['Individual', 'Community', 'Club', 'Unknown'].includes(typeDrafts[candidate.candidateId] || candidate.entityAssessment.suggestedType) && (
@@ -1691,28 +1778,33 @@ export function DiscoveryScoutModal({
                             </div>
                           </div>
 
-                          {candidate.assessmentVersion===7 && (
-                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/70 text-xs">
-                              <p className="text-[11px] text-slate-500 leading-snug">
-                                Your corrections are saved as team review, separately from provider observations. Audience size requirements still apply.
-                              </p>
-                              <div className="flex flex-wrap items-center gap-2">
-                                {candidate.manualAttributeReview && (
-                                  <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded font-mono">
-                                    Team review saved: {candidate.manualAttributeReview.confirmedAt}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/70 text-xs">
+                            <p className="text-[11px] text-slate-500 leading-snug">
+                              Your corrections are saved as team review, separately from provider observations. Audience size requirements still apply.
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {candidate.manualAttributeReview && (
+                                <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded font-mono">
+                                  Team review saved: {candidate.manualAttributeReview.confirmedAt}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                disabled={savingReview || importing || isApproved || !attributesChanged(candidate)}
+                                onClick={() => void saveCorrections(candidate)}
+                                className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 text-xs transition shadow-2xs disabled:opacity-40 cursor-pointer"
+                              >
+                                {savingReview ? (
+                                  <span className="flex items-center gap-1.5">
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                    <span>Saving...</span>
                                   </span>
+                                ) : (
+                                  <span>Save corrections</span>
                                 )}
-                                <button
-                                  type="button"
-                                  disabled={savingReview || importing || isApproved || !attributesChanged(candidate)}
-                                  onClick={()=>void saveAttributes(candidate)}
-                                  className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 text-xs transition shadow-2xs disabled:opacity-40 cursor-pointer"
-                                >
-                                  Save topic and location
-                                </button>
-                              </div>
+                              </button>
                             </div>
-                          )}
+                          </div>
                           {/* Quick Action Alerts if Mismatched */}
                           {!candidate.entityAssessment && edit.classification !== expected && edit.classification !== "Unknown" && (
                             <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs">

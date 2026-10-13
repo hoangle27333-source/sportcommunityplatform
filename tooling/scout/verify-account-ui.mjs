@@ -39,13 +39,13 @@ try {
  await page.getByText('Recent post location meets the selected scope.',{exact:true}).last().waitFor();
  await page.getByLabel('Assessment',{exact:true}).selectOption('All');
  await page.getByLabel('Correct account type for Alex Runner').selectOption('Brand/Business');
- await page.getByRole('button',{name:'Save type correction',exact:true}).click();
+ await page.getByRole('button',{name:'Save corrections',exact:true}).click();
  await page.getByText('This type is retained for Scout review and cannot be imported into the current CRM.').waitFor();
  await page.getByLabel('Type',{exact:true}).selectOption('Individual');
  if(await page.getByRole('region',{name:'Account evidence'}).count())throw new Error('Entity type filter did not hide the business.');
  await page.getByLabel('Type',{exact:true}).selectOption('All');
  await page.getByLabel('Correct account type for Alex Runner').selectOption('Individual');
- await page.getByRole('button',{name:'Save type correction',exact:true}).click();
+ await page.getByRole('button',{name:'Save corrections',exact:true}).click();
  await page.getByRole('button',{name:'Approve for Import',exact:true}).click();
  await page.getByRole('button',{name:/^Approved\s/}).click();
  await page.getByText('Reviewed type:',{exact:false}).waitFor();
