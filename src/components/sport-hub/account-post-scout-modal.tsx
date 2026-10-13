@@ -23,7 +23,13 @@ import {
 import { ScoutDialogFrame, scoutButtonClass, scoutInputClass } from './scout-dialog-frame';
 import { PlatformIcon } from './platform-icon';
 import { t, formatNumber } from '@/lib/i18n';
+import { useCurrentUser } from '@/lib/auth/auth-context';
 import { scoutFetch } from '@/lib/apify/scout-client';
+
+function localDateInput(value: string | number) {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
 
 export type ScoutPickerChannel = {
   url: string;
@@ -61,6 +67,7 @@ export function AccountPostScoutModal({
   resumeSessionId,
   source = '/trending',
 }: AccountPostScoutModalProps) {
+  const {isEditor, loading: authLoading} = useCurrentUser();
   // Navigation & Step: 1 = Account Selection, 2 = Plan Review, 3 = Running / Progress, 4 = Completed
   const [step, setStep] = useState<1 | 2 | 3 | 4>(resumeSessionId ? 3 : 1);
 
@@ -93,13 +100,13 @@ export function AccountPostScoutModal({
   );
   const [customFrom, setCustomFrom] = useState(
     initialCriteria.publishedFrom
-      ? new Date(initialCriteria.publishedFrom).toISOString().slice(0, 16)
-      : new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 16)
+      ? localDateInput(initialCriteria.publishedFrom)
+      : localDateInput(Date.now() - 7 * 86400000)
   );
   const [customTo, setCustomTo] = useState(
     initialCriteria.publishedTo
-      ? new Date(initialCriteria.publishedTo).toISOString().slice(0, 16)
-      : new Date().toISOString().slice(0, 16)
+      ? localDateInput(initialCriteria.publishedTo)
+      : localDateInput(Date.now())
   );
   const [limitPerAccount, setLimitPerAccount] = useState<number>(
     Number(initialCriteria.limitPerAccount) || 10
@@ -115,14 +122,13 @@ export function AccountPostScoutModal({
   const [minInteractions, setMinInteractions] = useState<number>(
     Number(initialCriteria.qualityFilter?.minInteractions) || 50
   );
-  const [metricRule, setMetricRule] = useState<'views-first' | 'interactions-first'>(
-    initialCriteria.qualityFilter?.metricRule || 'views-first'
-  );
+  const metricRule = 'views-first';
 
   // Plan State
   const [planning, setPlanning] = useState(false);
   const [plan, setPlan] = useState<any>(null);
   const [planError, setPlanError] = useState('');
+  const [maxSessionUsd, setMaxSessionUsd] = useState<string>(initialCriteria.maxSessionUsd?.toString() || '');
 
   // Execution & Progress State
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId || null);
@@ -353,7 +359,7 @@ export function AccountPostScoutModal({
 
   // Request Batch Plan from Backend
   const handleGeneratePlan = async () => {
-    if (totalSelectedAccounts === 0) return;
+    if (totalSelectedAccounts === 0 || !isEditor || authLoading) return;
     setPlanning(true);
     setPlanError('');
     setPlan(null);
@@ -370,6 +376,7 @@ export function AccountPostScoutModal({
         accounts: accountsPayload,
         mode,
         limitPerAccount,
+        ...(maxSessionUsd ? {maxSessionUsd: Number(maxSessionUsd)} : {}),
         qualityFilter: {
           enabled: qualityFilterEnabled,
           minViews,
@@ -420,6 +427,7 @@ export function AccountPostScoutModal({
 
   // Start Scout Batch Execution
   const handleStartScout = async () => {
+    if (!isEditor || authLoading) return;
     if (!plan || !plan.hash) {
       setPlanError('A reviewed batch plan is required before starting collection.');
       return;
@@ -435,7 +443,7 @@ export function AccountPostScoutModal({
         uiContext: { source },
       };
 
-      const res = await scoutFetch('/api/sport-hub/scout/account-posts', {
+      const res = await fetch('/api/sport-hub/scout/account-posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -455,6 +463,7 @@ export function AccountPostScoutModal({
 
       if (data.sessionId) {
         setSessionId(data.sessionId);
+        window.history.replaceState(null, '', `/scout?sessionId=${encodeURIComponent(data.sessionId)}`);
         setSessionStatus('running');
         setStep(3);
       } else if (data.posts) {
@@ -483,12 +492,16 @@ export function AccountPostScoutModal({
         const data = await res.json();
         if (cancelled) return;
 
+        if (data.status === 'failed' || (!res.ok && !data.pending)) {
+          setSessionStatus('failed'); setSessionResult(data);
+          setExecutionError(data.error || 'Scout task failed.'); setStep(4); return;
+        }
         if (res.ok && data.success) {
           if (data.progress) {
             setSessionProgress(data.progress);
           }
 
-          if (data.status === 'complete' || (data.status === 'failed' && !data.pending)) {
+          if (data.status === 'complete' || !data.pending) {
             setSessionStatus(data.status);
             setSessionResult(data);
             setStep(4);
@@ -567,6 +580,9 @@ export function AccountPostScoutModal({
             </div>
           )}
 
+          <label className="block text-xs font-semibold">Total Batch Budget (USD, optional)
+            <input aria-label="Total Batch Budget (USD, optional)" type="number" min="0.01" max="100" step="0.01" value={maxSessionUsd} onChange={e=>setMaxSessionUsd(e.target.value)} placeholder="Use system budget" className={scoutInputClass}/>
+          </label>
           {/* 1. Mode & Date & Limit Settings */}
           <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
@@ -626,6 +642,7 @@ export function AccountPostScoutModal({
                       onChange={e => setCustomFrom(e.target.value)}
                       className={`${scoutInputClass} text-[11px]`}
                       title="Published From (Local time)"
+                      aria-label="Published From (Local time)"
                     />
                     <input
                       type="datetime-local"
@@ -633,6 +650,7 @@ export function AccountPostScoutModal({
                       onChange={e => setCustomTo(e.target.value)}
                       className={`${scoutInputClass} text-[11px]`}
                       title="Published To (Local time)"
+                      aria-label="Published To (Local time)"
                     />
                   </div>
                 ) : (
@@ -703,10 +721,10 @@ export function AccountPostScoutModal({
                   </label>
                   <input
                     type="number"
-                    min={0}
+                    min={1}
                     step={500}
                     value={minViews}
-                    onChange={e => setMinViews(Math.max(0, Number(e.target.value) || 0))}
+                    onChange={e => setMinViews(Math.max(1, Number(e.target.value) || 1))}
                     className={scoutInputClass}
                   />
                 </div>
@@ -716,10 +734,10 @@ export function AccountPostScoutModal({
                   </label>
                   <input
                     type="number"
-                    min={0}
+                    min={1}
                     step={10}
                     value={minInteractions}
-                    onChange={e => setMinInteractions(Math.max(0, Number(e.target.value) || 0))}
+                    onChange={e => setMinInteractions(Math.max(1, Number(e.target.value) || 1))}
                     className={scoutInputClass}
                   />
                 </div>
@@ -729,11 +747,10 @@ export function AccountPostScoutModal({
                   </label>
                   <select
                     value={metricRule}
-                    onChange={e => setMetricRule(e.target.value as any)}
+                    disabled
                     className={scoutInputClass}
                   >
                     <option value="views-first">Views First</option>
-                    <option value="interactions-first">Interactions First</option>
                   </select>
                 </div>
               </div>
@@ -1133,9 +1150,9 @@ export function AccountPostScoutModal({
                 {plan.criteria?.mode === 'top' ? 'Top Posts' : 'Latest Posts'}
                 <span className="text-[11px] text-slate-500 block font-normal">
                   {plan.criteria?.publishedFrom
-                    ? `${new Date(plan.criteria.publishedFrom).toLocaleDateString()} – ${new Date(
+                    ? `${new Date(plan.criteria.publishedFrom).toLocaleDateString('en-US')} – ${new Date(
                         plan.criteria.publishedTo
-                      ).toLocaleDateString()}`
+                      ).toLocaleDateString('en-US')}`
                     : `Last ${plan.criteria?.recentDays || 7} days`}
                 </span>
               </span>
@@ -1206,7 +1223,7 @@ export function AccountPostScoutModal({
           <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
             <button
               type="button"
-              disabled={startingScout}
+              disabled={startingScout || authLoading || !isEditor}
               onClick={() => setStep(1)}
               className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition cursor-pointer"
             >
@@ -1214,7 +1231,7 @@ export function AccountPostScoutModal({
             </button>
             <button
               type="button"
-              disabled={startingScout}
+              disabled={startingScout || authLoading || !isEditor}
               onClick={handleStartScout}
               className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs flex items-center space-x-2 transition cursor-pointer disabled:opacity-50"
             >
@@ -1353,6 +1370,7 @@ export function AccountPostScoutModal({
       {/* ─── STEP 4: COMPLETED RESULTS ─── */}
       {step === 4 && sessionResult && (
         <div className="space-y-6">
+          {executionError && <p role="alert" className="text-sm text-red-700">{executionError}</p>}
           {/* Summary Strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950">

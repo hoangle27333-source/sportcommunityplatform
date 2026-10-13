@@ -6,7 +6,7 @@ Implement the UI/UX and frontend for the approved Scout Post split in:
 
 `/Users/Apple/Documents/Vibe Code/Sport Booking Platform`
 
-Antigravity owns frontend design and implementation. Codex owns backend/API, migrations, provider execution, storage, identity matching, and final integration verification. Backend implementation is in progress; use the contract below and shared types, and report a contract discrepancy instead of changing backend behavior yourself. The user will send this request to Antigravity manually.
+Antigravity owns frontend design and implementation. Codex owns backend/API, migrations, provider execution, storage, identity matching, and final integration verification. Backend code is implemented locally; the new database migration must be applied before live use. Use the contract below and shared types, and report a contract discrepancy instead of changing backend behavior yourself. The user will send this request to Antigravity manually.
 
 Choose the layout and interaction design using the existing design system. This request defines behavior, data, states, and acceptance; it does not prescribe layout. Preserve all existing dirty tracked/untracked changes. Do not reset files, commit, push, deploy, run migrations, or start paid provider runs.
 
@@ -51,6 +51,8 @@ Read the current implementation of these contract modules before wiring:
 - `src/lib/apify/account-posts.ts`: backend request/plan contracts; do not import this server module into browser code.
 - `src/lib/apify/scout-workspace.ts`: durable session summaries.
 
+Frontend-only sample responses are available in `docs/scout-post-workspaces-fixture.json`. Mock these responses; never submit fixture IDs/URLs to live collection endpoints. Integration corrections from the frontend source review are recorded in `docs/ANTIGRAVITY_SCOUT_POSTS_INTEGRATION_FIXES.md`.
+
 ### Account selection
 
 `GET /api/sport-hub/scout/accounts` returns all saved KOL/community picker records with channels and availability. Apply search/filter/pagination to this complete set so Select All Matching Accounts is correct. Existing `/api/sport-hub/data` still returns CRM entities.
@@ -80,7 +82,7 @@ The plan response is `{success:true, plan}`. The batch plan includes `kind`, `ve
 
 Start with `POST /api/sport-hub/scout/account-posts`, sending the same criteria and `planHash: plan.hash`, plus optional `uiContext:{source:"/trending"}`. Account selection is bounded to 1,000 unique accounts/request; explain that limit if reached. Do not silently truncate a selection.
 
-Use the existing Scout polling pattern. A pending response is HTTP 202 with `{success:true,pending:true,sessionId,status,progress,warnings}`. Resume via `GET /api/sport-hub/scout?sessionId=...`; activity detail via `/api/sport-hub/scout/sessions?sessionId=...`.
+Use raw `fetch` for the dedicated batch launch to receive HTTP 202 immediately and display progress. The existing `scoutFetch` helper waits/polls until completion internally, so it cannot be used for an immediate pending response. A pending response is HTTP 202 with `{success:true,pending:true,sessionId,status,progress,warnings}`. Resume via `GET /api/sport-hub/scout?sessionId=...`; activity detail via `/api/sport-hub/scout/sessions?sessionId=...`. Completed responses include `status:'complete'`; failed responses include `status:'failed'`, `success:false` and a non-2xx status. Handle failed receipts before the `res.ok && data.success` branch.
 
 Progress includes `stage`, `totalAccounts`, `completedAccounts`, `accountResults` and `skippedChannels`. Each account result includes `entityType`, `id`, `name`, `status: complete|failed|skipped`, saved `posts`, `counts`, `warnings`, optional `code`, `error` and `partial`. Final results include unique `posts`, account results, counts, warnings and stop reason. Completed accounts can have zero posts; show that truthfully.
 
@@ -115,7 +117,7 @@ Response supplies `sessionId`, candidates and criteria, compatible with existing
 
 `PATCH /api/sport-hub/scout/suggested-accounts` edits a suggestion preview using `{sessionId,candidateId,name?,bio?,geography?}` and returns the updated candidate; prior approval is invalidated. Do not drop unsaved edits during errors or conflicts.
 
-Approve via existing `POST /api/sport-hub/scout/review`; import via `POST /api/sport-hub/scout` with `action:'confirm'`, `sessionId`, and selected candidate IDs. Preserve all existing review guards. Account status after import remains **New Scout (Unverified)**.
+Approve via existing `POST /api/sport-hub/scout/review`; import via `POST /api/sport-hub/scout` with `action:'confirm'`, `sessionId`, and selected candidate IDs. Preserve all existing review guards. Account status after import remains **New Scout (Unverified)**. Import returns `importedAccounts:[{entityType,id}]`, `importedIds:[id]` and, for suggestion imports, `postLinkResults`. `success:true` with `partial:true` means the account can be imported even if linking needs retry; inspect `postLinkResults` and display that accurately.
 
 If post linking fails after successful import, offer **Retry Linking** via `POST /api/sport-hub/scout/post-links` with `{entityType,id}`. This action does not scrape or charge provider usage. Refresh the post list afterwards.
 

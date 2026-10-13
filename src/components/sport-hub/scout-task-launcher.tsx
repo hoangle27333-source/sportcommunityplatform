@@ -445,7 +445,7 @@ export function ScoutTaskLauncher({
               {context.entityType === 'tracked'
                 ? 'Analytics'
                 : context.intent === 'content'
-                ? 'Trending Posts'
+                ? 'Posts'
                 : 'Directory'}
             </Link>
 
@@ -1010,7 +1010,7 @@ export function ScoutSessionResults({
           <span>
             Open{' '}
             {destination === '/trending'
-              ? 'Trending Posts'
+              ? 'Posts'
               : destination === '/analytics/tracked'
               ? 'Analytics'
               : 'Directory'}
@@ -1262,6 +1262,44 @@ export function ScoutSessionResults({
             <div className="space-y-3">
               {postsList.map((p: any, i: number) => (
                 <ScoutPostCard key={p.id || i} post={p} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {result?.accountResults?.length > 0 && (
+          <section className="mt-4 space-y-2" aria-label="Account results">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Account Results ({result.accountResults.length.toLocaleString('en-US')})
+            </h3>
+            <div className="max-h-60 overflow-y-auto space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/50 p-2">
+              {result.accountResults.map((acc: any, idx: number) => (
+                <div key={acc.id || idx} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-slate-900">{acc.name}</span>
+                    <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded ml-2">
+                      {acc.entityType === 'kol' ? 'Creator' : 'Community'}
+                    </span>
+                    {acc.warnings?.length > 0 && (
+                      <p className="text-[10px] text-amber-700 mt-0.5">{acc.warnings.join(' · ')}</p>
+                    )}
+                  </div>
+                  <div>
+                    {acc.status === 'complete' ? (
+                      <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {acc.counts?.saved ?? 0} saved
+                      </span>
+                    ) : acc.status === 'failed' ? (
+                      <span className="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                        {acc.error || 'Failed'}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                        {acc.status}
+                      </span>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </section>

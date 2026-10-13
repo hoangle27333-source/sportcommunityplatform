@@ -67,6 +67,9 @@ export function SuggestedAccountReviewModal({
   const [importing, setImporting] = useState(false);
   const [importedAccount, setImportedAccount] = useState<{ entityType: 'kol' | 'community'; id: string } | null>(null);
 
+  const hasUnsavedEdits = !!candidate && (editName.trim() !== candidate.name || editBio !== (candidate.bio || '') || editGeography !== (candidate.verifiedGeography || 'Unknown'));
+  useEffect(() => { if (hasUnsavedEdits) setIsApproved(false); }, [hasUnsavedEdits, editName, editBio, editGeography]);
+
   // Post link retry state
   const [linkingBusy, setLinkingBusy] = useState(false);
   const [linkResult, setLinkResult] = useState<{ linked: number; conflicts: string[] } | null>(null);
@@ -157,7 +160,7 @@ export function SuggestedAccountReviewModal({
 
   // Step 2: Approve Candidate
   const handleApprove = async () => {
-    if (!sessionId || !candidate) return;
+    if (!sessionId || !candidate || hasUnsavedEdits) return;
     setApproving(true);
     setPreviewError('');
 
@@ -191,7 +194,7 @@ export function SuggestedAccountReviewModal({
 
   // Step 2: Import Candidate into Database CRM
   const handleImport = async () => {
-    if (!sessionId || !candidate || !isApproved) return;
+    if (!sessionId || !candidate || !isApproved || hasUnsavedEdits) return;
     setImporting(true);
     setPreviewError('');
 
@@ -222,11 +225,14 @@ export function SuggestedAccountReviewModal({
 
       // Record imported account ID if returned
       const importedId =
-        data.importedIds?.[0] || data.recordId || data.insertedRecord?.id || data.records?.[0]?.id;
+        data.importedAccounts?.[0]?.id || data.importedIds?.[0] || data.recordId || data.insertedRecord?.id || data.records?.[0]?.id;
       if (importedId) {
         setImportedAccount({ entityType, id: importedId });
       }
 
+      const linkage = data.postLinkResults?.[0];
+      if (linkage?.success === false) setLinkError(linkage.error || 'Account imported; post linking needs retry.');
+      else if (linkage) setLinkResult({ linked: linkage.linked || 0, conflicts: linkage.conflicts || [] });
       setStep(3);
       window.dispatchEvent(new CustomEvent('sport-hub-data-changed'));
       onSuccess();
@@ -284,7 +290,7 @@ export function SuggestedAccountReviewModal({
           ? `Select the CRM destination for "${suggestion.name}". Opening uses saved post evidence without launching paid providers.`
           : step === 2
           ? 'Review details, edit metadata, and explicitly confirm account type and relevance before import.'
-          : 'The creator has been imported with status "New Scout (Unverified)" and linked to their saved posts.'
+          : 'The account has been imported with status "New Scout (Unverified)". Check post linkage below.'
       }
       onClose={onClose}
     >
@@ -388,6 +394,7 @@ export function SuggestedAccountReviewModal({
             />
           </div>
 
+          {hasUnsavedEdits && <p role="status" className="text-xs text-amber-800">Save your edits before approving or importing this account.</p>}
           {/* Action Footer */}
           <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
             <button
@@ -465,7 +472,6 @@ export function SuggestedAccountReviewModal({
                 type="text"
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
-                onBlur={handleSaveEdits}
                 className={scoutInputClass}
               />
             </div>
@@ -478,7 +484,6 @@ export function SuggestedAccountReviewModal({
                 rows={2}
                 value={editBio}
                 onChange={e => setEditBio(e.target.value)}
-                onBlur={handleSaveEdits}
                 placeholder="Optional creator bio or club description..."
                 className={scoutInputClass}
               />
@@ -492,7 +497,6 @@ export function SuggestedAccountReviewModal({
                 type="text"
                 value={editGeography}
                 onChange={e => setEditGeography(e.target.value)}
-                onBlur={handleSaveEdits}
                 className={scoutInputClass}
               />
             </div>
@@ -511,6 +515,7 @@ export function SuggestedAccountReviewModal({
             </div>
           </div>
 
+          {step === 2 && <button type="button" disabled={savingEdits || importing || approving || !hasUnsavedEdits} onClick={handleSaveEdits} className={scoutButtonClass}>{savingEdits ? 'Saving Edits…' : 'Save Edits'}</button>}
           {/* Explicit Human Confirmations */}
           <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2 text-xs">
             <span className="font-bold text-amber-900 block">
@@ -551,6 +556,7 @@ export function SuggestedAccountReviewModal({
             </label>
           </div>
 
+          {hasUnsavedEdits && <p role="status" className="text-xs text-amber-800">Save your edits before approving or importing this account.</p>}
           {/* Action Footer */}
           <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
             <button
@@ -566,7 +572,7 @@ export function SuggestedAccountReviewModal({
               {!isApproved ? (
                 <button
                   type="button"
-                  disabled={!confirmType || !confirmRelevance || !confirmLocation || approving}
+                  disabled={hasUnsavedEdits || savingEdits || !confirmType || !confirmRelevance || !confirmLocation || approving}
                   onClick={handleApprove}
                   className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs flex items-center space-x-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -585,7 +591,7 @@ export function SuggestedAccountReviewModal({
               ) : (
                 <button
                   type="button"
-                  disabled={importing}
+                  disabled={importing || hasUnsavedEdits || savingEdits}
                   onClick={handleImport}
                   className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs flex items-center space-x-2 transition cursor-pointer disabled:opacity-50"
                 >

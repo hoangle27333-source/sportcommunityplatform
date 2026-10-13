@@ -1,0 +1,62 @@
+{
+  "fixtureOnly": true,
+  "instructions": "Mock API responses in frontend QA. IDs and profiles are placeholders. Never submit these to live Scout endpoints or start paid providers.",
+  "accountsResponse": {
+    "success": true,
+    "accounts": [
+      {
+        "entityType": "kol", "id": "00000000-0000-4000-8000-000000000001", "name": "Nguyễn Văn A", "sport": ["Chạy bộ / Marathon"], "geography": "Hà Nội",
+        "urls": ["https://tiktok.com/@example"],
+        "channels": [{"url": "https://tiktok.com/@example", "platform": "TikTok", "available": true}]
+      },
+      {
+        "entityType": "community", "id": "00000000-0000-4000-8000-000000000002", "name": "CLB Chạy Bộ", "sport": ["Chạy bộ / Marathon"], "geography": "Unknown",
+        "urls": ["https://facebook.com/groups/123456"],
+        "channels": [{"url": "https://facebook.com/groups/123456", "platform": "Facebook", "available": false, "reason": "This collection capability has not passed provider verification."}]
+      }
+    ]
+  },
+  "postsResponse": {
+    "success": true,
+    "posts": [
+      {
+        "id": "00000000-0000-4000-8000-000000000011", "title": "Chạy bộ mỗi ngày", "author": "Nguyễn Văn A", "platform": "TikTok Video",
+        "kolRecordIds": ["00000000-0000-4000-8000-000000000001"], "communityRecordIds": [],
+        "likes": 1200, "comments": 50, "views": 25000, "shares": null, "er": null,
+        "postUrl": "https://tiktok.com/@example/video/123", "publishedAt": "2026-10-12T01:00:00.000Z", "viralGrade": "High Engagement",
+        "missingMetrics": ["shares", "er"], "scoutProvenance": null, "scoutContentAssessment": {"status":"verified"},
+        "authorIdentity": "TikTok:https://tiktok.com/@example", "authorProfileUrl": "https://tiktok.com/@example",
+        "collectionSources": [{"kind":"account","entityType":"kol","entityId":"00000000-0000-4000-8000-000000000001"},{"kind":"topic","keyword":"Running"}],
+        "accountLinks": [{"entityType":"kol","id":"00000000-0000-4000-8000-000000000001","role":"author"}],
+        "workspaces": ["account","topic"], "accountSuggestionState": "existing"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000012", "title": "Ngày thi đấu đầu tiên", "author": "Tác giả mới", "platform": "Instagram Reels",
+        "kolRecordIds": [], "communityRecordIds": [], "likes": 0, "comments": null, "views": null, "shares": null, "er": null,
+        "postUrl": "https://instagram.com/reel/example", "publishedAt": "2026-10-12T02:00:00.000Z", "viralGrade": "Unknown",
+        "missingMetrics": ["comments","views","shares","er"], "scoutProvenance": null, "scoutContentAssessment": {"status":"needs-verification"},
+        "authorIdentity": "Instagram:https://instagram.com/newexample", "authorProfileUrl": "https://instagram.com/newexample",
+        "collectionSources": [{"kind":"topic","keyword":"Pickleball"}], "accountLinks": [], "workspaces": ["topic"], "accountSuggestionState": "suggested"
+      }
+    ],
+    "suggestedAccounts": [{"identity":"Instagram:https://instagram.com/newexample","platform":"Instagram","name":"Tác giả mới","profileUrl":"https://instagram.com/newexample","postIds":["00000000-0000-4000-8000-000000000012"],"postCount":1,"suggestedEntityType":null,"reviewState":"Needs Review"}]
+  },
+  "pendingBatchResponse": {
+    "success": true, "pending": true, "sessionId": "00000000-0000-4000-8000-000000000020", "status": "running", "warnings": [],
+    "progress": {"stage":"collecting-account-posts","totalAccounts":2,"completedAccounts":1,"accountResults":[{"entityType":"kol","id":"00000000-0000-4000-8000-000000000001","name":"Nguyễn Văn A","status":"complete","posts":[],"counts":{"saved":0,"inserted":0,"refreshed":0,"duplicate":0},"warnings":[]}],"skippedChannels":[]}
+  },
+  "partialBatchResponse": {
+    "success":true,"partial":true,"sessionId":"00000000-0000-4000-8000-000000000020","posts":[],"stopReason":"BUDGET_EXHAUSTED",
+    "accountResults":[
+      {"entityType":"kol","id":"00000000-0000-4000-8000-000000000001","name":"Nguyễn Văn A","status":"complete","posts":[],"counts":{"saved":0,"inserted":0,"refreshed":0,"duplicate":0},"warnings":[]},
+      {"entityType":"community","id":"00000000-0000-4000-8000-000000000002","name":"CLB Chạy Bộ","status":"failed","code":"BUDGET_EXHAUSTED","posts":[],"counts":{"saved":0},"warnings":["The batch budget was exhausted."]}
+    ],
+    "counts":{"saved":0,"completedAccounts":1,"failedAccounts":1,"skippedAccounts":0},"warnings":["The batch budget was exhausted."]
+  },
+  "errorResponses": [
+    {"status":409,"body":{"success":false,"code":"PLAN_STALE","error":"The selected accounts or plan changed. Review the updated plan."}},
+    {"status":503,"body":{"success":false,"code":"POST_WORKSPACE_SCHEMA_UNAVAILABLE","error":"Posts workspaces require the database migration. No collection was started."}},
+    {"status":409,"body":{"success":false,"code":"REVIEW_STALE","error":"The review changed or an import is in progress."}},
+    {"status":403,"body":{"success":false,"code":"FORBIDDEN","error":"Editor access required"}}
+  ]
+}

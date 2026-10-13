@@ -30,3 +30,10 @@ export type SuggestedPostAccount = {
   suggestedEntityType: 'kol' | 'community' | null;
   reviewState: 'Needs Review';
 };
+export type PostWorkspaceRecord = PostWorkspaceMetadata & {
+  id: string; title: string; author: string; platform: string;
+  kolRecordIds: string[]; communityRecordIds: string[];
+  likes: number | null; comments: number | null; views: number | null; shares: number | null; er: number | null;
+  postUrl: string; publishedAt: string | null; viralGrade: string;
+  missingMetrics: string[]; scoutProvenance: Record<string, unknown> | null; scoutContentAssessment: Record<string, unknown> | null;
+};

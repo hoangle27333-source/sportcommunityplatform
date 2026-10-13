@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { authorIdentity, postMetadata, recordPostMetadata, suggestedPostAccounts } from './post-metadata';
-import { loadPostAccounts, matchPostAuthor } from './post-accounts';
+import { loadPostAccounts, matchPostAuthor, hasSavedPostAuthor } from './post-accounts';
 import { ScoutError } from './errors';
 import { canonicalUrl } from './discovery-quality';
 
@@ -17,7 +17,7 @@ export async function readWorkspacePosts() {
 }
 export async function readSuggestedAccounts() {
   const [rows, accounts] = await Promise.all([readWorkspacePosts(), loadPostAccounts()]);
-  return suggestedPostAccounts(rows).filter(s => !matchPostAuthor(accounts, s.platform, s.profileUrl));
+  return suggestedPostAccounts(rows).filter(s => !hasSavedPostAuthor(accounts, s.platform, s.profileUrl));
 }
 /** Retry independently after an import: exact saved channel matching, no provider access. */
 export async function relinkPostAuthor(entityType: 'kol' | 'community', id: string) {
@@ -38,7 +38,7 @@ export async function relinkPostAuthor(entityType: 'kol' | 'community', id: stri
       for (const post of data || []) {
         if (postMetadata(post).accountSuggestionState === 'existing' && post.author_account?.id === id) continue;
         try { await recordPostMetadata(post.id, platform, url, null, { entityType, id }); linked++; }
-        catch (error: any) { if (/POST_(AUTHOR|ACCOUNT)_CONFLICT/.test(error.message)) conflicts.push(post.id); else throw error; }
+        catch (error: any) { if (/POST_(AUTHOR|ACCOUNT)_CONFLICT/.test(error.code || error.message)) conflicts.push(post.id); else throw error; }
       }
       if (!data || data.length < 1000) break;
     }

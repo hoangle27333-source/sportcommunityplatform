@@ -80,8 +80,8 @@ export async function resumeSession(id: string, owner: string) {
     if(runError) throw runError;
     result={...result,warnings:explainSavedProviderWarnings(result.warnings,runs || [])};
   }
-  if (s.status === 'complete' && result?.success!==false) return NextResponse.json({...result,sessionId:id,criteria:s.params,reviewDecisions:s.review_decisions || {},importedCandidateIds:s.progress?.importedCandidateIds || []});
-  if (s.status === 'failed' || s.status==='complete' && result?.success===false) return NextResponse.json({...result,sessionId:id,criteria:s.params}, { status: result?.httpStatus || 502 });
+  if (s.status === 'complete' && result?.success!==false) return NextResponse.json({...result,status:'complete',sessionId:id,criteria:s.params,reviewDecisions:s.review_decisions || {},importedCandidateIds:s.progress?.importedCandidateIds || []});
+  if (s.status === 'failed' || s.status==='complete' && result?.success===false) return NextResponse.json({...result,status:'failed',sessionId:id,criteria:s.params}, { status: result?.httpStatus || 502 });
   return NextResponse.json({success:true,pending:true,sessionId:id,progress:s.progress,status:s.status,warnings:s.warnings}, {status:202});
 }
 export { executeSession } from './session-executor';

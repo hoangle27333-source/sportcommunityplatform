@@ -13,7 +13,7 @@ import { loadPostAccounts, matchPostAuthor, matchPostGroup } from './post-accoun
 import type { CollectedPost } from './scout';
 
 type Item=CollectedPost & {ownershipUnknown?:boolean};
-export async function scoutTopPosts(params:TopPostCriteria & {sessionId:string;searchPlan?:SearchPlan;keyword?:string;searchMode?:string;geography?:string|string[];limit?:number;recentDays?:number;kolId?:string;communityId?:string}) {
+export async function scoutTopPosts(params:TopPostCriteria & {sessionId:string;searchPlan?:SearchPlan;keyword?:string;searchMode?:string;geography?:string|string[];limit?:number;saveLimit?:number;recentDays?:number;kolId?:string;communityId?:string}) {
  const plan=params.searchPlan;if(!plan)throw new ScoutError('A reviewed top-post plan is required.','PLAN_REQUIRED',400);
  if(!isStoredEvidence())await assertTopPostSchema();
  const entity=!!(params.kolId || params.communityId);const limit=params.limit || 10;
@@ -46,7 +46,7 @@ export async function scoutTopPosts(params:TopPostCriteria & {sessionId:string;s
   const allowance=Math.min(index===0?Math.floor(budget/6):index===1?Math.floor(budget/3):40,budget-requestedRows);if(allowance<=0){stopReason='candidate-budget';break;}
   const units=plan.sources.flatMap(source=>{const round=source.rounds?.[index];return (round?.queries || []).map(query=>({source,query,sorting:round?.sorting}));}).filter(unit=>!blockedPlatforms.has(unit.source.platform) && !exhausted.has(`${unit.source.platform}:${unit.query}:${unit.sorting || ''}`));
   if(!units.length)continue;
-  const collected=await checkpointTask(params.sessionId,`top-round:${params.kolId || params.communityId || 'topic'}:${index}`,async()=>{
+  const collected=await checkpointTask(params.sessionId,`top-round:${params.kolId?'kol':params.communityId?'community':'topic'}:${params.kolId || params.communityId || ''}:${index}`,async()=>{
    const observations:any[]=[];let requested=0;let budgetStopped=false;
    for(const [i,unit] of units.entries()) {
     if(blockedPlatforms.has(unit.source.platform))continue;
@@ -93,6 +93,7 @@ export async function scoutTopPosts(params:TopPostCriteria & {sessionId:string;s
   } else skippedPosts.push({...item.post,platform:item.platform,...assessment});
  }
  accepted.sort((a,b)=>compareTopPosts(a.post,b.post));
+ if(params.saveLimit!==undefined){accepted.splice(params.saveLimit);for(let i=qualified.length-1;i>=0;i--)if(!accepted.includes(qualified[i]))qualified.splice(i,1);}
  const counts={inserted:0,refreshed:0,duplicate:0};
  const persisted=isStoredEvidence()?[]:await savePosts(accepted,counts,true);
  const savedPosts=accepted.map(item=>{const saved=persisted.find((p:any)=>canonicalUrl(p.post_url)===item.post.url);return {...saved,...item.post,id:saved?.id || item.post.id,post_url:item.post.url,title:item.post.caption,platform:item.platform,saveState:isStoredEvidence()?'evidence-only':saved?.saveState || 'existing',scout_provenance:item.post.provenance,scout_content_assessment:item.contentAssessment,reason:item.contentAssessment.reason,assessment:item.contentAssessment.assessment,requestedScope:item.requestedScope,reviewState:item.contentAssessment.status==='verified'?'Qualified':'Needs Verification',kolId:item.kolId,communityId:item.communityId};});
@@ -104,10 +105,12 @@ export async function scoutTopPosts(params:TopPostCriteria & {sessionId:string;s
 }
 
 /** Time-limit fallback may save collected evidence after leaving the read-only replay context. */
-export async function persistCollectedTopPosts(result:any, params:{kolId?:string;communityId?:string}) {
+export async function persistCollectedTopPosts(result:any, params:{kolId?:string;communityId?:string;sessionId?:string;keyword?:string}) {
  await assertTopPostSchema();
  const counts={inserted:0,refreshed:0,duplicate:0};
  const items:Item[]=(result.savedPosts || result.posts || []).map((post:any)=>({post,platform:post.platform,kolId:post.scout_content_assessment?.ownership==='unknown'?undefined:params.kolId,communityId:post.scout_content_assessment?.ownership==='unknown'?undefined:params.communityId,sport:detectSportNiche(post.caption).join(', ') || 'Unknown',requestedScope:post.requestedScope || result.qualityCriteria,contentAssessment:post.scout_content_assessment}));
+ const registry=await loadPostAccounts();
+ for(const item of items){item.authorAccount=matchPostAuthor(registry,item.platform,item.post.authorUrl);item.kolId=item.authorAccount?.entityType==='kol'?item.authorAccount.id:undefined;if(!params.kolId && !params.communityId)item.communityId=matchPostGroup(registry,item.platform,item.post.url);item.collectionSource=params.kolId || params.communityId?{kind:'account',sessionId:params.sessionId,entityType:params.kolId?'kol':'community',entityId:params.kolId || params.communityId,channelUrl:(item.requestedScope as any)?.channel}:{kind:'topic',sessionId:params.sessionId,keyword:params.keyword};}
  const saved=await savePosts(items,counts,true);
  const posts=items.map(({post},index)=>{const row=saved.find((p:any)=>canonicalUrl(p.post_url)===post.url);return {...row,...post,id:row?.id || post.id,rank:index+1,saveState:row?.saveState || 'existing'};});
  const displayed=posts.slice(0,result.posts?.length || 10);

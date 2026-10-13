@@ -1,0 +1,19 @@
+{
+  "fixtureOnly": true,
+  "providerStarts": 0,
+  "realDatabaseWrites": 0,
+  "checks": [
+    "select all across pages",
+    "202 progress immediately",
+    "reload one POST",
+    "failed session stops polling",
+    "Vietnam local dates",
+    "unsaved review edits",
+    "partial import and link retry",
+    "empty response clears rows",
+    "mobile render",
+    "viewer controls"
+  ],
+  "batchPosts": 1,
+  "pageErrors": []
+}

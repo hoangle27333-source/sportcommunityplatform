@@ -26,7 +26,7 @@ import { randomUUID } from "node:crypto";
 import { assessProfile, canonicalUrl, platformMatches, urlKind, contextKey, normalized, tokens, hashtagMatch, type Classification } from "./discovery-quality";
 import { scrape, parseProfile, mergeProfileEvidence, parsePost, ScoutError, type SocialProfile, type SocialPost, PendingScout } from "./providers";
 import { recordPostMetadata, postMetadata } from './post-metadata';
-import { loadPostAccounts, matchPostAuthor, matchPostGroup } from './post-accounts';
+import { loadPostAccounts, matchPostAuthor, matchPostGroup, hasSavedPostAuthor } from './post-accounts';
 import type { PostSource } from './post-contracts';
 
 export type CollectedPost = { post: SocialPost; platform: string; kolId?: string; communityId?: string; sport: string; requestedScope?: unknown; contentAssessment?: any; collectionSource?: PostSource; authorAccount?: { entityType: 'kol' | 'community'; id: string } };
@@ -280,10 +280,15 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
   const { error: reviewError } = await db.from('scout_sessions').update({ review_decisions: decisions }).eq('id', params.sessionId).eq('owner_id', params.actorId); check(reviewError);
   let insertedKols = 0, updatedKols = 0, insertedCommunities = 0, updatedCommunities = 0, insertedPosts = 0;
   const postLinkResults:any[]=[];
+  const importedAccounts:{entityType:'kol'|'community';id:string}[]=[];
   const table = expected === 'Community' ? 'communities' : 'kols';
   for (const c of selected) {
     const { data: records, error: readError } = await db.from(table).select('*'); check(readError);
-    const existing = records?.find(r => r.scout_identity === c.accountKey || r.id === c.existingId || canonicalUrl(r.profile_url || r.group_url || '') === c.url);
+    const authorRegistry=session.params.suggestionIdentity?await loadPostAccounts():[];
+    const savedAuthor=session.params.suggestionIdentity?matchPostAuthor(authorRegistry,c.platform,c.url):undefined;
+    if(session.params.suggestionIdentity && !savedAuthor && hasSavedPostAuthor(authorRegistry,c.platform,c.url))throw new ScoutError('Several saved accounts claim this channel. Resolve the identity conflict before importing.','POST_ACCOUNT_CONFLICT',409);
+    if(savedAuthor && savedAuthor.entityType!==(expected==='Individual'?'kol':'community'))throw new ScoutError('This publishing account already exists in another CRM destination. Refresh the suggestion list.','SUGGESTION_STALE',409);
+    const existing = records?.find(r => r.id===savedAuthor?.id || r.scout_identity === c.accountKey || r.id === c.existingId || canonicalUrl(r.profile_url || r.group_url || '') === c.url);
     const metrics: Record<string, any> = {};
     if(c.entityAssessment){ metrics.scout_entity_assessment={...c.entityAssessment,reviewedType:reviewDecisions[c.candidateId]?.entityType};metrics.scout_geography_assessment=c.geographyAssessment; if(expected==='Community'){metrics.community_subtype=reviewDecisions[c.candidateId]?.entityType || (['Community','Club'].includes(c.entityAssessment.suggestedType)?c.entityAssessment.suggestedType:null);metrics.account_followers=c.followers;} }
     if (expected==='Community') {metrics.scout_missing_metrics=c.members==null?['members']:[];if(c.members!=null)metrics.members_count=c.members;if(c.followers!=null)metrics.account_followers=c.followers;}
@@ -301,7 +306,7 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
     if (existing) {
       if (expected === 'Community' && c.members == null) metrics.scout_missing_metrics = existing.scout_missing_metrics || [];
       if (expected === 'Individual') metrics.scout_missing_metrics = (existing.scout_missing_metrics || []).filter((k: string) => (c as any)[k] === null);
-      const payload: any = { ...metrics, scout_identity: c.accountKey,scout_provenance:observedProvenance };
+      const payload: any = { ...metrics, scout_identity: session.params.suggestionIdentity?existing.scout_identity || c.accountKey:c.accountKey,scout_provenance:observedProvenance };
       for(const field of existing.user_locked_fields || []) { const mapped:Record<string,string>={avgViews:'avg_views',followers:'followers',er:'er'}; delete payload[mapped[field] || field]; }
       if (expected === 'Individual') {
         const changes: any = {}; const locked = new Set(existing.user_locked_fields || []);
@@ -328,6 +333,7 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
       const saved = await savePosts(c.posts.filter(p => p.authorUrl === c.url).map(post => ({ post, platform: c.platform, kolId: entityId, sport: observedSports.join(', ') })));
       insertedPosts += saved.length;
     }
+    importedAccounts.push({entityType:expected==='Individual'?'kol':'community',id:entityId});
     if(session.params.suggestionIdentity) {
       try {const {relinkPostAuthor}=await import('./post-suggestions');postLinkResults.push({entityType:expected==='Individual'?'kol':'community',id:entityId,...await relinkPostAuthor(expected==='Individual'?'kol':'community',entityId)});}
       catch(error:any){postLinkResults.push({success:false,entityType:expected==='Individual'?'kol':'community',id:entityId,error:error.message,retryable:true});}
@@ -337,7 +343,7 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
   const { error: logError } = await db.from('scout_requests').insert({ keyword: session.params.keyword, target_type: session.params.targetType, platform: session.params.platform, geography: session.params.geography, target_limit: selected.length, status: 'Đã hoàn thành', results_summary: summary + (session.params.notes ? ` Notes: ${session.params.notes}` : ''), created_by: params.actorId }); check(logError);
   const importedIds=[...new Set([...(session.progress?.importedCandidateIds || []),...params.selected.map(s=>s.candidateId)])];
   const {error:countError}=await db.from('scout_sessions').update({progress:{...session.progress,importedCandidateIds:importedIds}}).eq('id',params.sessionId);check(countError);
-  return { success: true, insertedKols, updatedKols, insertedCommunities, updatedCommunities, insertedPosts, summary,...(postLinkResults.length?{postLinkResults,partial:postLinkResults.some(r=>!r.success || r.partial)}:{}) };
+  return { success: true, insertedKols, updatedKols, insertedCommunities, updatedCommunities, insertedPosts, summary,importedAccounts,importedIds:importedAccounts.map(a=>a.id),...(postLinkResults.length?{postLinkResults,partial:postLinkResults.some(r=>!r.success || r.partial)}:{}) };
   } finally {clearInterval(heartbeat);const {error}=await db.from('scout_sessions').update({import_lease_until:null,import_token:null}).eq('id',params.sessionId).eq('import_token',importToken);check(error);}
 }
 export async function savePosts(posts: CollectedPost[], counts={inserted:0,refreshed:0,duplicate:0}, returnExisting=false) {
@@ -345,7 +351,8 @@ export async function savePosts(posts: CollectedPost[], counts={inserted:0,refre
   const saved:any[]=[];
   for(const item of posts) {
     const observation=item.post.provenance?.runId || item.post.url;
-    const result=await checkpointTask(context.sessionId,`save:${item.platform}:${item.post.url}:${observation}${returnExisting?':top':''}`,async()=>{
+    const sourceScope=item.collectionSource?createHash('sha256').update(JSON.stringify(item.collectionSource)).digest('hex'):'';
+    const result=await checkpointTask(context.sessionId,`save:${item.platform}:${item.post.url}:${observation}${returnExisting?':top':''}:${sourceScope}`,async()=>{
       const unit={inserted:0,refreshed:0,duplicate:0};return {rows:await writePosts([item],unit,returnExisting),counts:unit};
     });
     saved.push(...result.rows);for(const key of ['inserted','refreshed','duplicate'] as const)counts[key]+=result.counts[key];

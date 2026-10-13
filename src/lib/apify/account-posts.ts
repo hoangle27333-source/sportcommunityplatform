@@ -81,7 +81,7 @@ export async function buildAccountPostPlan(input: unknown): Promise<AccountPostP
 export async function collectLatestAccountPosts(sessionId: string, account: AccountPostSnapshot, criteria: AccountPostRequest, window: { from: string; to: string }) {
   const unique = new Map<string, { post: SocialPost; channelUrl: string }>();
   const warnings: string[] = [], skippedPosts: any[] = [];
-  let completedChannels = 0;
+  let completedChannels = 0; let stopReason: string | undefined;
   for (const source of account.plan.sources) {
     const channelUrl = source.rounds![0].queries[0];
     try {
@@ -98,8 +98,9 @@ export async function collectLatestAccountPosts(sessionId: string, account: Acco
         unique.set(`${source.platform}:${post.url}`, { post, channelUrl });
       }
     } catch (e: any) {
-      if (e instanceof PendingScout || ['START_UNKNOWN', 'RATE_LIMITED', 'PROVIDER_UNAVAILABLE', 'PLAN_STALE', 'BUDGET_EXHAUSTED'].includes(e.code)) throw e;
+      if (e instanceof PendingScout || ['START_UNKNOWN', 'RATE_LIMITED', 'PROVIDER_UNAVAILABLE', 'PLAN_STALE'].includes(e.code)) throw e;
       warnings.push(`${source.platform}: ${e.message}`);
+      if(e.code==='BUDGET_EXHAUSTED'){stopReason='budget-exhausted';break;}
     }
   }
   const retained = [...unique.values()].sort((a, b) => b.post.publishedAt!.localeCompare(a.post.publishedAt!) || a.post.url.localeCompare(b.post.url)).slice(0, criteria.limitPerAccount);
@@ -109,7 +110,7 @@ export async function collectLatestAccountPosts(sessionId: string, account: Acco
     const group = channelUrl.includes('/groups/');
     return { post, platform, ...(account.entityType === 'kol' ? { kolId: account.id } : { communityId: group ? account.id : undefined }), authorAccount: !group ? { entityType: account.entityType, id: account.id } : undefined, sport: detectSportNiche(post.caption).join(', ') || 'Unknown', contentAssessment: { status: assessTopPost(post, criteria, window.from, window.to, true).resultGroup === 'Qualified' ? 'verified' : 'needs-verification', ownership: 'passed' }, collectionSource: { kind: 'account' as const, sessionId, entityType: account.entityType, entityId: account.id, channelUrl } };
   }), counts, true);
-  return { success: completedChannels > 0, posts, skippedPosts, counts: { ...counts, saved: posts.length }, warnings, partial: warnings.length > 0 || skippedPosts.length > 0 };
+  return { success: completedChannels > 0,...(!completedChannels && stopReason==='budget-exhausted'?{code:'BUDGET_EXHAUSTED'}:{}), stopReason, posts, skippedPosts, counts: { ...counts, saved: posts.length }, warnings, partial: warnings.length > 0 || skippedPosts.length > 0 };
 }
 
 export async function executeAccountPosts(session: any) {
@@ -130,7 +131,7 @@ export async function executeAccountPosts(session: any) {
       if (stopped) return { ...account, plan: undefined, status: 'skipped', code: stopped, posts: [], counts: { saved: 0 }, warnings: [stopped === 'BUDGET_EXHAUSTED' ? 'The batch budget was exhausted.' : 'The batch time limit was reached.'] };
       if (Date.now() - Date.parse(session.execution_started_at || session.created_at) >= 15 * 60000) { stopped = 'SEARCH_TIME_LIMIT'; return { entityType: account.entityType, id: account.id, name: account.name, status: 'skipped', code: stopped, posts: [], counts: { saved: 0 }, warnings: ['The batch time limit was reached.'] }; }
       try {
-        const collected: any = criteria.mode === 'top' ? await scoutTopPosts({ ...criteria, selectionMode: 'top', rankingMode: 'views-first', sessionId: session.id, searchPlan: account.plan, limit: criteria.limitPerAccount, publishedFrom: window.from, publishedTo: window.to, [account.entityType === 'kol' ? 'kolId' : 'communityId']: account.id }) : await collectLatestAccountPosts(session.id, account, criteria, window);
+        const collected: any = criteria.mode === 'top' ? await scoutTopPosts({ ...criteria, selectionMode: 'top', rankingMode: 'views-first', sessionId: session.id, searchPlan: account.plan, limit: criteria.limitPerAccount,saveLimit:criteria.limitPerAccount, publishedFrom: window.from, publishedTo: window.to, [account.entityType === 'kol' ? 'kolId' : 'communityId']: account.id }) : await collectLatestAccountPosts(session.id, account, criteria, window);
         if (collected.stopReason === 'budget-exhausted') stopped = 'BUDGET_EXHAUSTED';
         return { entityType: account.entityType, id: account.id, name: account.name, ...collected, status: collected.success ? 'complete' : 'failed' };
       } catch (error: any) {

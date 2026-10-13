@@ -30,6 +30,10 @@ export function matchPostAuthor(accounts: SavedPostAccount[], platform: string, 
   const matched = accounts.filter(account => account.urls.some(channel => authorIdentity(platform, channel) === identity));
   return matched.length === 1 ? { entityType: matched[0].entityType, id: matched[0].id } : undefined;
 }
+export function hasSavedPostAuthor(accounts: SavedPostAccount[], platform: string, url: string) {
+  const identity=authorIdentity(platform,url);
+  return !!identity && accounts.some(a=>a.urls.some(channel=>authorIdentity(platform,channel)===identity));
+}
 export function matchPostGroup(accounts: SavedPostAccount[], platform: string, url: string) {
   if (platform !== 'Facebook') return undefined;
   const group = canonicalUrl(url.match(/^https?:\/\/[^/]+\/groups\/[^/]+/)?.[0] || '');

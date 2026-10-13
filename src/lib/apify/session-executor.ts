@@ -71,7 +71,13 @@ export async function executeSession(id: string) {
       const {error}=await db.from('scout_sessions').update({lease_until:null,lease_token:null,progress:{...current.progress,stage:'running',polls:attempts},next_poll_at:new Date(Date.now()+delayMs).toISOString()}).eq('id',id).eq('lease_token',leaseToken); if(error) throw error;
       return true;
     }
-    const {error}=await db.from('scout_sessions').update({status:'failed',warnings:[],lease_until:null,lease_token:null,result:{success:false,error:e.message,code:e.code || 'SCOUT_ERROR',httpStatus:e.status || 502,...(e.approvalUrl ? {approvalUrl:e.approvalUrl} : {})}}).eq('id',id).eq('lease_token',leaseToken); if(error) throw error;
+    let partialResult={};
+    if(s.kind==='account-posts') {
+      const {data:current,error:readError}=await db.from('scout_sessions').select('progress').eq('id',id).single();if(readError)throw readError;
+      const accountResults=current.progress?.accountResults || [];const posts=[...new Map(accountResults.flatMap((r:any)=>r.posts || []).map((p:any)=>[p.id,p])).values()];
+      partialResult={accountResults,posts,partial:accountResults.length>0,counts:{saved:posts.length,completedAccounts:accountResults.filter((r:any)=>r.status==='complete').length}};
+    }
+    const {error}=await db.from('scout_sessions').update({status:'failed',warnings:[],lease_until:null,lease_token:null,result:{...partialResult,success:false,error:e.message,code:e.code || 'SCOUT_ERROR',httpStatus:e.status || 502,...(e.approvalUrl ? {approvalUrl:e.approvalUrl} : {})}}).eq('id',id).eq('lease_token',leaseToken); if(error) throw error;
     return false;
   } finally { clearInterval(heartbeat); }
 }

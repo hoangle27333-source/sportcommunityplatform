@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { canonicalUrl, platformMatches, urlKind } from './discovery-quality';
 import { ScoutError } from './errors';
-import type { PostSource, PostWorkspaceMetadata, SuggestedPostAccount } from './post-contracts';
+import type { PostSource, PostWorkspaceMetadata, SuggestedPostAccount, PostWorkspaceRecord } from './post-contracts';
 
 export function authorIdentity(platform: string, url: string) {
   const clean = canonicalUrl(url || '');
@@ -46,9 +46,12 @@ export async function recordPostMetadata(postId: string, platform: string, autho
     p_post: postId, p_author_identity: identity, p_author_url: identity ? canonicalUrl(authorUrl) : null,
     p_source: source, p_author_account: account || null,
   });
-  if (error) throw error;
+  if (error) {
+    if(/POST_(AUTHOR|ACCOUNT)_CONFLICT/.test(error.message))throw new ScoutError('This post has a conflicting saved account identity. Review its account links.',error.message.includes('POST_AUTHOR_CONFLICT')?'POST_AUTHOR_CONFLICT':'POST_ACCOUNT_CONFLICT',409);
+    throw error;
+  }
   return data;
 }
-export function postDto(row: any) {
+export function postDto(row: any): PostWorkspaceRecord {
   return { id: row.id, title: row.title || '', author: row.author || '', kolRecordIds: row.kol_id ? [row.kol_id] : [], communityRecordIds: row.community_id ? [row.community_id] : [], platform: row.platform, likes: row.likes ?? null, comments: row.comments ?? null, views: row.views ?? null, shares: row.shares ?? null, er: row.er ?? null, postUrl: row.post_url, publishedAt: row.published_at || null, missingMetrics: row.scout_missing_metrics || [], scoutProvenance: row.scout_provenance || null, scoutContentAssessment: row.scout_content_assessment || null, viralGrade: row.viral_tier || 'Unknown', ...postMetadata(row) };
 }
