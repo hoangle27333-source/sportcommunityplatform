@@ -18,7 +18,7 @@ it('plans content authors even with one approved keyword and no paid requests',a
  const plan=await buildExperimentalPlan(params);
  expect(plan.version).toBe(6);expect(plan.criteria.assessmentRevision).toBe(7);
  expect(plan.experimental?.units.map(u=>u.method)).toEqual(['content-author','profile']);
- expect(plan.criteria.promptRevision).toBe('content-json-4');
+ expect(plan.criteria.promptRevision).toBe('content-json-5');
 });
 it('pins only verified builds and falls back to author discovery when profile search is unavailable',async()=>{
  state.verified.find(v=>v.capability_key.includes(':profiles:'))!.verified=false;

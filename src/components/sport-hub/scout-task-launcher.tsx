@@ -933,6 +933,18 @@ export function ScoutSessionResults({
   );
 
   if(broaden) return <BroadenSearchModal session={session} onClose={()=>setBroaden(false)}/>;
+  if (session.kind === 'preview' && (session.status === 'complete' || (!isRunning && result?.success))) {
+    return (
+      <DiscoveryScoutModal
+        isOpen
+        onClose={onClose}
+        onSuccess={onClose}
+        resumeSessionId={session.id}
+        initialCriteria={session.params}
+        defaultTargetType={session.params?.targetType === 'Communities & Clubs' ? 'Communities & Clubs' : 'Individual KOLs'}
+      />
+    );
+  }
   return (
     <ScoutDialogFrame
       title={session.title}

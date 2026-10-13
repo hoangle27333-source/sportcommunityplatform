@@ -15,7 +15,7 @@ export async function reassessSession(sessionId:string) {
  if(error || !parent)throw new ScoutError('Scout session not found.','NOT_FOUND',404);
  if(parent.status!=='complete' || parent.result?.success===false || !['preview','trends'].includes(parent.kind) || parent.params?.executionMode==='stored-evidence') throw new ScoutError('Reassessment requires a completed search task.','INVALID_REASSESSMENT',409);
  const experimental=parent.params.searchPlan?.version===6 || parent.params.assessmentRevision===7;const accountV5=parent.kind==='preview';const strict=parent.params.assessmentRevision===6 || parent.params.searchPlan?.version===5;const assessmentVersion=accountV5?(experimental?7:strict?6:5):4;
- const criteriaHash=createHash('sha256').update(stableJson(experimental?{criteria:requestSchema.parse(parent.params),sourcePlanHash:parent.params.searchPlan?.hash,assessmentRevision:7,topicPolicyRevision:EXPERIMENTAL_TOPIC_POLICY_REVISION}:requestSchema.parse(parent.params))).digest('hex');
+ const criteriaHash=createHash('sha256').update(stableJson(experimental?{criteria:requestSchema.parse(parent.params),sourcePlanHash:parent.params.searchPlan?.hash,assessmentRevision:7,topicPolicyRevision:EXPERIMENTAL_TOPIC_POLICY_REVISION,reviewRevision:parent.progress?.reviewRevision}:requestSchema.parse(parent.params))).digest('hex');
  const modelPolicy=accountV5?(experimental?{version:5 as const,mode:'off' as const,revision:'rules-5'}:currentAccountModelPolicy()):undefined;
  const modelPolicyKey=modelPolicy?accountModelPolicyKey(modelPolicy):undefined;
  let lookupQuery=db.from('scout_sessions').select('id').eq('owner_id',owner).eq('params->>parentSessionId',sessionId).eq('params->>executionMode','stored-evidence').eq('params->>assessmentVersion',String(assessmentVersion));
@@ -33,11 +33,11 @@ export async function reassessSession(sessionId:string) {
 }
 
 export async function executeStoredReassessment(session:any) {
- const db=createAdminClient();const {data:parent,error}=await db.from('scout_sessions').select('id,owner_id,kind,status,result').eq('id',session.params.parentSessionId).single();
+ const db=createAdminClient();const {data:parent,error}=await db.from('scout_sessions').select('id,owner_id,kind,status,result,candidates').eq('id',session.params.parentSessionId).single();
  if(error || !parent || parent.owner_id!==session.owner_id || parent.kind!==session.kind || parent.status!=='complete' || parent.result?.success===false)throw new ScoutError('Source evidence is unavailable.','EVIDENCE_UNAVAILABLE',409);
  const runs:SavedProviderRun[]=[];
  for(let offset=0;offset<1000;offset+=100){const {data,error:read}=await db.from('scout_provider_runs').select('platform,task,state,normalized_rows,raw_rows,warnings').eq('session_id',parent.id).eq('state','succeeded').order('id').range(offset,offset+99);if(read)throw read;runs.push(...(data || []));if(!data || data.length<100)break;if(offset===900)throw new ScoutError('Source evidence exceeds the reassessment limit.','EVIDENCE_LIMIT',409);}
- const p={...session.params,sessionId:session.id,...(session.params.assessmentRevision===7?{savedExperimentalProfiles:parent.result.candidates || []}:{})};
+ const p={...session.params,sessionId:session.id,...(session.params.assessmentRevision===7?{savedExperimentalProfiles:parent.candidates || parent.result.candidates || []}:{})};
  const result:any=await withStoredEvidence<any>(runs,()=>session.kind==='preview' ? previewDiscoveryCandidates(p) : scoutMarketTrends(p));
  return {...result,...(session.params.accountModelPolicy?{accountModelPolicy:session.params.accountModelPolicy,accountModelPolicyKey:session.params.accountModelPolicyKey}:{}),parentSessionId:parent.id,executionMode:'stored-evidence',providerStarts:0,assessmentVersion:session.params.assessmentVersion || 4,warnings:[...(result.warnings || []),...new Set(runs.flatMap(r=>r.warnings || []))]};
 }

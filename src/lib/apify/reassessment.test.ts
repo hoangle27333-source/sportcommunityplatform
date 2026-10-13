@@ -5,7 +5,27 @@ vi.mock('./workflow-dispatch',()=>({dispatchScoutSession:state.dispatch}));
 vi.mock('./runtime',async()=>({...await vi.importActual<any>('./runtime'),executePlan:state.paid}));
 vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({from(table:string){let operation='read',value:any,lo=0,hi=Infinity;const filters:((r:any)=>boolean)[]=[];const field=(r:any,k:string)=>k.startsWith('params->>')?String(r.params?.[k.slice(9)]):r[k];const result=()=>{const rows=state.tables[table] ||= [];if(operation==='insert'){if(rows.some(r=>r.id===value.id))return {data:null,error:{code:'23505'}};const entry={status:'pending',created_at:'2026-10-11T00:00:00Z',...value};rows.push(entry);return {data:[structuredClone(entry)],error:null};}const matched=rows.filter(r=>filters.every(f=>f(r)));if(operation==='update')matched.forEach(r=>Object.assign(r,value));return {data:structuredClone(matched.slice(lo,hi+1)),error:null};};const q:any={select:()=>q,order:()=>q,range:(a:number,b:number)=>{lo=a;hi=b;return q;},limit:(n:number)=>{hi=n-1;return q;},eq:(k:string,v:any)=>{filters.push(r=>k==='params'?JSON.stringify(r.params)===v:field(r,k)===v);return q;},in:(k:string,v:any[])=>{filters.push(r=>v.includes(field(r,k)));return q;},insert:(v:any)=>{operation='insert';value=v;return q;},update:(v:any)=>{operation='update';value=v;return q;},single:async()=>{const r=result();return {...r,data:r.data?.[0]};},maybeSingle:async()=>{const r=result();return {...r,data:r.data?.[0] || null};},then:(resolve:any,reject:any)=>Promise.resolve(result()).then(resolve,reject)};return q;}})}));
 import {reassessSession,executeStoredReassessment} from './reassessment';
+import {parseProfile} from './providers';
+import {contextKey} from './discovery-quality';
 const source='00000000-0000-0000-0000-000000000002';
+it('replays the latest saved manual review rather than the original collection result',async()=>{
+ const parent=state.tables.scout_sessions[0];
+ parent.kind='preview';parent.params={keyword:'badminton',platform:'Instagram',geography:'Ho Chi Minh City',limit:1,assessmentRevision:7,accountPolicyVersion:5,searchStrategy:'seed_content_v1',keywordsApproved:true,approvedKeywords:['badminton']};
+ const p={...parseProfile({profileUrl:'https://instagram.com/alex',followers:1200},'Instagram')!,entityAssessment:{suggestedType:'Individual',reviewedType:'Individual',status:'supported',source:'review',evidence:[],missingInformation:[],modelVersion:'review'}};
+ parent.result={success:true,candidates:[structuredClone(p)]};
+ parent.candidates=[{...p,manualAttributeReview:{contextKey:contextKey('badminton','Ho Chi Minh City'),topic:'passed',geography:'passed',actorId:state.owner,confirmedAt:'2026-10-13T00:00:00Z'}}];
+ parent.progress={reviewRevision:'latest-review'};
+ const original=structuredClone(parent);
+ const first=await (await reassessSession(source)).json();
+ const child=state.tables.scout_sessions.find(s=>s.id===first.sessionId);
+ const result=await executeStoredReassessment(child);
+ expect(result.candidates).toHaveLength(1);expect(result.candidates[0]).toMatchObject({resultGroup:'Qualified',entityAssessment:{reviewedType:'Individual'}});
+ expect(result.providerStarts).toBe(0);expect(state.paid).not.toHaveBeenCalled();
+ expect(state.tables.scout_sessions[0]).toEqual(original);
+ expect((await (await reassessSession(source)).json()).sessionId).toBe(first.sessionId);
+ parent.progress.reviewRevision='new-review';
+ expect((await (await reassessSession(source)).json()).sessionId).not.toBe(first.sessionId);
+});
 beforeEach(()=>{state.role='editor';state.paid.mockReset();state.dispatch.mockReset();state.tables={scout_sessions:[{id:source,owner_id:state.owner,kind:'trends',status:'complete',created_at:'2026-10-11T00:00:00Z',params:{keyword:'#running',platform:'Facebook',geography:'Toàn quốc',limit:10,recentDays:7,qualityMode:'high-engagement'},result:{success:true,posts:[]},review_decisions:{old:{decision:'approved'}}}],scout_provider_runs:[{id:'receipt',session_id:source,state:'succeeded',platform:'Facebook',task:'hashtag',normalized_rows:[{url:'https://facebook.com/posts/123',text:'Race day',time:'2026-10-10T00:00:00Z',likes:200,comments:0,textReferences:[{url:'https://facebook.com/hashtag/running'}]}]}],kols:[],communities:[],scout_feedback:[]};});
 it('creates one child for repeated requests and replays saved content without paid runs or CRM writes',async()=>{
  const original=structuredClone(state.tables.scout_sessions[0]),ledger=structuredClone(state.tables.scout_provider_runs);

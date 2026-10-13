@@ -777,7 +777,7 @@ export function DiscoveryScoutModal({
                   onClick={handleClose}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
                 >
-                  Cancel
+                  Close
                 </button>
                 <button
                   type="button"
@@ -802,7 +802,13 @@ export function DiscoveryScoutModal({
   </>) : undefined;
 
   return (
-    <ScoutDialogFrame title={step === 1 ? "Find Profiles" : "Review Profiles"} description="Search for KOLs or communities. Review candidates before adding them to your directory." onClose={handleClose} wide footer={reviewFooter}>
+    <ScoutDialogFrame
+      title={step === 1 ? "Find Profiles" : "Review Profiles"}
+      description={step === 2 && (effectiveQuery || keyword) ? (effectiveQuery || keyword) : "Search for KOLs or communities. Review candidates before adding them to your directory."}
+      onClose={handleClose}
+      wide
+      footer={reviewFooter}
+    >
         {/* ─── STEP PROGRESS BAR ─── */}
         <div className="bg-slate-50 border-b border-slate-100 px-6 py-2.5 flex items-center justify-between text-xs shrink-0">
           <div className="flex items-center space-x-2">

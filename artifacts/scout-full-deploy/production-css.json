@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-10-13T03:28:45.154Z",
+  "origin": "https://sportcommunityplatform.vercel.app",
+  "passed": true,
+  "assets": [
+    {
+      "path": "/_next/static/css/0da4663653a7c36e.css",
+      "status": 200,
+      "bytes": 13631
+    },
+    {
+      "path": "/_next/static/css/8630d82afe95d2fa.css",
+      "status": 200,
+      "bytes": 98105
+    }
+  ]
+}

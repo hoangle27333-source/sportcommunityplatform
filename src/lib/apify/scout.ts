@@ -114,7 +114,7 @@ export async function previewDiscoveryCandidates(params: AccountSizeCriteria & {
 
   const { data: existing, error } = await db.from(target === 'Communities & Clubs' ? 'communities' : 'kols').select('*'); check(error);
   const { data: feedback, error: feedbackError } = await db.from('scout_feedback').select('*').order('created_at', { ascending: false }); check(feedbackError);
-  const accountV5=params.searchPlan?.accountPolicyVersion===5 || (params.assessmentVersion || 0)>=5 || params.accountPolicyVersion===5 || params.minFollowers!==undefined;
+  const accountV5=params.searchPlan?.accountPolicyVersion===5 || (params.assessmentVersion || 0)>=5 || (params.assessmentRevision || 0)>=6 || params.accountPolicyVersion===5 || params.minFollowers!==undefined;
   const experimental=params.searchPlan?.version===6 || params.assessmentRevision===7;
   const revision=experimental?7:params.searchPlan?.version===5 || params.assessmentRevision===6?6:5;
   const modelPolicy:AccountModelPolicy=experimental?{version:5,revision:'rules-5',mode:'off'}:accountV5?(params.accountModelPolicy || (params.searchPlan?.accountPolicyVersion===5?plannedAccountModelPolicy(params.searchPlan):currentAccountModelPolicy())):{version:5,revision:'rules-5',mode:'off'};
@@ -182,12 +182,14 @@ export async function previewDiscoveryCandidates(params: AccountSizeCriteria & {
       }
     }
     if (!profile) continue;
-    if(experimental && !hasDiscoveryLead(profile,params.keyword)){discardedDiscovery.push({...profile,reason:"No observed topic hint, supporting content or seed connection. Search query is not evidence."});continue;}
+    // Reassessment replays already admitted review candidates, including manual reviews.
+    if(experimental && !params.savedExperimentalProfiles && !hasDiscoveryLead(profile,params.keyword)){discardedDiscovery.push({...profile,reason:"No observed topic hint, supporting content or seed connection. Search query is not evidence."});continue;}
     if(accountV5 && savedPosts.length)profile={...profile,posts:[...profile.posts,...savedPosts.filter(post=>post.authorUrl===profile!.url)]};
     const accountKey = `${platform}:${profile.url}`; if (seen.has(accountKey)) continue; seen.add(accountKey);
     const inferredEntity=accountV5 && !experimental?profile.accountEntityAssessment || await checkpointTask(params.sessionId,`account-v5:${evidenceHash(profile)}:${accountModelPolicyKey(modelPolicy)}`,()=>classifyAccount(profile!,modelPolicy.revision,modelPolicy.mode)):undefined;
     const modelEntity=inferredEntity?{...inferredEntity,policyKey:accountModelPolicyKey(modelPolicy)}:undefined;
-    const assessment = strictCriteria ? assessReviewedProfile(profile,params.keyword,geography,target,{...assessmentOptions,entityAssessment:modelEntity},feedback || []) : (accountV5 || params.searchPlan || (params.assessmentVersion || 0)>=4) ? assessSearchProfile(profile, params.keyword, geography, target, assessmentOptions?{...assessmentOptions,entityAssessment:modelEntity}:undefined) : assessProfile(profile, params.keyword, geography, target);
+    const reviewedEntity=experimental ? (profile as Partial<DiscoveryCandidate>).entityAssessment : undefined;
+    const assessment = strictCriteria ? assessReviewedProfile(profile,params.keyword,geography,target,{...assessmentOptions,entityAssessment:modelEntity || reviewedEntity},feedback || []) : (accountV5 || params.searchPlan || (params.assessmentVersion || 0)>=4) ? assessSearchProfile(profile, params.keyword, geography, target, assessmentOptions?{...assessmentOptions,entityAssessment:modelEntity}:undefined) : assessProfile(profile, params.keyword, geography, target);
     const applicable = (feedback || []).filter(f => f.account_key === accountKey);
     const classificationFeedback = applicable.find(f => f.classification && ['Correct Classification', 'Wrong Entity Type'].includes(f.reason));
     if (classificationFeedback && !strictCriteria) {
@@ -203,7 +205,7 @@ export async function previewDiscoveryCandidates(params: AccountSizeCriteria & {
       }
       assessment.reasons.push('Entity type confirmed by team review');
     }
-    const contextual = applicable.find(f => f.context_key === contextKey(params.keyword, geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason));
+    const contextual = strictCriteria ? undefined : applicable.find(f => f.context_key === contextKey(params.keyword, geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason));
     if (contextual) { assessment.reviewState = 'Excluded'; assessment.reasons.push(`Team feedback: ${contextual.reason}`); }
     if('resultGroup' in assessment)assessment.resultGroup=assessment.reviewState==='Matched'?'Qualified':assessment.reviewState==='Needs Review'?'Needs Verification':'Excluded';
     const match = existing?.find(e => e.scout_identity === accountKey || canonicalUrl(e.profile_url || e.group_url || '') === profile!.url);

@@ -1,0 +1,494 @@
+{
+  "observedAt": "2026-10-13T02:08:41.084Z",
+  "mode": "read-only saved evidence",
+  "providerCalls": 0,
+  "modelCalls": 0,
+  "databaseWrites": 0,
+  "topicPolicyRevision": "owned-text-review-2",
+  "promptRevision": "content-json-5",
+  "sessions": [
+    {
+      "sessionId": "f03b1eb1-0a93-52dc-a3da-8fcd1f684c1e",
+      "revision": 7,
+      "createdAt": "2026-10-12T09:15:03.4052+00:00",
+      "candidateCount": 28,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 20,
+        "Excluded": 8
+      },
+      "blockerCounts": {
+        "topic": 27,
+        "entityType": 25,
+        "geography": 28,
+        "followers": 8,
+        "members": 0
+      },
+      "staleModelEvidence": 1,
+      "drift": [],
+      "reportedAccounts": [
+        {
+          "accountUrl": "https://tiktok.com/@ranselalba_",
+          "groupBefore": "Needs Verification",
+          "groupAfter": "Needs Verification",
+          "blockers": [
+            {
+              "key": "topic",
+              "state": "unknown"
+            },
+            {
+              "key": "geography",
+              "state": "unknown"
+            }
+          ],
+          "imported": false,
+          "manualReview": false,
+          "topic": {
+            "state": "unknown",
+            "reason": "1 distinct owned post supports the sport; 3 or a verified sport role are required. Media analysis is unavailable for the current evidence.",
+            "evidence": [
+              "https://tiktok.com/@ranselalba_/video/7655239695156153618"
+            ]
+          },
+          "collectedPosts": 1,
+          "staleModelEvidence": false
+        },
+        {
+          "accountUrl": "https://tiktok.com/@chuloncaulong",
+          "groupBefore": "Needs Verification",
+          "groupAfter": "Needs Verification",
+          "blockers": [
+            {
+              "key": "topic",
+              "state": "unknown"
+            },
+            {
+              "key": "geography",
+              "state": "unknown"
+            }
+          ],
+          "imported": false,
+          "manualReview": false,
+          "topic": {
+            "state": "unknown",
+            "reason": "Profile text contains a topic hint, but no owned sport posts or verified sport role are confirmed. Media analysis is unavailable for the current evidence.",
+            "evidence": []
+          },
+          "collectedPosts": 1,
+          "staleModelEvidence": false
+        }
+      ],
+      "collectionWarnings": [
+        "Found 0/5 qualified new accounts; 5 still needed. Search stopped: stored-evidence. Missing evidence remains available for review."
+      ]
+    },
+    {
+      "sessionId": "4624d972-bc75-4747-a475-1a42fe7ff548",
+      "revision": 7,
+      "createdAt": "2026-10-12T09:03:57.523722+00:00",
+      "candidateCount": 28,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 20,
+        "Excluded": 8
+      },
+      "blockerCounts": {
+        "topic": 27,
+        "entityType": 25,
+        "geography": 28,
+        "followers": 8,
+        "members": 0
+      },
+      "staleModelEvidence": 1,
+      "drift": [],
+      "reportedAccounts": [
+        {
+          "accountUrl": "https://tiktok.com/@ranselalba_",
+          "groupBefore": "Needs Verification",
+          "groupAfter": "Needs Verification",
+          "blockers": [
+            {
+              "key": "topic",
+              "state": "unknown"
+            },
+            {
+              "key": "geography",
+              "state": "unknown"
+            }
+          ],
+          "imported": false,
+          "manualReview": false,
+          "topic": {
+            "state": "unknown",
+            "reason": "1 distinct owned post supports the sport; 3 or a verified sport role are required. Media analysis is unavailable for the current evidence.",
+            "evidence": [
+              "https://tiktok.com/@ranselalba_/video/7655239695156153618"
+            ]
+          },
+          "collectedPosts": 1,
+          "staleModelEvidence": false
+        },
+        {
+          "accountUrl": "https://tiktok.com/@chuloncaulong",
+          "groupBefore": "Needs Verification",
+          "groupAfter": "Needs Verification",
+          "blockers": [
+            {
+              "key": "topic",
+              "state": "unknown"
+            },
+            {
+              "key": "geography",
+              "state": "unknown"
+            }
+          ],
+          "imported": false,
+          "manualReview": false,
+          "topic": {
+            "state": "unknown",
+            "reason": "Profile text contains a topic hint, but no owned sport posts or verified sport role are confirmed. Media analysis is unavailable for the current evidence.",
+            "evidence": []
+          },
+          "collectedPosts": 1,
+          "staleModelEvidence": false
+        }
+      ],
+      "collectionWarnings": [
+        "BUDGET_EXHAUSTED",
+        "Found 0/5 qualified new accounts; 5 still needed. Search stopped: trial-or-budget-limit. Missing evidence remains available for review."
+      ]
+    },
+    {
+      "sessionId": "726ba266-b3f0-4816-83ac-642178814eb3",
+      "revision": 7,
+      "createdAt": "2026-10-12T08:51:29.066838+00:00",
+      "candidateCount": 28,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 20,
+        "Excluded": 8
+      },
+      "blockerCounts": {
+        "topic": 27,
+        "entityType": 25,
+        "geography": 28,
+        "followers": 8,
+        "members": 0
+      },
+      "staleModelEvidence": 1,
+      "drift": [],
+      "reportedAccounts": [
+        {
+          "accountUrl": "https://tiktok.com/@ranselalba_",
+          "groupBefore": "Needs Verification",
+          "groupAfter": "Needs Verification",
+          "blockers": [
+            {
+              "key": "topic",
+              "state": "unknown"
+            },
+            {
+              "key": "geography",
+              "state": "unknown"
+            }
+          ],
+          "imported": false,
+          "manualReview": false,
+          "topic": {
+            "state": "unknown",
+            "reason": "1 distinct owned post supports the sport; 3 or a verified sport role are required. Media analysis is unavailable for the current evidence.",
+            "evidence": [
+              "https://tiktok.com/@ranselalba_/video/7655239695156153618"
+            ]
+          },
+          "collectedPosts": 1,
+          "staleModelEvidence": false
+        },
+        {
+          "accountUrl": "https://tiktok.com/@chuloncaulong",
+          "groupBefore": "Needs Verification",
+          "groupAfter": "Needs Verification",
+          "blockers": [
+            {
+              "key": "topic",
+              "state": "unknown"
+            },
+            {
+              "key": "geography",
+              "state": "unknown"
+            }
+          ],
+          "imported": false,
+          "manualReview": false,
+          "topic": {
+            "state": "unknown",
+            "reason": "Profile text contains a topic hint, but no owned sport posts or verified sport role are confirmed. Media analysis is unavailable for the current evidence.",
+            "evidence": []
+          },
+          "collectedPosts": 1,
+          "staleModelEvidence": false
+        }
+      ],
+      "collectionWarnings": [
+        "TRIAL_EXHAUSTED",
+        "Found 0/5 qualified new accounts; 5 still needed. Search stopped: trial-or-budget-limit. Missing evidence remains available for review."
+      ]
+    },
+    {
+      "sessionId": "7415f05b-c6dd-493a-b560-a9e5ec30799e",
+      "revision": 7,
+      "createdAt": "2026-10-12T08:38:04.345966+00:00",
+      "candidateCount": 0,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 0,
+        "Excluded": 0
+      },
+      "blockerCounts": {
+        "topic": 0,
+        "entityType": 0,
+        "geography": 0,
+        "followers": 0,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Provider start was rejected. Start a new session after resolving the provider restriction.",
+        "Scout provider returned HTTP 400",
+        "Found 0/5 qualified new accounts; 5 still needed. Search stopped: no-new-accounts. Missing evidence remains available for review."
+      ]
+    },
+    {
+      "sessionId": "497f84b1-27a9-4dee-8d98-3bdebea53b03",
+      "revision": 7,
+      "createdAt": "2026-10-12T08:30:17.254661+00:00",
+      "candidateCount": 0,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 0,
+        "Excluded": 0
+      },
+      "blockerCounts": {
+        "topic": 0,
+        "entityType": 0,
+        "geography": 0,
+        "followers": 0,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Bad Request",
+        "Bad Request",
+        "Found 0/5 qualified new accounts; 5 still needed. Search stopped: no-new-accounts. Missing evidence remains available for review."
+      ]
+    },
+    {
+      "sessionId": "6c07ea8a-46aa-4135-8700-8e9268dc5c8d",
+      "revision": 6,
+      "createdAt": "2026-10-12T03:42:39.557668+00:00",
+      "candidateCount": 60,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 32,
+        "Excluded": 28
+      },
+      "blockerCounts": {
+        "topic": 48,
+        "entityType": 59,
+        "geography": 59,
+        "followers": 57,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [
+        {
+          "accountUrl": "https://facebook.com/thephuongngo89",
+          "from": "Needs Verification",
+          "to": "Excluded",
+          "imported": false
+        }
+      ],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Facebook: Followers were unavailable for 10 profiles. Missing values remain Unknown; page likes are not used as followers.",
+        "The search time limit was reached. 0/5 qualified new accounts are retained for review; no further provider runs were started."
+      ]
+    },
+    {
+      "sessionId": "b10e0ca8-0126-4ca0-b85b-5d3ba8a0110b",
+      "revision": 6,
+      "createdAt": "2026-10-11T16:23:42.005579+00:00",
+      "candidateCount": 57,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 40,
+        "Excluded": 17
+      },
+      "blockerCounts": {
+        "topic": 23,
+        "entityType": 54,
+        "geography": 57,
+        "followers": 0,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Found 0/5 qualified new accounts; 5 still needed. Search stopped: available-evidence-exhausted. Missing evidence remains available for review.",
+        "The search time limit was reached. Available results are retained for review; no further provider runs were started."
+      ]
+    },
+    {
+      "sessionId": "25e84ba3-7b79-4a21-9106-0284473d77f2",
+      "revision": 5,
+      "createdAt": "2026-10-11T16:17:04.080843+00:00",
+      "candidateCount": 1,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 0,
+        "Excluded": 1
+      },
+      "blockerCounts": {
+        "topic": 0,
+        "entityType": 1,
+        "geography": 1,
+        "followers": 1,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Instagram: Provider run timed-out",
+        "Found 0 eligible profiles, below the minimum target of 5, after discovery checks (1 provider results, 1 excluded). Try a broader keyword or another location."
+      ]
+    },
+    {
+      "sessionId": "7f8d0917-ab3c-5075-a311-6d5f577933da",
+      "revision": 5,
+      "createdAt": "2026-10-11T15:32:58.896071+00:00",
+      "candidateCount": 30,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 11,
+        "Excluded": 19
+      },
+      "blockerCounts": {
+        "topic": 16,
+        "entityType": 30,
+        "geography": 30,
+        "followers": 0,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Facebook: Followers were unavailable for 4 profiles. Missing values remain Unknown; page likes are not used as followers."
+      ]
+    },
+    {
+      "sessionId": "64c4f46b-3051-4785-a577-f5a3f56a0166",
+      "revision": 5,
+      "createdAt": "2026-10-11T10:42:20.603296+00:00",
+      "candidateCount": 13,
+      "groups": {
+        "Qualified": 3,
+        "Needs Verification": 10,
+        "Excluded": 0
+      },
+      "blockerCounts": {
+        "topic": 0,
+        "entityType": 7,
+        "geography": 9,
+        "followers": 0,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [
+        {
+          "accountUrl": "https://facebook.com/groups/1115523166885117",
+          "from": "Qualified",
+          "to": "Needs Verification",
+          "imported": false
+        },
+        {
+          "accountUrl": "https://facebook.com/groups/congdongmepickleball",
+          "from": "Qualified",
+          "to": "Needs Verification",
+          "imported": false
+        },
+        {
+          "accountUrl": "https://facebook.com/PickleballVietnams",
+          "from": "Qualified",
+          "to": "Needs Verification",
+          "imported": false
+        },
+        {
+          "accountUrl": "https://facebook.com/groups/447486248241216",
+          "from": "Qualified",
+          "to": "Needs Verification",
+          "imported": false
+        }
+      ],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Facebook: Followers were unavailable for 5 profiles. Missing values remain Unknown; page likes are not used as followers.",
+        "The search time limit was reached. Available results are retained for review; no further provider runs were started."
+      ]
+    },
+    {
+      "sessionId": "157dc8fe-8fe0-4795-bfd3-71c40332d49f",
+      "revision": 5,
+      "createdAt": "2026-10-11T10:33:23.322917+00:00",
+      "candidateCount": 0,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 0,
+        "Excluded": 0
+      },
+      "blockerCounts": {
+        "topic": 0,
+        "entityType": 0,
+        "geography": 0,
+        "followers": 0,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Found 0 profiles, below the minimum target of 5, after discovery checks (41 provider results, 2 excluded). Try a broader keyword or another location."
+      ]
+    },
+    {
+      "sessionId": "6a57455b-d801-45d6-a46b-4a605b4c5186",
+      "revision": 5,
+      "createdAt": "2026-10-11T10:15:27.701072+00:00",
+      "candidateCount": 1,
+      "groups": {
+        "Qualified": 0,
+        "Needs Verification": 1,
+        "Excluded": 0
+      },
+      "blockerCounts": {
+        "topic": 1,
+        "entityType": 1,
+        "geography": 0,
+        "followers": 0,
+        "members": 0
+      },
+      "staleModelEvidence": 0,
+      "drift": [],
+      "reportedAccounts": [],
+      "collectionWarnings": [
+        "Found 1 profiles, below the minimum target of 5, after discovery checks (40 provider results, 0 excluded). Try a broader keyword or another location."
+      ]
+    }
+  ]
+}

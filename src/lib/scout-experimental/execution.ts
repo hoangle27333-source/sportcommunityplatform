@@ -41,12 +41,15 @@ export async function collectExperimental(params:Record<string,any>,existing:Set
     let current=p;const detailCap=capability(p.platform,'profile');
     const details=await fetchExternal(params.sessionId,detailCap,{url:p.url,limit:1});
     for(const row of details){const detail=detailCap.provider==='brightdata'?normalizeBrightProfile(row,p.platform):experimentalApifyProfile(row,p.platform);if(detail && (detail.url===p.url || detail.identityAliases?.includes(p.url)))current=mergeProfileEvidence(current,{...detail,url:p.url});}
+    // Each completed collection remains reviewable if a later operation fails.
+    pool.set(p.url,current);
     if(!seed && current.identityAliases?.some(url=>known.has(url)))return {...current,knownSeed:true};
     // A definite size/type failure needs no media or posts.
     if(!seed&&assessAccountSize(current,plan.criteria)?.state==='failed')return current;
     const postCap=capability(p.platform,'posts');const rows=await fetchExternal(params.sessionId,postCap,{url:p.url,limit:10});
     const posts=rows.map((r:any)=>postCap.provider==='brightdata'?normalizeBrightPost(r,p.platform):experimentalApifyPost(r,current)).filter((r:any)=>r?.authorUrl===p.url&&!r.isRepost);
     current={...current,posts:[...new Map([...current.posts,...posts].map(p=>[p.url,p])).values()].slice(0,10)};
+    pool.set(p.url,current);
     current.contentEvidence=await analyzeContent(params.sessionId,capability(p.platform,'analysis'),current,plan.criteria.keyword);
     return current;
    });merge(result);

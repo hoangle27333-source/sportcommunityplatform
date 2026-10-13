@@ -9,7 +9,7 @@ import type { SocialPost, SocialProfile } from './providers';
 import { contentInputHash } from '../scout-experimental/evidence';
 export type ResultGroup='Qualified'|'Needs Verification'|'Below Target'|'Excluded';
 export type Dimension={state:'passed'|'failed'|'unknown';reason:string;evidence:string[]};
-export const EXPERIMENTAL_TOPIC_POLICY_REVISION='owned-text-1';
+export const EXPERIMENTAL_TOPIC_POLICY_REVISION='owned-text-review-2';
 export function assessAccountSize(profile:Pick<SocialProfile,'followers'|'members'>,criteria:AccountSizeCriteria):Dimension | undefined {
  const {metric,minimum,maximum}=sizeRange(criteria);
  if(minimum===undefined && maximum===undefined)return undefined;

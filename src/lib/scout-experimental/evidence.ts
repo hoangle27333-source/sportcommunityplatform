@@ -7,7 +7,7 @@ import type { SocialProfile } from '../apify/providers';
 import type { ContentEvidence } from './types';
 import { EXPERIMENTAL_REVISION } from './types';
 export function contentInputHash(p:SocialProfile,topic:string) {
- return createHash('sha256').update(JSON.stringify({revision:EXPERIMENTAL_REVISION,topic,url:p.url,bio:p.bio,name:p.name,category:p.category,entityType:p.entityType,...(p.trustedRoleSources?.length?{trustedRoleSources:p.trustedRoleSources}:{}),posts:latestOwnedPosts(p).map(x=>({url:x.url,caption:x.caption,location:x.location,publishedAt:x.publishedAt,thumbnailUrl:x.thumbnailUrl,videoUrl:x.videoUrl}))})).digest('hex');
+ return createHash('sha256').update(JSON.stringify({revision:EXPERIMENTAL_REVISION,topic,url:p.url,bio:p.bio,name:p.name,category:p.category,entityType:p.entityType,...(p.trustedRoleSources?.length?{trustedRoleSources:p.trustedRoleSources}:{}),posts:latestOwnedPosts(p).map(x=>({url:x.url,caption:x.caption,hashtags:x.hashtags,location:x.location,publishedAt:x.publishedAt,thumbnailUrl:x.thumbnailUrl,videoUrl:x.videoUrl,videoDuration:x.videoDuration}))})).digest('hex');
 }
 /** Validate every citation against collected input. Model output cannot invent posts or role sources. */
 export function validateContentEvidence(raw:any,p:SocialProfile,topic:string,model:string,mediaPostUrls:string[]=[],videoPostUrls:string[]=[]):ContentEvidence {

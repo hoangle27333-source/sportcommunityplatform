@@ -2,7 +2,7 @@ import { describe,it,expect } from 'vitest';
 import { parseProfile,parsePost } from '../apify/providers';
 import { assessReviewedProfile } from '../apify/search-assessment';
 import { contextKey } from '../apify/discovery-quality';
-import { validateContentEvidence } from './evidence';
+import { contentInputHash, validateContentEvidence } from './evidence';
 import { historicalFollowers,ingestSeedRows,seedUrl } from './seeds';
 import { candidatePriority } from './ranking';
 import { experimentalApifyProfile,experimentalApifyPost } from './apify-adapter';
@@ -18,6 +18,13 @@ function profile(platform='Facebook',community=false,sport='badminton') {
 }
 const assess=(p:ReturnType<typeof profile>,topic='badminton',feedback:any[]=[])=>assessReviewedProfile(p,topic,'Ho Chi Minh City','Individual KOLs',{version:7,minFollowers:1000},feedback);
 describe('observed topic evidence without model output',()=>{
+ it('invalidates model evidence after a hashtag or video duration changes',()=>{
+  const p=profile();const original=contentInputHash(p,'badminton');
+  p.posts[0].hashtags=['tennis'];
+  expect(contentInputHash(p,'badminton')).not.toBe(original);
+  const tagsHash=contentInputHash(p,'badminton');p.posts[0].videoDuration=120;
+  expect(contentInputHash(p,'badminton')).not.toBe(tagsHash);
+ });
  it('counts explicit owned text without model output and preserves collected coverage',()=>{
   const p=profile();p.contentEvidence=undefined;
   const a=assess(p);

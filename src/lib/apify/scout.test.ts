@@ -306,6 +306,24 @@ describe('Experimental saved review through real API handlers and CRM persistenc
   expect(state.tables.kols[0].scout_provenance.manualAttributeReview).toMatchObject({actorId:state.owner,topic:'passed',geography:'passed'});
   expect(scrape).not.toHaveBeenCalled();
  });
+ it('reassessment keeps a saved manual review without discovery keywords and preserves the reviewed type',async()=>{
+  const session=setup();await confirm();
+  const preview=await previewDiscoveryCandidates({...session.params,accountPolicyVersion:5,platform:'Instagram',sessionId:sid,savedExperimentalProfiles:structuredClone(session.candidates)});
+  expect(preview.candidates).toHaveLength(1);
+  expect(preview.candidates[0]).toMatchObject({resultGroup:'Qualified',entityAssessment:{source:'review',reviewedType:'Individual'},assessment:{topic:{state:'passed'},geography:{state:'passed'}}});
+  expect(scrape).not.toHaveBeenCalled();
+ });
+ it('reassessment does not reapply superseded rejection feedback but enforces newer rejection',async()=>{
+  const session=setup();session.candidates[0].name='Badminton Creator';await confirm();
+  const reviewTime=session.candidates[0].manualAttributeReview.confirmedAt;
+  const feedback={account_key:session.candidates[0].accountKey,context_key:contextKey('badminton','Ho Chi Minh City'),reason:'Not Relevant',created_at:new Date(Date.parse(reviewTime)-1000).toISOString()};
+  state.tables.scout_feedback=[feedback];
+  const run=()=>previewDiscoveryCandidates({...session.params,accountPolicyVersion:5,platform:'Instagram',sessionId:sid,savedExperimentalProfiles:structuredClone(session.candidates)});
+  expect((await run()).candidates[0]).toMatchObject({resultGroup:'Qualified'});
+  feedback.created_at='2099-01-01T00:00:00Z';
+  expect((await run()).candidates[0]).toMatchObject({resultGroup:'Excluded'});
+  expect(scrape).not.toHaveBeenCalled();
+ });
  it('new negative feedback after approval blocks import without CRM writes',async()=>{
   const session=setup();await confirm();
   state.tables.scout_feedback=[{account_key:session.candidates[0].accountKey,context_key:contextKey('badminton','Ho Chi Minh City'),reason:'Wrong Location',created_at:'2099-01-01T00:00:00Z'}];

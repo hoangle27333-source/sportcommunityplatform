@@ -30,7 +30,24 @@ export function ScoutWorkspace() {
       setDataError('');
     } catch (e: any) { setDataError(e.message); }
   }
-  useEffect(() => { void loadSubjects(); }, []);
+  function openSessionDirect(s: ScoutSessionSummary) {
+    if (s.kind === 'preview' && s.status === 'complete') {
+      const p = s.params || {};
+      setCriteria(p);
+      setReviewId(s.id);
+      setContext({
+        intent: 'profiles',
+        mode: 'search',
+        entityType: p.communityId || p.entityType === 'community' || p.targetType === 'Communities & Clubs' ? 'community' : 'kol',
+        ids: (p.ids || [p.kolId || p.communityId || p.trackedAccountId].filter(Boolean)) as string[],
+        url: p.url as string | undefined,
+        source: '/scout',
+      });
+      setSession(null);
+    } else {
+      setSession(s);
+    }
+  }
   useEffect(() => {
     dismiss();
     const id = query.get('sessionId');
@@ -38,7 +55,7 @@ export function ScoutWorkspace() {
       let cancelled = false;
       fetch(`/api/sport-hub/scout/sessions?sessionId=${encodeURIComponent(id)}`).then(async response => {
         const value = await response.json(); if (!response.ok || !value.success || !value.sessions[0]) throw new Error(value.error || 'Task not found.');
-        if (!cancelled) setSession(value.sessions[0]);
+        if (!cancelled) openSessionDirect(value.sessions[0]);
       }).catch(e => { if (!cancelled) setSessionError(e.message); });
       return () => { cancelled = true; };
     }
@@ -87,7 +104,7 @@ export function ScoutWorkspace() {
     </section>)}</div>
     {dataError && <p role="alert" className="text-sm text-red-700">{dataError} <button type="button" onClick={loadSubjects} className="underline">Reload Profiles</button></p>}
     {sessionError && <p role="alert" className="text-sm text-red-700">{sessionError}</p>}
-    <ScoutActivity onOpen={s => { dismiss(); setSession(s); router.replace(`/scout?sessionId=${s.id}`, { scroll: false }); }} />
+    <ScoutActivity onOpen={s => { dismiss(); openSessionDirect(s); router.replace(`/scout?sessionId=${s.id}`, { scroll: false }); }} />
     {context && <ScoutTaskLauncher key={`${context.intent}:${context.mode}:${context.entityType}:${reviewId || criteria?.keyword || ''}:${context.ids?.join(',') || ''}:${context.url || ''}`} context={context} subjects={subjects} entity={context.intent === 'content' && context.ids?.length === 1 ? subjects.find(s => s.id === context.ids?.[0]) as KOL | Community : undefined} initialCriteria={criteria} resumeSessionId={reviewId} onClose={close} onNavigate={navigate} onSuccess={loadSubjects} />}
     {session && <ScoutSessionResults key={session.id} session={session} onClose={close} onReview={() => retryOrReview(true)} onRetry={() => retryOrReview(false)} />}
     {audience && <ScoutDialogFrame title="Audience Evidence" onClose={close} wide><AudienceAuditSection endpoint={`/api/sport-hub/kol/${audience}/audience-audit`} subjectName={kols.find(k => k.id === audience)?.name || 'Saved Profile'} emptyMessage="Collect posts, then collect a bounded comment sample before refreshing the audit." /></ScoutDialogFrame>}

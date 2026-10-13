@@ -1,0 +1,56 @@
+{
+  "recordedAt": "2026-10-13T03:28:44.864Z",
+  "productionUrl": "https://sportcommunityplatform.vercel.app",
+  "deploymentId": "dpl_5KMuj3AeA8emYvGx2EXd6s3bDGxU",
+  "passed": true,
+  "results": [
+    {
+      "name": "login",
+      "status": 200,
+      "location": null
+    },
+    {
+      "name": "scout",
+      "status": 307,
+      "location": "/login"
+    },
+    {
+      "name": "workflowFixture",
+      "status": 404,
+      "location": null
+    },
+    {
+      "name": "plan",
+      "status": 401,
+      "location": null,
+      "code": "UNAUTHORIZED"
+    },
+    {
+      "name": "reassess",
+      "status": 401,
+      "location": null,
+      "code": "UNAUTHORIZED"
+    },
+    {
+      "name": "review",
+      "status": 401,
+      "location": null,
+      "code": "UNAUTHORIZED"
+    },
+    {
+      "name": "attributes",
+      "status": 401,
+      "location": null,
+      "code": "UNAUTHORIZED"
+    },
+    {
+      "name": "import",
+      "status": 401,
+      "location": null,
+      "code": "UNAUTHORIZED"
+    }
+  ],
+  "providerStarts": 0,
+  "modelCalls": 0,
+  "crmMutations": 0
+}

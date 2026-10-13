@@ -1,5 +1,5 @@
 import { beforeEach,it,expect,vi } from 'vitest';
-const state=vi.hoisted(()=>({calls:[] as any[],failFacebook:false,unknownStart:false,junk:false}));
+const state=vi.hoisted(()=>({calls:[] as any[],failFacebook:false,unknownStart:false,junk:false,analysisFailure:false}));
 vi.mock('../supabase/admin',()=>({createAdminClient:()=>({from:()=>{const q:any={select:()=>q,in:async()=>({data:[],error:null})};return q;}})}));
 vi.mock('../apify/session-snapshot',()=>({sessionSnapshot:async(_id:any,_ns:any,_key:any,create:any)=>create()}));
 vi.mock('../apify/task-checkpoint',()=>({checkpointTask:async(_id:any,_key:any,work:any)=>work()}));
@@ -13,16 +13,25 @@ vi.mock('./providers',async importOriginal=>{
   if(c.operation==='discovery'&&state.junk)return [{profileUrl:`${prefix}thu.vui.texas`,name:'Thú Vui Texas',bio:'Life in America',followers:1000}];
   if(c.operation==='discovery')return [{profileUrl:`${prefix}${input.query==='later'?'good':'weak'+input.query}`,bio:'Badminton enthusiast',followers:1000,entityType:'person'}];
   if(c.operation==='profile')return [{profileUrl:input.url,followers:1000,entityType:'person',location:'Ho Chi Minh City'}];
-  if(c.operation==='posts')return input.url.endsWith('good')?Array.from({length:3},(_,i)=>({url:`${input.url}/${c.platform==='TikTok'?'video':'posts'}/${i+1}`,authorUrl:input.url,caption:'Badminton training'})):[];
+  if(c.operation==='posts')return input.url.endsWith('good') || state.analysisFailure?Array.from({length:3},(_,i)=>({url:`${input.url}/${c.platform==='TikTok'?'video':'posts'}/${i+1}`,authorUrl:input.url,caption:'Badminton training'})):[];
   return [];
  },analyzeContent:async(_id:any,_cap:any,p:any,topic:string)=>{
+  if(state.analysisFailure){const error:any=new Error('Model trial exhausted');error.code='TRIAL_UNAVAILABLE';throw error;}
   const {validateContentEvidence}=await import('./evidence');
   return validateContentEvidence({entityType:'Individual',identityEvidence:[p.url],posts:p.posts.map((post:any)=>({url:post.url,topic:true,excerpt:post.caption}))},p,topic,'fixture');
  }};
 });
 import { collectExperimental } from './execution';
 const plan=(platforms=['Facebook'])=>({version:6,criteria:{keyword:'badminton',geography:'Ho Chi Minh City',targetType:'Individual KOLs',limit:1,minFollowers:1000},sources:platforms.map(platform=>({platform})),experimental:{knownSeedUrls:[],seeds:[],capabilities:platforms.flatMap(platform=>['discovery','profile','posts','analysis'].map(operation=>({platform,operation,provider:'apify'}))),units:['one','two','three','four','later','six'].flatMap(query=>platforms.map(platform=>({query,platform,method:'content-author'})))}});
-beforeEach(()=>{state.calls=[];state.failFacebook=false;state.unknownStart=false;state.junk=false;});
+beforeEach(()=>{state.calls=[];state.failFacebook=false;state.unknownStart=false;state.junk=false;state.analysisFailure=false;});
+it('keeps successfully collected details and posts when analysis runs out of trial capacity',async()=>{
+ state.analysisFailure=true;
+ const result=await collectExperimental({sessionId:'fixture',searchPlan:plan()},new Set(),[]);
+ const enriched=result.profiles.Facebook.find(p=>p.url.endsWith('weakone'))!;
+ expect(enriched.location).toBe('Ho Chi Minh City');expect(enriched.posts).toHaveLength(3);
+ expect(enriched.contentEvidence).toBeUndefined();
+ expect(result.stopReason).toBe('trial-or-budget-limit');expect(result.warnings).toContain('Model trial exhausted');
+});
 it('continues past a weak first round and counts only fully assessed new profiles',async()=>{
  const result=await collectExperimental({sessionId:'fixture',searchPlan:plan()},new Set(),[]);
  expect(result.stopReason).toBe('target-reached');expect(result.profiles.Facebook.some(p=>p.url.endsWith('good'))).toBe(true);
