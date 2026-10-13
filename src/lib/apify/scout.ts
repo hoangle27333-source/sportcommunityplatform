@@ -1,3 +1,5 @@
+import { assessContentFilter, type ContentFilter } from './content-settings';
+import { channelMembership, assessTopPost } from './top-post-quality';
 import { hasDiscoveryLead } from '../scout-experimental/retrieval-admission';
 import { type AccountSizeCriteria } from './account-criteria';
 import { currentAccountModelPolicy, plannedAccountModelPolicy, assertAccountModelPolicy, accountModelPolicyKey, type AccountModelPolicy } from './account-model-policy';
@@ -23,6 +25,11 @@ import { channelUrl } from "./tasks";
 import { randomUUID } from "node:crypto";
 import { assessProfile, canonicalUrl, platformMatches, urlKind, contextKey, normalized, tokens, hashtagMatch, type Classification } from "./discovery-quality";
 import { scrape, parseProfile, mergeProfileEvidence, parsePost, ScoutError, type SocialProfile, type SocialPost, PendingScout } from "./providers";
+import { recordPostMetadata, postMetadata } from './post-metadata';
+import { loadPostAccounts, matchPostAuthor, matchPostGroup } from './post-accounts';
+import type { PostSource } from './post-contracts';
+
+export type CollectedPost = { post: SocialPost; platform: string; kolId?: string; communityId?: string; sport: string; requestedScope?: unknown; contentAssessment?: any; collectionSource?: PostSource; authorAccount?: { entityType: 'kol' | 'community'; id: string } };
 
 export function detectSportNiche(text: string): string[] {
   const t = (text || "").toLowerCase();
@@ -272,6 +279,7 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
   for (const s of params.selected) decisions[s.candidateId] = { ...decisions[s.candidateId], decision: 'approved', actorId: params.actorId, confirmedAt: new Date().toISOString() };
   const { error: reviewError } = await db.from('scout_sessions').update({ review_decisions: decisions }).eq('id', params.sessionId).eq('owner_id', params.actorId); check(reviewError);
   let insertedKols = 0, updatedKols = 0, insertedCommunities = 0, updatedCommunities = 0, insertedPosts = 0;
+  const postLinkResults:any[]=[];
   const table = expected === 'Community' ? 'communities' : 'kols';
   for (const c of selected) {
     const { data: records, error: readError } = await db.from(table).select('*'); check(readError);
@@ -304,8 +312,14 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
       if (expected === 'Individual') updatedKols++; else updatedCommunities++;
     } else {
       const payload = expected === 'Community' ? { name: c.name, sports: observedSports, geography: c.verifiedGeography || 'Unknown', platform: c.url.includes('/groups/') ? 'Facebook Group' : c.platform, group_url: c.url, activity_level: 'Unknown', privacy: 'Unknown', purposes: [], price_per_pin: 0, status: 'New Scout (Unverified)' } : { name: c.name, sports: observedSports, geography: c.verifiedGeography || 'Unknown', platform: c.platform, profile_url: c.url, bio: c.bio, avatar_url: c.avatarUrl, tier: c.followers === null ? 'Unknown' : calculateTier(c.followers), quotation: 0, status: 'New Scout (Unverified)' };
-      const { data: inserted, error: insertError } = await db.from(table).insert({ ...payload, ...metrics, scout_identity: c.accountKey,scout_provenance:observedProvenance }).select('id').single(); check(insertError); if (!inserted) throw new Error('Database did not return the imported profile'); entityId = inserted.id;
-      if (expected === 'Individual') insertedKols++; else insertedCommunities++;
+      const { data: inserted, error: insertError } = await db.from(table).insert({ ...payload, ...metrics, scout_identity: c.accountKey,scout_provenance:observedProvenance }).select('id').single();
+      if(insertError?.code==='23505') {
+        const {data:concurrent,error:concurrentError}=await db.from(table).select('id').eq('scout_identity',c.accountKey).single();check(concurrentError);
+        if(!concurrent)throw insertError;entityId=concurrent.id;
+        if(expected==='Individual')updatedKols++;else updatedCommunities++;
+      } else {check(insertError); if (!inserted) throw new Error('Database did not return the imported profile'); entityId = inserted.id;
+        if (expected === 'Individual') insertedKols++; else insertedCommunities++;
+      }
     }
     if (expected === 'Individual' && c.followers !== null && c.avgViews !== null && c.er !== null) {
       const { error: snapshotError } = await db.from('kol_metric_snapshots').upsert({ kol_id: entityId, scout_session_id: params.sessionId, followers: c.followers, avg_views: c.avgViews, er: c.er }, { onConflict: 'kol_id,scout_session_id', ignoreDuplicates: true }); check(snapshotError);
@@ -314,31 +328,40 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
       const saved = await savePosts(c.posts.filter(p => p.authorUrl === c.url).map(post => ({ post, platform: c.platform, kolId: entityId, sport: observedSports.join(', ') })));
       insertedPosts += saved.length;
     }
+    if(session.params.suggestionIdentity) {
+      try {const {relinkPostAuthor}=await import('./post-suggestions');postLinkResults.push({entityType:expected==='Individual'?'kol':'community',id:entityId,...await relinkPostAuthor(expected==='Individual'?'kol':'community',entityId)});}
+      catch(error:any){postLinkResults.push({success:false,entityType:expected==='Individual'?'kol':'community',id:entityId,error:error.message,retryable:true});}
+    }
   }
   const summary = `Imported ${insertedKols + insertedCommunities} new profiles; refreshed ${updatedKols + updatedCommunities} existing profiles; saved ${insertedPosts} observed posts.`;
   const { error: logError } = await db.from('scout_requests').insert({ keyword: session.params.keyword, target_type: session.params.targetType, platform: session.params.platform, geography: session.params.geography, target_limit: selected.length, status: 'Đã hoàn thành', results_summary: summary + (session.params.notes ? ` Notes: ${session.params.notes}` : ''), created_by: params.actorId }); check(logError);
   const importedIds=[...new Set([...(session.progress?.importedCandidateIds || []),...params.selected.map(s=>s.candidateId)])];
   const {error:countError}=await db.from('scout_sessions').update({progress:{...session.progress,importedCandidateIds:importedIds}}).eq('id',params.sessionId);check(countError);
-  return { success: true, insertedKols, updatedKols, insertedCommunities, updatedCommunities, insertedPosts, summary };
+  return { success: true, insertedKols, updatedKols, insertedCommunities, updatedCommunities, insertedPosts, summary,...(postLinkResults.length?{postLinkResults,partial:postLinkResults.some(r=>!r.success || r.partial)}:{}) };
   } finally {clearInterval(heartbeat);const {error}=await db.from('scout_sessions').update({import_lease_until:null,import_token:null}).eq('id',params.sessionId).eq('import_token',importToken);check(error);}
 }
-export async function savePosts(posts: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[], counts={inserted:0,refreshed:0,duplicate:0}) {
-  const context=workflowExecution();if(!context?.sessionId) return writePosts(posts,counts);
+export async function savePosts(posts: CollectedPost[], counts={inserted:0,refreshed:0,duplicate:0}, returnExisting=false) {
+  const context=workflowExecution();if(!context?.sessionId) return writePosts(posts,counts,returnExisting);
   const saved:any[]=[];
   for(const item of posts) {
     const observation=item.post.provenance?.runId || item.post.url;
-    const result=await checkpointTask(context.sessionId,`save:${item.platform}:${item.post.url}:${observation}`,async()=>{
-      const unit={inserted:0,refreshed:0,duplicate:0};return {rows:await writePosts([item],unit),counts:unit};
+    const result=await checkpointTask(context.sessionId,`save:${item.platform}:${item.post.url}:${observation}${returnExisting?':top':''}`,async()=>{
+      const unit={inserted:0,refreshed:0,duplicate:0};return {rows:await writePosts([item],unit,returnExisting),counts:unit};
     });
     saved.push(...result.rows);for(const key of ['inserted','refreshed','duplicate'] as const)counts[key]+=result.counts[key];
   }
   return saved;
 }
-async function writePosts(posts: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[], counts={inserted:0,refreshed:0,duplicate:0}) {
+async function writePosts(posts: CollectedPost[], counts={inserted:0,refreshed:0,duplicate:0}, returnExisting=false) {
   const db = createAdminClient(); const saved: any[] = [];
-  for (const { post: p, platform, kolId, communityId, sport, requestedScope } of posts) {
+  for (const { post: p, platform, kolId, communityId, sport, requestedScope, contentAssessment, collectionSource, authorAccount } of posts) {
+    const mergeMetadata = async (row: any) => {
+      if (!collectionSource || !row?.id) return row;
+      const merged = await recordPostMetadata(row.id, platform, p.authorUrl, collectionSource, authorAccount);
+      return merged ? { ...row, ...merged, ...postMetadata(merged) } : row;
+    };
     const identity = `${platform}:${p.url}`;
-    const selection='id,post_url,scout_identity,scout_provenance,scout_missing_metrics,community_id';
+    const selection=returnExisting?'*':'id,post_url,scout_identity,scout_provenance,scout_missing_metrics,community_id';
     let existing:any[] | null;
     if(workflowExecution()) {
       const byIdentity=await db.from('scouted_posts').select(selection).eq('scout_identity',identity);check(byIdentity.error);
@@ -347,24 +370,26 @@ async function writePosts(posts: { post: SocialPost; platform: string; kolId?: s
     } else { const result=await db.from('scouted_posts').select(selection);check(result.error);existing=result.data; }
     const match=existing?.find(e => e.scout_identity===identity || canonicalUrl(e.post_url)===p.url);
     if(match) {
+      const linked = await mergeMetadata(match);
       if(communityId && match.community_id && match.community_id!==communityId) throw new ScoutError('This post is already linked to another community.', 'POST_COMMUNITY_CONFLICT', 409);
       if(communityId && !match.community_id) { const {error}=await db.from('scouted_posts').update({community_id:communityId,requested_scope:requestedScope || null}).eq('id',match.id).is('community_id',null);check(error); }
       if(p.provenance && (!match.scout_provenance?.fetchedAt || p.provenance.fetchedAt>match.scout_provenance.fetchedAt)) {
-        const update:any={scout_provenance:p.provenance,...(p.publishedAt ? {published_at:p.publishedAt} : {})};
-        for(const field of ['views','likes','comments']) if((p as any)[field]!=null) update[field]=(p as any)[field];
+        const update:any={...(contentAssessment?{scout_content_assessment:contentAssessment}:{}),scout_provenance:p.provenance,...(p.publishedAt ? {published_at:p.publishedAt} : {})};
+        for(const field of (returnExisting?['views','likes','comments','shares']:['views','likes','comments'])) if((p as any)[field]!=null) update[field]=(p as any)[field];
         update.scout_missing_metrics=(match.scout_missing_metrics || []).filter((field:string)=>(p as any)[field]==null);
-        const {error}=await db.from('scouted_posts').update(update).eq('id',match.id);check(error); counts.refreshed++;
-      } else counts.duplicate++;
+        const {error}=await db.from('scouted_posts').update(update).eq('id',match.id);check(error); counts.refreshed++;if(returnExisting)saved.push({...linked,...update,saveState:'refreshed'});
+      } else {if(contentAssessment){const {error}=await db.from('scouted_posts').update({scout_content_assessment:contentAssessment}).eq('id',match.id);check(error);}counts.duplicate++;if(returnExisting)saved.push({...linked,...(contentAssessment?{scout_content_assessment:contentAssessment}:{}),saveState:'existing'});}
       continue;
     }
-    const { data, error } = await db.from('scouted_posts').upsert({ scout_identity: identity,requested_scope:requestedScope || null,scout_provenance:p.provenance,published_at:p.publishedAt || null, kol_id: kolId || null,community_id:communityId || null, title: p.caption, author: p.author, platform: `${platform} ${p.contentType}`, post_url: p.url, thumbnail_url: p.thumbnailUrl, sport,
-      views: p.views ?? 0, likes: p.likes ?? 0, comments: p.comments ?? 0, er: 0, scout_missing_metrics: ['views', 'likes', 'comments'].filter(k => (p as any)[k] === null).concat('er'),
-      viral_tier: p.views === null ? 'Unknown' : p.views >= 100000 ? 'Super Viral (> 100k views)' : p.views >= 20000 ? 'High Engagement (10k - 100k views)' : 'Standard', hashtags: p.hashtags.map(t => `#${t.replace(/^#/, '')}`).join(' '), notes: 'Verified social scout' }, { onConflict: 'scout_identity', ignoreDuplicates: true }).select().maybeSingle(); check(error);
-    if (data) { saved.push(data); counts.inserted++; } else counts.duplicate++;
+    const { data, error } = await db.from('scouted_posts').upsert({ scout_identity: identity,...(contentAssessment?{scout_content_assessment:contentAssessment}:{}),requested_scope:requestedScope || null,scout_provenance:p.provenance,published_at:p.publishedAt || null, kol_id: kolId || null,community_id:communityId || null, title: p.caption, author: p.author, platform: `${platform} ${p.contentType}`, post_url: p.url, thumbnail_url: p.thumbnailUrl, sport,
+      ...(returnExisting?{shares:p.shares ?? null}:{}), views: contentAssessment?p.views:p.views ?? 0, likes: contentAssessment?p.likes:p.likes ?? 0, comments: contentAssessment?p.comments:p.comments ?? 0, er: 0, scout_missing_metrics: (returnExisting?['views', 'likes', 'comments','shares']:['views','likes','comments']).filter(k => (p as any)[k] === null).concat('er'),
+      viral_tier: p.views === null ? 'Unknown' : p.views >= 100000 ? 'Super Viral (> 100k views)' : p.views >= 20000 ? 'High Engagement (10k - 100k views)' : 'Standard', hashtags: p.hashtags.map(t => `#${t.replace(/^#/, '')}`).join(' '), notes: contentAssessment?.status==='needs-verification'?'Social scout — Needs Verification':'Verified social scout' }, { onConflict: 'scout_identity', ignoreDuplicates: true }).select().maybeSingle(); check(error);
+    if (data) { const linked=await mergeMetadata(data);saved.push(returnExisting?{...linked,saveState:'inserted'}:linked); counts.inserted++; } else {counts.duplicate++;if(returnExisting || collectionSource){const {data:concurrent,error:readError}=await db.from('scouted_posts').select('*').eq('scout_identity',identity).single();check(readError);if(!concurrent)throw new ScoutError('Saved post could not be read back.','POST_SAVE_FAILED',409);const linked=await mergeMetadata(concurrent);if(returnExisting)saved.push({...linked,saveState:'existing'});}}
   }
   return saved;
 }
-export async function scoutMarketTrends(params: ContentQuality & { keyword: string; searchMode?: 'hashtag' | 'keyword'; sport?: string | string[]; platform?: string | string[]; limit?: number; geography?: string | string[]; queryVariants?: string[]; searchPlan?:SearchPlan; assessmentVersion?:number; accountModelPolicy?:AccountModelPolicy; accountPolicyVersion?:5; entityTypes?:EntityType[]; geographyMode?:'profile'|'profile-or-recent-posts'; sessionId: string; }, savedEvidence?: Record<string,any[]>) {
+export async function scoutMarketTrends(params: ContentQuality & import('./top-post-quality').TopPostCriteria & { keyword: string; searchMode?: 'hashtag' | 'keyword'; sport?: string | string[]; platform?: string | string[]; limit?: number; geography?: string | string[]; queryVariants?: string[]; searchPlan?:SearchPlan; assessmentVersion?:number; accountModelPolicy?:AccountModelPolicy; accountPolicyVersion?:5; entityTypes?:EntityType[]; geographyMode?:'profile'|'profile-or-recent-posts'; sessionId: string; }, savedEvidence?: Record<string,any[]>) {
+  if(params.selectionMode==='top')return (await import('./top-posts')).scoutTopPosts(params);
   const platforms = Array.isArray(params.platform) ? params.platform : [params.platform || 'Instagram']; const limit = params.limit || 10;
   const scopes = canonicalScopes(params.geography || 'Nationwide');
   const geography = Array.isArray(scopes) ? scopes.join(', ') : scopes;
@@ -373,7 +398,7 @@ export async function scoutMarketTrends(params: ContentQuality & { keyword: stri
   const highEngagement=params.qualityMode==='high-engagement';
   const candidateLimit=highEngagement ? Math.min(limit*3,60) : limit;
   const qualityCutoff=highEngagement || params.searchPlan ? await sessionSnapshot(params.sessionId,'retrievalWindows','engagement-cutoff',async createdAt=>new Date(Date.parse(createdAt)-(params.recentDays ?? 7)*86400000).toISOString()) : '';
-  const collected: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown }[] = [];
+  const collected: { post: SocialPost; platform: string; kolId?: string; communityId?:string; sport: string; requestedScope?:unknown; contentAssessment?:any }[] = [];
   const db = createAdminClient(); const { data: kols, error } = await db.from('kols').select('id,profile_url'); check(error);
   const {data:knownPosts,error:knownError}=params.searchPlan && !isStoredEvidence()?await db.from('scouted_posts').select('platform,post_url'):{data:[],error:null};check(knownError);
   const existingPostKeys=new Set((knownPosts || []).map(p=>`${String(p.platform).split(' ')[0]}:${canonicalUrl(p.post_url || '')}`));
@@ -390,14 +415,20 @@ export async function scoutMarketTrends(params: ContentQuality & { keyword: stri
     const group:typeof collected=[];
     for(const r of raw) {
       const post=parsePost(r,platform);if(!post) continue;
-      if(params.searchPlan || (params.assessmentVersion || 0)>=4) {
+      let contentAssessment:any;
+      if(params.qualityFilter) {
+        const assessment=assessTopPost(post,{...params,searchMode:mode,geography:scopes},window.newerThan,new Date().toISOString());
+        if(!['Qualified','Needs Verification'].includes(assessment.resultGroup)){if(assessment.resultGroup==='Below Target')belowTarget++;else excluded++;skippedPosts.push({...post,platform,...assessment});continue;}
+        if(assessment.resultGroup==='Needs Verification')unverified++;
+        contentAssessment={status:assessment.resultGroup==='Qualified'?'verified':'needs-verification',assessment:assessment.assessment,qualityFilter:assessment.qualityFilter,reason:assessment.reason};
+      } else if(params.searchPlan || (params.assessmentVersion || 0)>=4) {
         const assessment=assessSearchContent(post,{...params,searchMode:mode,geography:scopes,newerThan:window.newerThan});
         if(assessment.resultGroup!=='Qualified'){if(assessment.resultGroup==='Excluded')excluded++;else if(assessment.resultGroup==='Below Target')belowTarget++;else unverified++;skippedPosts.push({...post,platform,...assessment});continue;}
       } else {
         const assessment=assessSearchPost(post,{...params,searchMode:mode,geography:scopes,newerThan:window.newerThan});
         if(assessment.state!=='matched') {if(assessment.state==='excluded')excluded++;else unverified++;skippedPosts.push({...post,platform,reviewState:assessment.state==='excluded'?'Excluded':'Needs Verification',reason:assessment.reason});continue;}
       }
-      group.push({post,platform,requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ') || 'Unknown'});
+      group.push({post,platform,...(contentAssessment?{contentAssessment}:{}),requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ') || 'Unknown'});
     }
     groups.push(group);
   }
@@ -412,29 +443,34 @@ export async function scoutMarketTrends(params: ContentQuality & { keyword: stri
       const known=new Set(groups[index].map(p=>p.post.url));
       for(const row of rows) {
         const post=parsePost(row,extra.platform);if(!post || known.has(post.url))continue;
-        if(assessSearchPost(post,{...params,searchMode:mode,geography:scopes,newerThan:window.newerThan}).state!=='matched')continue;
-        known.add(post.url);groups[index].push({post,platform:extra.platform,requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ')});
+        const assessment=params.qualityFilter?assessTopPost(post,{...params,searchMode:mode,geography:scopes},window.newerThan,new Date().toISOString()):null;
+        if(assessment?!['Qualified','Needs Verification'].includes(assessment.resultGroup):assessSearchPost(post,{...params,searchMode:mode,geography:scopes,newerThan:window.newerThan}).state!=='matched')continue;
+        known.add(post.url);groups[index].push({post,...(assessment?{contentAssessment:{status:assessment.resultGroup==='Qualified'?'verified':'needs-verification',assessment:assessment.assessment,qualityFilter:assessment.qualityFilter,reason:assessment.reason}}:{}),platform:extra.platform,requestedScope:{sport:params.sport,geography},kolId:kols?.find(k=>post.authorUrl && canonicalUrl(k.profile_url)===post.authorUrl)?.id,sport:detectSportNiche(post.caption).join(', ')});
       }
     }catch(e:any){if(e instanceof PendingScout)throw e;warnings.push(`${extra.platform}: ${e.message}`);}
   }
   const unique=new Set<string>();const ranked=highEngagement ? groups.flat().sort((a,b)=>comparePostEngagement(a.post,b.post)) : roundRobin(groups,groups.reduce((n,g)=>n+g.length,0));
-  if(planned)ranked.sort((a,b)=>Number(existingPostKeys.has(`${a.platform}:${a.post.url}`))-Number(existingPostKeys.has(`${b.platform}:${b.post.url}`)));
-  const merged=ranked.filter(p=>{if(unique.has(p.post.url))return false;unique.add(p.post.url);return true;}).slice(0,limit);
+  if(planned && !params.qualityFilter)ranked.sort((a,b)=>Number(existingPostKeys.has(`${a.platform}:${a.post.url}`))-Number(existingPostKeys.has(`${b.platform}:${b.post.url}`)));
+  const merged=ranked.filter(p=>{if(unique.has(p.post.url))return false;unique.add(p.post.url);return true;});
+  if(!params.qualityFilter)merged.splice(limit);
   if(highEngagement && merged.length<limit)warnings.push(`Only ${merged.length} posts met the selected topic, location, recency and engagement criteria; requested up to ${limit}. Low-engagement posts were not substituted.`);
-  const counts={inserted:0,refreshed:0,duplicate:0}; const posts=isStoredEvidence() ? merged.map(({post,platform})=>({...post,platform,reviewState:'Matched'})) : await savePosts(merged,counts);
-  if(params.searchPlan || (params.assessmentVersion || 0)>=4) for(const saved of posts as any[]) {const observed=merged.find(p=>p.post.url===canonicalUrl(saved.post_url || saved.url || ''));if(observed)Object.assign(saved,assessSearchContent(observed.post,{...params,searchMode:mode,geography:scopes,newerThan:qualityCutoff || windows.find(w=>w.platform===observed.platform)?.newerThan || windows[0]?.newerThan || ''}));}
+  const registry=isStoredEvidence()?[]:await loadPostAccounts();
+  const collectedPosts:CollectedPost[]=merged.map(item=>{const authorAccount=matchPostAuthor(registry,item.platform,item.post.authorUrl);return {...item,kolId:authorAccount?.entityType==='kol'?authorAccount.id:undefined,communityId:matchPostGroup(registry,item.platform,item.post.url),authorAccount,collectionSource:{kind:'topic',sessionId:params.sessionId,keyword:params.keyword}};});
+  const counts={inserted:0,refreshed:0,duplicate:0}; const posts=isStoredEvidence() ? merged.map(({post,platform})=>({...post,platform,reviewState:'Matched'})) : await savePosts(collectedPosts,counts,!!params.qualityFilter);
+  if(!params.qualityFilter && (params.searchPlan || (params.assessmentVersion || 0)>=4)) for(const saved of posts as any[]) {const observed=merged.find(p=>p.post.url===canonicalUrl(saved.post_url || saved.url || ''));if(observed)Object.assign(saved,assessSearchContent(observed.post,{...params,searchMode:mode,geography:scopes,newerThan:qualityCutoff || windows.find(w=>w.platform===observed.platform)?.newerThan || windows[0]?.newerThan || ''}));}
   const {data:providerRuns,error:runError}=await db.from('scout_provider_runs').select('warnings').eq('session_id',params.sessionId);check(runError);
   const providerPartial=(providerRuns || []).some(r=>r.warnings?.length) || merged.some(p=>p.post.provenance?.warnings?.length);
   if(!params.searchPlan && !isStoredEvidence()) for(let i=0;i<windows.length;i++) await advanceWatermark(windows[i].scopeKey,(groups[i] || []).map(p=>p.post),!providerPartial && !warnings.length && !unverified && merged.length<limit && (groups[i] || []).every(p=>!!p.post.publishedAt));
+  const contentGroups=params.qualityFilter?{qualified:posts.filter((p:any)=>p.scout_content_assessment?.status==='verified'),needsVerification:posts.filter((p:any)=>p.scout_content_assessment?.status==='needs-verification'),belowTarget:skippedPosts.filter(p=>p.resultGroup==='Below Target'),excluded:skippedPosts.filter(p=>p.resultGroup==='Excluded')}:undefined;
   const allFailed=failures.length===allocations.filter(a=>a.limit>0).length && failures.length>0;
   const reasonCounts:Record<string,number>={}; for(const p of skippedPosts) reasonCounts[p.reason]=(reasonCounts[p.reason] || 0)+1;
-  return { ...((planned || (params.assessmentVersion || 0)>=4)?{searchExecution:planned?{...planned,rows:undefined,profiles:undefined}:undefined,groups:{qualified:merged.map(item=>({...item.post,platform:item.platform,...assessSearchContent(item.post,{...params,searchMode:mode,geography:scopes,newerThan:qualityCutoff || windows[0]?.newerThan || ''})})),needsVerification:skippedPosts.filter(p=>p.resultGroup==='Needs Verification'),belowTarget:skippedPosts.filter(p=>p.resultGroup==='Below Target'),excluded:skippedPosts.filter(p=>p.resultGroup==='Excluded')}}:{}), diagnostics:{assessmentVersion:params.searchPlan || (params.assessmentVersion || 0)>=4 ?4:3,reasonCounts,providerCount:planned?.providerCount ?? skippedPosts.length+groups.reduce((n,g)=>n+g.length,0),returnedCount:posts.length},success: !allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),keyword: params.keyword, qualityCriteria:{mode:highEngagement?'high-engagement':'topic',...(highEngagement ? {minInteractions:params.minInteractions ?? 100,minViews:params.minViews ?? 10000,recentDays:params.recentDays ?? 7,candidateLimit,cutoff:qualityCutoff,ranking:'likes + comments, then views, then publication date'} : {})}, partial:!allFailed && (providerPartial || warnings.length>0 || unverified>0),warnings,skippedPosts,counts:{...counts,qualified:merged.length,belowTarget,excluded,unverified,failed:failures.length},totalScouted: posts.length, matchedKolsCount: posts.filter(p => p.kol_id).length, posts, message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; unverified ${unverified}; failed ${failures.length}.` };
+  return { ...((planned || (params.assessmentVersion || 0)>=4)?{searchExecution:planned?{...planned,rows:undefined,profiles:undefined}:undefined,groups:{qualified:merged.map(item=>({...item.post,platform:item.platform,...assessSearchContent(item.post,{...params,searchMode:mode,geography:scopes,newerThan:qualityCutoff || windows[0]?.newerThan || ''})})),needsVerification:skippedPosts.filter(p=>p.resultGroup==='Needs Verification'),belowTarget:skippedPosts.filter(p=>p.resultGroup==='Below Target'),excluded:skippedPosts.filter(p=>p.resultGroup==='Excluded')}}:{}), ...(contentGroups?{groups:contentGroups,savedPosts:posts}:{}), diagnostics:{assessmentVersion:params.searchPlan || (params.assessmentVersion || 0)>=4 ?4:3,reasonCounts,providerCount:planned?.providerCount ?? skippedPosts.length+groups.reduce((n,g)=>n+g.length,0),returnedCount:posts.length},success: !allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),keyword: params.keyword, qualityCriteria:{mode:highEngagement?'high-engagement':'topic',...(highEngagement ? {minInteractions:params.minInteractions ?? 100,minViews:params.minViews ?? 10000,recentDays:params.recentDays ?? 7,candidateLimit,cutoff:qualityCutoff,ranking:'likes + comments, then views, then publication date'} : {})}, partial:!allFailed && (providerPartial || warnings.length>0 || unverified>0),warnings,skippedPosts,counts:{...counts,saved:posts.length,qualified:contentGroups?.qualified.length ?? merged.length,belowTarget,excluded,unverified,failed:failures.length},totalScouted: posts.length, matchedKolsCount: posts.filter(p => p.kol_id).length, posts, message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; unverified ${unverified}; failed ${failures.length}.` };
 }
-async function scoutEntityPosts(id: string, kind: 'kol' | 'community', limit: number, platforms: string | string[], sessionId: string) {
+async function scoutEntityPosts(id: string, kind: 'kol' | 'community', limit: number, platforms: string | string[], sessionId: string, qualityFilter?:ContentFilter) {
   const db = createAdminClient(); const { data: entity, error } = await db.from(kind === 'kol' ? 'kols' : 'communities').select('*').eq('id', id).single(); check(error);
   const requested = Array.isArray(platforms) ? platforms : [platforms];
   const allocations=quotas(requested,limit).filter(a=>a.limit>0);
-  const groups:{post:SocialPost;platform:string;kolId?:string;communityId?:string;sport:string}[][]=[];
+  const groups:{post:SocialPost;platform:string;kolId?:string;communityId?:string;sport:string;contentAssessment?:any}[][]=[];
   const windows:{platform:string;url:string;newerThan:string;scopeKey:string;complete:boolean;posts:SocialPost[]}[]=[]; const warnings:string[]=[]; const failures:{message:string;code:string;httpStatus:number}[]=[]; let excluded=0;
   for (const allocation of allocations) {
     if(!allocation.limit) continue; const platform=allocation.platform;
@@ -445,10 +481,11 @@ async function scoutEntityPosts(id: string, kind: 'kol' | 'community', limit: nu
       const rows=await scrape(sessionId,platform,'profile-posts',url,allocation.limit,'',{newerThan:window.newerThan});
       const parsed=rows.map(row=>parsePost(row,platform)).filter(Boolean) as SocialPost[];
       const eligible=parsed.filter(post=>{
+        if(qualityFilter){const membership=channelMembership(post,url,rows.find(row=>parsePost(row,platform)?.url===post.url));const accepted=membership!=='failed' && (!post.publishedAt || post.publishedAt>=window.newerThan && post.publishedAt<=new Date().toISOString());if(!accepted)excluded++;return accepted;}
         const accepted=(kind==='community' || post.authorUrl===url) && !!post.publishedAt && post.publishedAt>=window.newerThan;
         if(!accepted) excluded++; return accepted;
       });
-      groups.push(eligible.map(post=>({post,platform,kolId:kind==='kol' ? id : undefined,communityId:kind==='community' ? id : undefined,sport:entity.sports?.join(', ') || 'Unknown'})));
+      groups.push(eligible.map(post=>({post,platform,...(qualityFilter?{contentAssessment:{status:!post.publishedAt || channelMembership(post,url,rows.find(row=>parsePost(row,platform)?.url===post.url))==='unknown'?'needs-verification':'verified',ownership:channelMembership(post,url,rows.find(row=>parsePost(row,platform)?.url===post.url))}}:{}),kolId:kind==='kol' ? id : undefined,communityId:kind==='community' ? id : undefined,sport:qualityFilter?detectSportNiche(post.caption).join(', ') || 'Unknown':entity.sports?.join(', ') || 'Unknown'})));
       windows.push({platform,url,newerThan:window.newerThan,scopeKey:window.scopeKey,posts:eligible,complete:rows.length<allocation.limit && parsed.every(post=>!!post.publishedAt)});
     } catch(e:any) {if(e instanceof PendingScout) throw e; warnings.push(`${platform}: ${e.message}`);failures.push({message:e.message,code:e.code || 'PROVIDER_ERROR',httpStatus:e.status || 502});groups.push([]);}
   }
@@ -460,20 +497,25 @@ async function scoutEntityPosts(id: string, kind: 'kol' | 'community', limit: nu
       const cap=allocations[index].limit+extra.limit;
       const rows=await scrape(sessionId,extra.platform,'profile-posts',window.url,cap,'',{newerThan:window.newerThan});
       const known=new Set(groups[index].map(p=>p.post.url));
-      for(const row of rows){const post=parsePost(row,extra.platform);if(!post || known.has(post.url) || !post.publishedAt || post.publishedAt<window.newerThan || kind==='kol' && post.authorUrl!==window.url)continue;known.add(post.url);groups[index].push({post,platform:extra.platform,kolId:kind==='kol' ? id : undefined,communityId:kind==='community' ? id : undefined,sport:entity.sports?.join(', ') || 'Unknown'});window.posts.push(post);}
+      for(const row of rows){const post=parsePost(row,extra.platform);if(!post || known.has(post.url))continue;
+        const membership=channelMembership(post,window.url,row);
+        if(qualityFilter ? membership==='failed' || !!post.publishedAt && (post.publishedAt<window.newerThan || post.publishedAt>new Date().toISOString()) : !post.publishedAt || post.publishedAt<window.newerThan || kind==='kol' && post.authorUrl!==window.url)continue;
+        known.add(post.url);groups[index].push({post,platform:extra.platform,...(qualityFilter?{contentAssessment:{status:!post.publishedAt || membership==='unknown'?'needs-verification':'verified',ownership:membership}}:{}),kolId:kind==='kol' ? id : undefined,communityId:kind==='community' ? id : undefined,sport:qualityFilter?detectSportNiche(post.caption).join(', ') || 'Unknown':entity.sports?.join(', ') || 'Unknown'});window.posts.push(post);}
       window.complete=rows.length<cap && rows.every(row=>!!parsePost(row,extra.platform)?.publishedAt);
     }catch(e:any){if(e instanceof PendingScout)throw e;warnings.push(`${extra.platform}: ${e.message}`);window.complete=false;}
   }
-  const seen=new Set<string>(); const merged=roundRobin(groups,groups.reduce((n,g)=>n+g.length,0)).filter(p=>{if(seen.has(p.post.url))return false;seen.add(p.post.url);return true;}).slice(0,limit);
-  const counts={inserted:0,refreshed:0,duplicate:0};const saved=await savePosts(merged,counts);
+  const seen=new Set<string>(); const merged=roundRobin(groups,groups.reduce((n,g)=>n+g.length,0)).filter(p=>{if(seen.has(p.post.url))return false;seen.add(p.post.url);return true;});if(!qualityFilter)merged.splice(limit);
+  const counts={inserted:0,refreshed:0,duplicate:0};const filtered=qualityFilter?merged.filter(item=>assessContentFilter(item.post,qualityFilter).state!=='failed').map(item=>({...item,...((item as any).contentAssessment?.ownership==='unknown'?{kolId:undefined,communityId:undefined}:{}),contentAssessment:{...(item as any).contentAssessment,status:(item as any).contentAssessment?.status==='needs-verification' || !['views','likes','comments','shares'].some(key=>typeof item.post[key as keyof SocialPost]==='number')?'needs-verification':'verified',qualityFilter:assessContentFilter(item.post,qualityFilter)}})):merged;
+  const collected:CollectedPost[]=filtered.map(item=>{const url=windows.find(w=>w.platform===item.platform)?.url || '';const known=(item as any).contentAssessment?.ownership!=='unknown';return {...item,authorAccount:known && !url.includes('/groups/')?{entityType:kind,id}:undefined,collectionSource:{kind:'account',sessionId,entityType:kind,entityId:id,channelUrl:url}};});
+  const saved=await savePosts(collected,counts,!!qualityFilter);
   const {data:runs,error:runError}=await db.from('scout_provider_runs').select('warnings').eq('session_id',sessionId);check(runError);
-  const partial=warnings.length>0 || (runs || []).some(r=>r.warnings?.length) || merged.some(p=>p.post.provenance?.warnings?.length);
+  const partial=filtered.some(item=>(item as any).contentAssessment?.status==='needs-verification') || warnings.length>0 || (runs || []).some(r=>r.warnings?.length) || merged.some(p=>p.post.provenance?.warnings?.length);
   for(const window of windows) await advanceWatermark(window.scopeKey,window.posts,window.complete && !partial);
   const allFailed=failures.length===allocations.length && allocations.length>0;
-  return {success:!allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),partial:!allFailed && partial,warnings,counts:{...counts,excluded,failed:failures.length},kolName:entity.name,communityName:entity.name,insertedCount:saved.length,posts:saved,message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; failed ${warnings.length}.`};
+  return {success:!allFailed,allFailed,...(allFailed ? {error:failures.map(f=>f.message).join(' '),code:failures[0].code,httpStatus:failures[0].httpStatus} : {}),partial:!allFailed && partial,warnings,counts:{...counts,saved:saved.length,unverified:filtered.filter(item=>(item as any).contentAssessment?.status==='needs-verification').length,filteredLowEngagement:merged.length-filtered.length,excluded,failed:failures.length},kolName:entity.name,communityName:entity.name,insertedCount:saved.length,posts:saved,message:`Inserted ${counts.inserted}; refreshed ${counts.refreshed}; duplicate ${counts.duplicate}; excluded ${excluded}; failed ${warnings.length}.`};
 }
-export async function scoutSingleKolPosts(id: string, limit = 10, platform: string | string[] = 'Instagram', sessionId = '') { return scoutEntityPosts(id, 'kol', limit, platform, sessionId); }
-export async function scoutSingleCommunityPosts(id: string, limit = 10, platform: string | string[] = 'Facebook', sessionId = '') { return scoutEntityPosts(id, 'community', limit, platform, sessionId); }
+export async function scoutSingleKolPosts(id: string, limit = 10, platform: string | string[] = 'Instagram', sessionId = '',qualityFilter?:ContentFilter) { return scoutEntityPosts(id, 'kol', limit, platform, sessionId,qualityFilter); }
+export async function scoutSingleCommunityPosts(id: string, limit = 10, platform: string | string[] = 'Facebook', sessionId = '',qualityFilter?:ContentFilter) { return scoutEntityPosts(id, 'community', limit, platform, sessionId,qualityFilter); }
 // Queued discovery uses the same durable preview pipeline; imports still require review.
 export async function processScoutRequest(requestId: string) {
   const db = createAdminClient();
@@ -501,7 +543,7 @@ export async function processScoutRequest(requestId: string) {
 }
 
 /** A latest sample is independent of incremental watermarks and activity thresholds. */
-export async function scoutLatestCommunityPosts(id: string, selectedPlatforms: string | string[], sessionId: string, selectedUrls?: string[]) {
+export async function scoutLatestCommunityPosts(id: string, selectedPlatforms: string | string[], sessionId: string, selectedUrls?: string[], qualityFilter?:ContentFilter) {
   const db = createAdminClient();
   const {data: entity,error}=await db.from('communities').select('*').eq('id',id).single();check(error);
   const platforms=Array.isArray(selectedPlatforms) ? selectedPlatforms : [selectedPlatforms];
@@ -509,7 +551,7 @@ export async function scoutLatestCommunityPosts(id: string, selectedPlatforms: s
   const connected=[...new Set([entity.group_url,...channels.map((c:any)=>c.url || c.profileUrl)].map(u=>canonicalUrl(u || '')).filter(Boolean))];
   const requested=selectedUrls?.map(u=>canonicalUrl(u)) || connected.filter(u=>platforms.some(p=>platformMatches(p,u)));
   if(!requested.length || requested.some(u=>!connected.includes(u) || !platforms.some(p=>platformMatches(p,u)))) throw new ScoutError('Choose connected community channels only.','INVALID_CHANNEL',400);
-  const samples:{post:SocialPost;platform:string;communityId:string;sport:string;requestedScope:unknown}[]=[];
+  const samples:{post:SocialPost;platform:string;communityId?:string;sport:string;requestedScope:{communityId:string;url:string;collectionMode:string};contentAssessment?:any}[]=[];
   const coverage:{url:string;platform:string;status:string;posts?:number;reason?:string}[]=[];
   for(const url of [...new Set(requested)]) {
     const platform=platforms.find(p=>platformMatches(p,url))!;
@@ -518,12 +560,12 @@ export async function scoutLatestCommunityPosts(id: string, selectedPlatforms: s
         const rows=await scrape(sessionId,platform,'profile-posts',url,30);
         const parsed=rows.map(row=>parsePost(row,platform)).filter(Boolean) as SocialPost[];
         const group=urlKind(url)==='group';
-        const eligible=parsed.filter(p=>p.publishedAt && (group || canonicalUrl(p.authorUrl)===url))
-          .sort((a,b)=>Date.parse(b.publishedAt!) - Date.parse(a.publishedAt!)).slice(0,30);
+        const eligible=parsed.filter(p=>qualityFilter?(!p.publishedAt || p.publishedAt<=new Date().toISOString()) && channelMembership(p,url,rows.find(row=>parsePost(row,platform)?.url===p.url))!=='failed':p.publishedAt && (group || canonicalUrl(p.authorUrl)===url))
+          .sort((a,b)=>(Date.parse(b.publishedAt || '') || 0) - (Date.parse(a.publishedAt || '') || 0)).slice(0,30);
         const partial=parsed.some(p=>!p.publishedAt) || eligible.some(p=>p.provenance?.warnings?.length) || rows.length>30;
-        return {posts:eligible,partial};
+        return {posts:eligible,partial,ownership:Object.fromEntries(eligible.map(post=>[post.url,channelMembership(post,url,rows.find(row=>parsePost(row,platform)?.url===post.url))]))};
       });
-      samples.push(...result.posts.map(post=>({post,platform,communityId:id,sport:entity.sports?.join(', ') || 'Unknown',requestedScope:{communityId:id,url,collectionMode:'latest-30'}})));
+      samples.push(...result.posts.map(post=>({post,platform,...(qualityFilter?{contentAssessment:{status:!post.publishedAt || result.ownership[post.url]==='unknown'?'needs-verification':'verified',ownership:result.ownership[post.url]}}:{}),communityId:qualityFilter && result.ownership[post.url]==='unknown'?undefined:id,sport:qualityFilter?detectSportNiche(post.caption).join(', ') || 'Unknown':entity.sports?.join(', ') || 'Unknown',requestedScope:{communityId:id,url,collectionMode:'latest-30'}})));
       coverage.push({url,platform,status:result.partial ? 'partial' : 'collected',posts:result.posts.length,...(result.partial ? {reason:'Some source posts could not be verified.'} : {})});
     } catch(error:any) {
       if(error instanceof PendingScout) throw error;
@@ -531,22 +573,25 @@ export async function scoutLatestCommunityPosts(id: string, selectedPlatforms: s
     }
   }
   const seen=new Set<string>();
-  const selected=samples.sort((a,b)=>Date.parse(b.post.publishedAt!) - Date.parse(a.post.publishedAt!) || a.post.url.localeCompare(b.post.url))
-    .filter(item=>{if(seen.has(item.post.url))return false;seen.add(item.post.url);return true;}).slice(0,30);
+  const selected=samples.sort((a,b)=>(Date.parse(b.post.publishedAt || '') || 0) - (Date.parse(a.post.publishedAt || '') || 0) || a.post.url.localeCompare(b.post.url))
+    .filter(item=>{if(seen.has(item.post.url))return false;seen.add(item.post.url);return true;});
+  if(!qualityFilter)selected.splice(30);
   const counts={inserted:0,refreshed:0,duplicate:0};const posts:any[]=[];
-  for(const item of selected) {
+  const samplePosts=selected.filter(item=>item.post.publishedAt && item.communityId===id).slice(0,30).map(({post,platform})=>({...post,platform,post_url:post.url,published_at:post.publishedAt,scout_provenance:post.provenance,scout_missing_metrics:['likes','comments'].filter(key=>post[key as keyof SocialPost]==null)}));
+  const retained=qualityFilter?selected.filter(item=>assessContentFilter(item.post,qualityFilter).state!=='failed'):selected;
+  for(const item of retained) {
     const saved=await checkpointTask(sessionId,`latest-save:${item.post.url}`,async()=>{
-      const unit={inserted:0,refreshed:0,duplicate:0};const rows=await savePosts([item],unit);return {rows,counts:unit};
+      const unit={inserted:0,refreshed:0,duplicate:0};const rows=await savePosts([{...item,authorAccount:item.communityId && !item.requestedScope.url.includes('/groups/')?{entityType:'community',id}:undefined,collectionSource:{kind:'account',sessionId,entityType:'community',entityId:id,channelUrl:item.requestedScope.url},...(qualityFilter?{contentAssessment:{...(item as any).contentAssessment,status:(item as any).contentAssessment?.status==='needs-verification' || !['views','likes','comments','shares'].some(key=>typeof item.post[key as keyof SocialPost]==='number')?'needs-verification':'verified',qualityFilter:assessContentFilter(item.post,qualityFilter)}}:{})}],unit,!!qualityFilter);return {rows,counts:unit};
     });
     posts.push(...saved.rows);for(const key of ['inserted','refreshed','duplicate'] as const)counts[key]+=saved.counts[key];
   }
   const failures=coverage.filter(c=>c.status==='unavailable');
   const warnings=coverage.filter(c=>c.reason).map(c=>`${c.platform}: ${c.reason}`);
-  if(selected.length<30) warnings.push(`Only ${selected.length} verified dated posts were collected across the selected channels.`);
+  if(samplePosts.length<30) warnings.push(`Only ${samplePosts.length} verified dated posts were collected across the selected channels.`);
   return {success:failures.length<coverage.length,partial:coverage.some(c=>c.status!=='collected') || selected.length<30,channelCoverage:coverage,warnings,
-    counts:{...counts,sampled:selected.length,failed:failures.length},posts,communityName:entity.name,
+    counts:{...counts,saved:posts.length,filteredLowEngagement:selected.length-retained.length,sampled:samplePosts.length,failed:failures.length},posts,samplePosts,communityName:entity.name,
     ...(failures.length===coverage.length ? {error:'No selected community channel could be collected.',code:'CHANNELS_UNAVAILABLE',httpStatus:503} : {}),
-    message:`Collected a public sample of ${selected.length} latest posts. Inaccessible source posts may be missing.`};
+    message:`Collected a public sample of ${samplePosts.length} latest posts; saved ${posts.length} retained posts. Inaccessible source posts may be missing.`};
 }
 
 function stableCandidateId(sessionId:string,accountKey:string) {

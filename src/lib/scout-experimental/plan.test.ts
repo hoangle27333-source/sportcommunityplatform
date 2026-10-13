@@ -50,3 +50,14 @@ it('keeps the approved plan identity stable when the UI adds routing metadata at
 });
 
 it('blocks a cap below the verified actor minimum before creating provider reservations',async()=>{state.caps.filter(c=>c.provider==='apify').forEach(c=>c.config.minimumRunCapUsd=.5);await expect(buildExperimentalPlan({...params,maxSessionUsd:.3})).rejects.toMatchObject({code:'BUDGET_BELOW_PROVIDER_MINIMUM'});expect((await buildExperimentalPlan({...params,maxSessionUsd:1})).maxSessionUsd).toBe(1);});
+
+it('freezes Brave requests without inventing Apify discovery builds',async()=>{
+ vi.stubEnv('BRAVE_SEARCH_API_KEY','fixture');
+ const {BRAVE_ADAPTER_REVISION,BRAVE_PRICING_REVISION}=await import('./brave');
+ state.caps[0]={...state.caps[0],provider:'brave',max_value_usd:.005,config:{paidSearch:true,adapterRevision:BRAVE_ADAPTER_REVISION,pricingRevision:BRAVE_PRICING_REVISION,receiptUrl:'https://api-dashboard.search.brave.com/app/subscriptions/active'}};
+ const inputs={...params,providerSelection:{...params.providerSelection,discovery:'brave'}};
+ const first=await buildExperimentalPlan(inputs);
+ expect(first.experimental?.units[0].braveRequest?.params.q).toBe('site:facebook.com badminton');
+ expect((await buildExperimentalPlan({...inputs,approvedKeywords:['cầu lông']})).hash).not.toBe(first.hash);
+ await expect(buildExperimentalPlan({...inputs,approvedKeywords:['site:tiktok.com running']})).rejects.toMatchObject({code:'INVALID_BRAVE_QUERY'});
+});

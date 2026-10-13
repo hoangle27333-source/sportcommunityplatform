@@ -1,6 +1,6 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({policy:4,accountPolicy:5,receipts:[] as any[],budget:{enabled:true,session_usd:1,daily_usd:5,run_usd:.25,tiktok_run_usd:.5}}));
-vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({rpc:async(name:string)=>({data:name==='scout_account_policy_version'?state.accountPolicy:state.policy,error:null}),from:(table:string)=>{const result={data:table==='scout_budget_settings'?state.budget:state.receipts,error:null};const q:any={select:()=>q,single:async()=>result,then:(resolve:any)=>Promise.resolve(result).then(resolve)};return q;}})}));
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({rpc:async(name:string)=>({data:name==='scout_account_policy_version'?state.accountPolicy:state.policy,error:null}),from:(table:string)=>{const result={data:table==='scout_budget_settings'?state.budget:state.receipts,error:null};const q:any={select:()=>q,limit:()=>q,single:async()=>result,then:(resolve:any)=>Promise.resolve(result).then(resolve)};return q;}})}));
 import {buildSearchPlan,suggestedQueries} from './search-plan';
 const params={keyword:'Running',targetType:'Individual KOLs',platform:'Facebook',geography:'Vietnam',limit:5,searchMode:'keyword',qualityMode:'high-engagement',recentDays:7,minInteractions:100,minViews:10000};
 it('hashes minimum followers and labels it as local verification without invented actor filters',async()=>{
@@ -67,4 +67,14 @@ it('plans four account rounds with adaptive quotas and verified author-only fall
  expect(p.sources[0].keys).toEqual([]);expect(p.sources[0].rounds?.[2]).toMatchObject({task:'keyword',queries:['Running Vietnam']});
  expect(p.rounds).toHaveLength(4);
  await expect(buildSearchPlan('preview',{...params,accountPolicyVersion:5,maxSessionUsd:2})).rejects.toMatchObject({code:'BUDGET_ABOVE_POLICY'});
+});
+
+it('hashes top ranking, thresholds and both dates and declares bounded native sorting',async()=>{
+ state.receipts=[{capability_key:'clockworks~tiktok-scraper:keyword:default',verified:true,build:'0.0.612',receipt:{verifiedSearchOptions:{tiktokVideoFilters:true}}}];
+ const criteria={...params,platform:'TikTok',selectionMode:'top',rankingMode:'views-first',thresholdsEnabled:false,publishedFrom:'2026-10-01T00:00:00.000Z',publishedTo:'2026-10-08T00:00:00.000Z'};
+ const top=await buildSearchPlan('trends',criteria);expect(top.maxSearchRows).toBe(60);
+ expect(top.sources[0].rounds?.map(r=>r.sorting)).toEqual(['MOST_LIKED','MOST_RELEVANT','MOST_LIKED','MOST_RELEVANT']);
+ for(const change of [{publishedFrom:'2026-10-02T00:00:00.000Z'},{publishedTo:'2026-10-09T00:00:00.000Z'},{thresholdsEnabled:true}])expect((await buildSearchPlan('trends',{...criteria,...change})).hash).not.toBe(top.hash);
+ state.receipts[0].receipt.verifiedSearchOptions.tiktokVideoSortings=['MOST_LIKED','MOST_RELEVANT','LATEST'];
+ expect((await buildSearchPlan('trends',criteria)).sources[0].rounds?.[2].sorting).toBe('LATEST');
 });

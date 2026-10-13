@@ -1,0 +1,282 @@
+{
+  "checks": [
+    {
+      "name": "TikTok saved KOL",
+      "sessionId": "7c2fa551-0f5b-4d7e-a9fa-ef4c8e138b50",
+      "capUsd": 0.5,
+      "status": "failed",
+      "success": false,
+      "error": "TikTok: Provider output could not be validated. Found 0/5 posts in the selected window. Criteria were not relaxed.",
+      "counts": {
+        "excluded": 0,
+        "inserted": 0,
+        "duplicate": 0,
+        "qualified": 0,
+        "refreshed": 0,
+        "topByViews": 0,
+        "unverified": 0,
+        "belowTarget": 0,
+        "viewsUnavailable": 0
+      },
+      "stopReason": "sources-exhausted",
+      "searchCost": {
+        "actualUsd": 0,
+        "reservedUsd": 0.5,
+        "approvedCapUsd": 0.5,
+        "costPerQualifiedNew": null,
+        "trialCreditValueUsd": 0
+      },
+      "posts": [],
+      "persisted": [],
+      "runs": [
+        {
+          "platform": "TikTok",
+          "state": "schema-mismatch",
+          "build": "0.0.612",
+          "build_id": "QhAKiAb8PUzsUW2rr",
+          "provider_run_id": "cp66syVCxkrLytIwM",
+          "actual_usd": 0,
+          "reserved_usd": 0.5,
+          "warnings": [
+            "TikTok: One item was skipped because the provider could not access it. Other available results are retained for review."
+          ]
+        }
+      ],
+      "warnings": [
+        "TikTok: Provider output could not be validated.",
+        "Found 0/5 posts in the selected window. Criteria were not relaxed.",
+        "TikTok: One item was skipped because the provider could not access it. Other available results are retained for review."
+      ]
+    },
+    {
+      "name": "Facebook topic",
+      "sessionId": "6fe73fca-6365-47f8-b0df-73ad4948feca",
+      "capUsd": 0.25,
+      "status": "complete",
+      "success": true,
+      "counts": {
+        "excluded": 8,
+        "inserted": 5,
+        "duplicate": 0,
+        "qualified": 5,
+        "refreshed": 0,
+        "topByViews": 0,
+        "unverified": 19,
+        "belowTarget": 6,
+        "viewsUnavailable": 5
+      },
+      "stopReason": "candidate-budget",
+      "searchCost": {
+        "actualUsd": 0.249,
+        "reservedUsd": 0.657,
+        "approvedCapUsd": 0.25,
+        "costPerQualifiedNew": 0.0498,
+        "trialCreditValueUsd": 0
+      },
+      "posts": [
+        {
+          "id": "06ad96fe-3d23-4e27-bbcd-d15d27413436",
+          "url": "https://facebook.com/reel/2397123487487579",
+          "views": null,
+          "likes": 489,
+          "comments": 16,
+          "shares": 41,
+          "rank": 1,
+          "saveState": "inserted"
+        },
+        {
+          "id": "d5cc51de-8df5-42c7-9dc9-15cdcfc5a6bf",
+          "url": "https://facebook.com/VietnamsBestMarathons/posts/pfbid0L3K3KrGyHHxxgZHcRfuLSLiwpQZprp6bQpfGnhjDe9P6T1kJ17GGcYnq2okfcfQ5l",
+          "views": null,
+          "likes": 390,
+          "comments": null,
+          "shares": 0,
+          "rank": 2,
+          "saveState": "inserted"
+        },
+        {
+          "id": "4ad49c94-2b64-463a-ab7f-ed5411716b43",
+          "url": "https://facebook.com/susmitaj/posts/pfbid02SjYzHspWMySeXEKQhgy2guoY4qWSEW5mypaHU66UojbuL3pcyAxYGPsHvLR4oGQcl",
+          "views": null,
+          "likes": 309,
+          "comments": 166,
+          "shares": 2,
+          "rank": 3,
+          "saveState": "inserted"
+        },
+        {
+          "id": "17555020-f9c1-42bc-954b-5d3d6566b8ad",
+          "url": "https://facebook.com/VietnamTrailMarathon/posts/pfbid026eAupSgZaCCngnNjLrMMz2VdEMzJ3WyrFfJkJTR638HHkBoP9behYzauFyN57KC6l",
+          "views": null,
+          "likes": 273,
+          "comments": 62,
+          "shares": 23,
+          "rank": 4,
+          "saveState": "inserted"
+        },
+        {
+          "id": "69e3943e-4478-4aa7-875b-0d6bd779c366",
+          "url": "https://facebook.com/reel/1593015109232547",
+          "views": null,
+          "likes": 198,
+          "comments": 68,
+          "shares": 0,
+          "rank": 5,
+          "saveState": "inserted"
+        }
+      ],
+      "persisted": [
+        {
+          "id": "d5cc51de-8df5-42c7-9dc9-15cdcfc5a6bf",
+          "post_url": "https://facebook.com/VietnamsBestMarathons/posts/pfbid0L3K3KrGyHHxxgZHcRfuLSLiwpQZprp6bQpfGnhjDe9P6T1kJ17GGcYnq2okfcfQ5l",
+          "views": 0,
+          "likes": 390,
+          "comments": 0,
+          "shares": 0,
+          "scout_missing_metrics": [
+            "views",
+            "comments",
+            "er"
+          ]
+        },
+        {
+          "id": "69e3943e-4478-4aa7-875b-0d6bd779c366",
+          "post_url": "https://facebook.com/reel/1593015109232547",
+          "views": 0,
+          "likes": 198,
+          "comments": 68,
+          "shares": 0,
+          "scout_missing_metrics": [
+            "views",
+            "er"
+          ]
+        },
+        {
+          "id": "06ad96fe-3d23-4e27-bbcd-d15d27413436",
+          "post_url": "https://facebook.com/reel/2397123487487579",
+          "views": 0,
+          "likes": 489,
+          "comments": 16,
+          "shares": 41,
+          "scout_missing_metrics": [
+            "views",
+            "er"
+          ]
+        },
+        {
+          "id": "17555020-f9c1-42bc-954b-5d3d6566b8ad",
+          "post_url": "https://facebook.com/VietnamTrailMarathon/posts/pfbid026eAupSgZaCCngnNjLrMMz2VdEMzJ3WyrFfJkJTR638HHkBoP9behYzauFyN57KC6l",
+          "views": 0,
+          "likes": 273,
+          "comments": 62,
+          "shares": 23,
+          "scout_missing_metrics": [
+            "views",
+            "er"
+          ]
+        },
+        {
+          "id": "4ad49c94-2b64-463a-ab7f-ed5411716b43",
+          "post_url": "https://facebook.com/susmitaj/posts/pfbid02SjYzHspWMySeXEKQhgy2guoY4qWSEW5mypaHU66UojbuL3pcyAxYGPsHvLR4oGQcl",
+          "views": 0,
+          "likes": 309,
+          "comments": 166,
+          "shares": 2,
+          "scout_missing_metrics": [
+            "views",
+            "er"
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "platform": "Facebook",
+          "state": "succeeded",
+          "build": "0.0.333",
+          "build_id": "bmN9WC7wmtqUiEM9w",
+          "provider_run_id": "KguPnf92WLWvAaGal",
+          "actual_usd": 0.001,
+          "reserved_usd": 0.25,
+          "warnings": []
+        },
+        {
+          "platform": "Facebook",
+          "state": "succeeded",
+          "build": "0.0.333",
+          "build_id": "bmN9WC7wmtqUiEM9w",
+          "provider_run_id": "ZQbrbQtXb8YsKfrph",
+          "actual_usd": 0.091,
+          "reserved_usd": 0.249,
+          "warnings": []
+        },
+        {
+          "platform": "Facebook",
+          "state": "succeeded",
+          "build": "0.0.333",
+          "build_id": "bmN9WC7wmtqUiEM9w",
+          "provider_run_id": "iW1bqooPNNNZl5A5G",
+          "actual_usd": 0.157,
+          "reserved_usd": 0.158,
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "TikTok topic (global ranking check)",
+      "sessionId": "b6a64cb0-80d8-407b-a022-5cbb72dfc33a",
+      "capUsd": 0.5,
+      "status": "failed",
+      "success": false,
+      "error": "TikTok: Scout provider returned HTTP 402 TikTok: Scout provider returned HTTP 402 Found 0/5 posts in the selected window. Criteria were not relaxed.",
+      "counts": {
+        "excluded": 0,
+        "inserted": 0,
+        "duplicate": 0,
+        "qualified": 0,
+        "refreshed": 0,
+        "topByViews": 0,
+        "unverified": 0,
+        "belowTarget": 0,
+        "viewsUnavailable": 0
+      },
+      "stopReason": "no-new-identities",
+      "searchCost": {
+        "actualUsd": 0,
+        "reservedUsd": 1,
+        "approvedCapUsd": 0.5,
+        "costPerQualifiedNew": null,
+        "trialCreditValueUsd": 0
+      },
+      "posts": [],
+      "persisted": [],
+      "runs": [
+        {
+          "platform": "TikTok",
+          "state": "rejected:BILLING_REQUIRED",
+          "build": "0.0.612",
+          "build_id": null,
+          "provider_run_id": null,
+          "actual_usd": 0,
+          "reserved_usd": 0.5,
+          "warnings": []
+        },
+        {
+          "platform": "TikTok",
+          "state": "rejected:BILLING_REQUIRED",
+          "build": "0.0.612",
+          "build_id": null,
+          "provider_run_id": null,
+          "actual_usd": 0,
+          "reserved_usd": 0.5,
+          "warnings": []
+        }
+      ],
+      "warnings": [
+        "TikTok: Scout provider returned HTTP 402",
+        "TikTok: Scout provider returned HTTP 402",
+        "Found 0/5 posts in the selected window. Criteria were not relaxed."
+      ]
+    }
+  ]
+}

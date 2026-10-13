@@ -1,0 +1,21 @@
+{
+  "project": "xfqwxehetbjofoaygeqj",
+  "branch": "main PRODUCTION",
+  "appliedThrough": "Chrome Hoang / hoangle27333-source",
+  "migration": "20261013010000_scout_brave_search.sql",
+  "sourceSha256": "ee763ef67e2ce8717174a7751a622559c7feb05cb4553bb8bde04eb839b0763f",
+  "preMigrationReservationMd5": "07bda21474d7a1f7842a9b41a1ce7c2c",
+  "budget": {
+    "period": "2026-10",
+    "usedUsd": 0.03,
+    "limitUsd": 4.5,
+    "remainingUsd": 4.47
+  },
+  "anonymousRpcDenied": true,
+  "noProviderRequests": true,
+  "sourceIdempotencyVerified": true,
+  "observedAt": "2026-10-13T08:47:04.675Z",
+  "liveRollbackCapCheckPassed": true,
+  "liveRejectedRequestLedgerRows": 0,
+  "testBudgetChangesRolledBack": true
+}

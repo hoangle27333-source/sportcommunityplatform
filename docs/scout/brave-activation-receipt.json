@@ -1,0 +1,25 @@
+{
+  "applied": true,
+  "budget": {
+    "period": "2026-10",
+    "usedUsd": 0.03,
+    "limitUsd": 4.5,
+    "remainingUsd": 4.47
+  },
+  "platforms": [
+    {
+      "platform": "Facebook",
+      "verified": true
+    },
+    {
+      "platform": "TikTok",
+      "verified": true
+    },
+    {
+      "platform": "Instagram",
+      "verified": true
+    }
+  ],
+  "adminBudgetsChanged": false,
+  "observedAt": "2026-10-13T08:36:43.828Z"
+}

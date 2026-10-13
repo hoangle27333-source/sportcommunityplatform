@@ -20,16 +20,32 @@ export function ScoutWorkspace() {
   const [entityTypes,setEntityTypes]=useState<Record<ScoutIntent,'kol'|'community'|'tracked'>>({profiles:'kol',content:'kol',refresh:'kol'});
   const [resultNavigation, setResultNavigation] = useState(0);
   const [audience, setAudience] = useState<string>(); const [sessionError, setSessionError] = useState('');
+  const [subjectsLoading, setSubjectsLoading] = useState(true);
   async function loadSubjects() {
+    setSubjectsLoading(true);
     try {
-      const [dataResponse, trackedResponse] = await Promise.all([fetch('/api/sport-hub/data'), fetch('/api/tracked-accounts')]);
-      const data = await dataResponse.json(); if (!dataResponse.ok || !data.success) throw new Error(data.error || 'Unable to load saved profiles.');
-      setKols(data.kols || []); setCommunities(data.communities || []);
-      const accounts = await trackedResponse.json(); if (!trackedResponse.ok) throw new Error(accounts.error || 'Unable to load tracked accounts.');
-      setTracked((accounts.accounts || []).map((a: any) => ({ id: a.id, name: a.display_name || a.username || a.profile_url, profileUrl: a.profile_url })));
+      const dataResponse = await fetch('/api/sport-hub/data');
+      const data = await dataResponse.json();
+      if (!dataResponse.ok || !data.success) throw new Error(data.error || 'Unable to load saved profiles.');
+      setKols(data.kols || []);
+      setCommunities(data.communities || []);
       setDataError('');
-    } catch (e: any) { setDataError(e.message); }
+    } catch (e: any) {
+      setDataError(e.message || 'Unable to load saved profiles.');
+    } finally {
+      setSubjectsLoading(false);
+    }
+    try {
+      const trackedResponse = await fetch('/api/tracked-accounts');
+      if (trackedResponse.ok) {
+        const accounts = await trackedResponse.json();
+        setTracked((accounts.accounts || []).map((a: any) => ({ id: a.id, name: a.display_name || a.username || a.profile_url, profileUrl: a.profile_url })));
+      }
+    } catch {
+      // Non-fatal if tracked accounts cannot be loaded
+    }
   }
+  useEffect(()=>{void loadSubjects();},[]);
   function openSessionDirect(s: ScoutSessionSummary) {
     if (s.kind === 'preview' && s.status === 'complete') {
       const p = s.params || {};
@@ -94,7 +110,7 @@ export function ScoutWorkspace() {
     {!loading && !isEditor && <p className="rounded-xl border bg-white p-4 text-sm">Editor access is required to start or import tasks. Your existing activity remains available.</p>}
     <div className="grid gap-4 md:grid-cols-3">{[
       { intent: 'profiles' as const, title: 'Find Profiles', description: 'Find KOLs and communities, or add a profile from a link.', icon: Users, primary: 'Search Profiles', secondary: 'Add from Link' },
-      { intent: 'content' as const, title: 'Collect Content', description: 'Find posts by topic, collect a saved profile’s posts, or add a post link.', icon: FileSearch, primary: 'Find Content', secondary: 'Add Post Link' },
+      { intent: 'content' as const, title: 'Collect Content', description: 'Find posts by topic, collect a saved profile’s posts, or add a post link.', icon: FileSearch, primary: 'Find Top Posts', secondary: 'Add Post Link' },
       { intent: 'refresh' as const, title: 'Refresh Data', description: 'Refresh observed metrics for saved KOLs, communities and tracked accounts.', icon: RefreshCw, primary: 'Choose Accounts', secondary: '' },
     ].map(card => <section key={card.intent} className="rounded-2xl border bg-white p-5"><card.icon className="mb-3 h-6 w-6 text-indigo-600" /><h2 className="font-bold">{card.title}</h2><p className="my-2 text-sm text-slate-600">{card.description}</p>
       <label className="mt-4 block text-xs">{card.intent === 'profiles' ? 'Profile type' : 'Saved account type'}<select value={entityTypes[card.intent]} onChange={e => setEntityTypes(previous=>({...previous,[card.intent]:e.target.value as 'kol'|'community'|'tracked'}))} className={`${scoutInputClass} mt-1`}><option value="kol">KOLs & Creators</option><option value="community">Communities & Clubs</option>{card.intent === 'refresh' && <option value="tracked">Tracked Accounts</option>}</select></label>
@@ -105,7 +121,22 @@ export function ScoutWorkspace() {
     {dataError && <p role="alert" className="text-sm text-red-700">{dataError} <button type="button" onClick={loadSubjects} className="underline">Reload Profiles</button></p>}
     {sessionError && <p role="alert" className="text-sm text-red-700">{sessionError}</p>}
     <ScoutActivity onOpen={s => { dismiss(); openSessionDirect(s); router.replace(`/scout?sessionId=${s.id}`, { scroll: false }); }} />
-    {context && <ScoutTaskLauncher key={`${context.intent}:${context.mode}:${context.entityType}:${reviewId || criteria?.keyword || ''}:${context.ids?.join(',') || ''}:${context.url || ''}`} context={context} subjects={subjects} entity={context.intent === 'content' && context.ids?.length === 1 ? subjects.find(s => s.id === context.ids?.[0]) as KOL | Community : undefined} initialCriteria={criteria} resumeSessionId={reviewId} onClose={close} onNavigate={navigate} onSuccess={loadSubjects} />}
+    {context && <ScoutTaskLauncher
+      key={`${context.intent}:${context.mode}:${context.entityType}:${reviewId || criteria?.keyword || ''}:${context.ids?.join(',') || ''}:${context.url || ''}`}
+      context={context}
+      subjects={subjects}
+      loadingSubjects={subjectsLoading}
+      onEntityTypeChange={type => {
+        setEntityTypes(prev => ({ ...prev, [context.intent]: type }));
+        setContext(prev => prev ? { ...prev, entityType: type, ids: undefined } : null);
+      }}
+      entity={context.intent === 'content' && context.ids?.length === 1 ? subjects.find(s => s.id === context.ids?.[0]) as KOL | Community : undefined}
+      initialCriteria={criteria}
+      resumeSessionId={reviewId}
+      onClose={close}
+      onNavigate={navigate}
+      onSuccess={loadSubjects}
+    />}
     {session && <ScoutSessionResults key={session.id} session={session} onClose={close} onReview={() => retryOrReview(true)} onRetry={() => retryOrReview(false)} />}
     {audience && <ScoutDialogFrame title="Audience Evidence" onClose={close} wide><AudienceAuditSection endpoint={`/api/sport-hub/kol/${audience}/audience-audit`} subjectName={kols.find(k => k.id === audience)?.name || 'Saved Profile'} emptyMessage="Collect posts, then collect a bounded comment sample before refreshing the audit." /></ScoutDialogFrame>}
   </main></div>;

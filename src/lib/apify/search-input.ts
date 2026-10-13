@@ -10,4 +10,4 @@ export function providerResultCap(input: Record<string, any>): number {
 export function tiktokDateWindow(days:number) {
  return days<=1?'PAST_24_HOURS':days<=7?'PAST_WEEK':days<=30?'PAST_MONTH':days<=90?'LAST_3_MONTHS':'LAST_6_MONTHS';
 }
-export type VerifiedSearchOptions = { facebookLocations?:boolean; tiktokVideoFilters?:boolean; dateFilter?:boolean; latestProfilePosts?:boolean };
+export type VerifiedSearchOptions = { facebookLocations?:boolean; tiktokVideoFilters?:boolean; tiktokVideoSortings?:('MOST_LIKED'|'MOST_RELEVANT'|'LATEST')[]; dateFilter?:boolean; latestProfilePosts?:boolean };

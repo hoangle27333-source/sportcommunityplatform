@@ -1,3 +1,4 @@
+import { scoutTopPosts, persistCollectedTopPosts } from './top-posts';
 import { experimentalCost } from '../scout-experimental/cost';
 import { savedExperimentalProfiles } from '../scout-experimental/saved';
 import { executeStoredReassessment } from './reassessment';
@@ -8,6 +9,7 @@ import { previewDiscoveryCandidates, scoutMarketTrends, scoutSingleKolPosts, sco
 import { executeExtendedSession } from './tasks';
 import { workflowExecution } from './execution-budget';
 import { withStoredEvidence } from './stored-evidence';
+import { executeAccountPosts } from './account-posts';
 
 export async function executeSession(id: string) {
   const db=createAdminClient(); const {data:s,error}=await db.from('scout_sessions').select('*').eq('id',id).single(); if(error) throw error;
@@ -24,21 +26,24 @@ export async function executeSession(id: string) {
   try {
     const {data:profile,error:roleError}=await db.from('profiles').select('role').eq('id',s.owner_id).single(); if(roleError || !['admin','editor'].includes(profile?.role)) throw new ScoutError('Editor access required.','FORBIDDEN',403);
     const p={...s.params,sessionId:id}; let result:any;
-    if(p.searchPlan && Date.now()-Date.parse(executionStartedAt)>=15*60000 && ['preview','trends'].includes(s.kind)) {
+    if(p.searchPlan && Date.now()-Date.parse(executionStartedAt)>=15*60000 && (['preview','trends'].includes(s.kind) || p.selectionMode==='top')) {
       const {data:saved,error:savedError}=await db.from('scout_provider_runs').select('platform,task,state,normalized_rows,raw_rows,warnings').eq('session_id',id).eq('state','succeeded');
       if(savedError)throw savedError;
       const experimental=p.searchPlan?.version===6;
       const savedProfiles=experimental?await savedExperimentalProfiles(id,p.searchPlan.experimental?.knownSeedUrls):undefined;
       if(savedProfiles || saved?.some(run=>(run.normalized_rows || run.raw_rows || []).length)) {
-        result=await withStoredEvidence<any>(saved,()=>s.kind==='preview'?previewDiscoveryCandidates({...p,...(savedProfiles?{savedExperimentalProfiles:savedProfiles}:{})}):scoutMarketTrends(p));
-        result={...result,partial:true,stopReason:'time-limit',diagnostics:{...result.diagnostics,stopReason:'time-limit'},...(result.searchExecution?{searchExecution:{...result.searchExecution,stopReason:'time-limit'}}:{}),warnings:[...(result.warnings || []).filter((w:string)=>!w.startsWith('Found ')),s.kind==='preview'?`The search time limit was reached. ${result.counts?.qualifiedNew ?? 0}/${s.params.limit} qualified new accounts are retained for review; no further provider runs were started.`:'The search time limit was reached. Available results are retained for review; no further provider runs were started.']};
+        result=await withStoredEvidence<any>(saved,()=>s.kind==='preview'?previewDiscoveryCandidates({...p,...(savedProfiles?{savedExperimentalProfiles:savedProfiles}:{})}):p.selectionMode==='top'?scoutTopPosts(p):scoutMarketTrends(p));
+        if(p.selectionMode==='top' && p.executionMode!=='stored-evidence')result=await persistCollectedTopPosts(result,p);
+        result={...result,partial:true,stopReason:'time-limit',diagnostics:{...result.diagnostics,stopReason:'time-limit'},...(result.searchExecution?{searchExecution:{...result.searchExecution,stopReason:'time-limit'}}:{}),warnings:[...(result.warnings || []).filter((w:string)=>!w.startsWith('Found ')),s.kind==='preview'?`The search time limit was reached. ${result.counts?.qualifiedNew ?? 0}/${s.params.limit} qualified new accounts are retained for review; no further provider runs were started.`:'The search time limit was reached. Available posts are saved automatically; no further provider runs were started.']};
       } else result={success:false,code:'SEARCH_TIME_LIMIT',error:'The search time limit was reached before usable provider evidence was available.',httpStatus:408};
     }
+    else if(s.kind==='account-posts') result=await executeAccountPosts({...s,lease_token:leaseToken,execution_started_at:executionStartedAt});
     else if(p.executionMode==='stored-evidence') result=await executeStoredReassessment(s);
     else if(s.kind==='preview') result=await previewDiscoveryCandidates(p);
     else if(s.kind==='trends') result=await scoutMarketTrends(p);
-    else if(s.kind==='kol-posts') result=await scoutSingleKolPosts(p.kolId,p.limit,p.platform,id);
-    else if(s.kind==='community-posts') result=p.collectionMode==='latest-30' ? await scoutLatestCommunityPosts(p.communityId,p.platform,id,p.channelUrls) : await scoutSingleCommunityPosts(p.communityId,p.limit,p.platform,id);
+    else if(p.selectionMode==='top' && ['kol-posts','community-posts'].includes(s.kind)) result=await scoutTopPosts(p);
+    else if(s.kind==='kol-posts') result=await scoutSingleKolPosts(p.kolId,p.limit,p.platform,id,p.qualityFilter);
+    else if(s.kind==='community-posts') result=p.collectionMode==='latest-30' ? await scoutLatestCommunityPosts(p.communityId,p.platform,id,p.channelUrls,p.qualityFilter) : await scoutSingleCommunityPosts(p.communityId,p.limit,p.platform,id,p.qualityFilter);
     else result=await executeExtendedSession(s);
     const {data:runs,error:runError}=await db.from('scout_provider_runs').select('warnings,state,observed_at,actual_usd,reserved_usd').eq('session_id',id); if(runError) throw runError;
     let external:any[]=[];
@@ -54,15 +59,16 @@ export async function executeSession(id: string) {
     const qualifiedNew=s.kind==='preview' ? result.groups?.qualified?.filter((c:any)=>!c.isExisting).length || 0 : result.counts?.inserted || 0;
     result={...result,...(s.params.searchPlan?{searchCost:{actualUsd,trialCreditValueUsd:external.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),reservedUsd:allRuns.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),...(s.params.searchPlan?.version===6?experimentalCost(runs || [],external):{}),approvedCapUsd:s.params.searchPlan.maxSessionUsd,costPerQualifiedNew:actualUsd!==null && qualifiedNew?actualUsd/qualifiedNew:null}}:{}),progress:{stage:'complete'},coverage,counts:result.counts || {found:result.totalFound || 0,excluded:result.excludedCount || 0},sessionId:id,partial:!!result.partial || warnings.length>0,warnings:[...(result.warnings || []),...warnings],sourceFreshness};
     const outcome=result.success===false ? 'failed' : 'complete';
-    const {error:save}=await db.from('scout_sessions').update({status:outcome,result,warnings:result.warnings,lease_until:null,lease_token:null,progress:{stage:outcome}}).eq('id',id).eq('lease_token',leaseToken); if(save) throw save;
+    const {error:save}=await db.from('scout_sessions').update({status:outcome,result,warnings:result.warnings,lease_until:null,lease_token:null,progress:{stage:outcome,...(s.kind==='account-posts'?{accountResults:result.accountResults,completedAccounts:result.accountResults?.length,totalAccounts:s.params.accountPostPlan?.accounts.length}: {})}}).eq('id',id).eq('lease_token',leaseToken); if(save) throw save;
     return false;
   } catch(e:any) {
     const transient=e instanceof PendingScout || ['RATE_LIMITED','PROVIDER_UNAVAILABLE'].includes(e.code) || e.name==='TimeoutError';
     const age=Date.now()-Date.parse(executionStartedAt);
-    if(transient && (age<15*60000 || (e instanceof PendingScout && s.params?.searchPlan && ['preview','trends'].includes(s.kind)))) {
+    if(transient && (age<15*60000 || (e instanceof PendingScout && s.params?.searchPlan && (['preview','trends','account-posts'].includes(s.kind) || s.params.selectionMode==='top')))) {
       const attempts=(s.progress?.polls || 0)+1;
       const delayMs = e instanceof PendingScout ? Math.min(10000, 5000 + (attempts % 3) * 2000) : Math.min(30000, 5000 * attempts);
-      const {error}=await db.from('scout_sessions').update({lease_until:null,lease_token:null,progress:{...s.progress,stage:'running',polls:attempts},next_poll_at:new Date(Date.now()+delayMs).toISOString()}).eq('id',id).eq('lease_token',leaseToken); if(error) throw error;
+      const {data:current,error:progressError}=await db.from('scout_sessions').select('progress').eq('id',id).single();if(progressError)throw progressError;
+      const {error}=await db.from('scout_sessions').update({lease_until:null,lease_token:null,progress:{...current.progress,stage:'running',polls:attempts},next_poll_at:new Date(Date.now()+delayMs).toISOString()}).eq('id',id).eq('lease_token',leaseToken); if(error) throw error;
       return true;
     }
     const {error}=await db.from('scout_sessions').update({status:'failed',warnings:[],lease_until:null,lease_token:null,result:{success:false,error:e.message,code:e.code || 'SCOUT_ERROR',httpStatus:e.status || 502,...(e.approvalUrl ? {approvalUrl:e.approvalUrl} : {})}}).eq('id',id).eq('lease_token',leaseToken); if(error) throw error;

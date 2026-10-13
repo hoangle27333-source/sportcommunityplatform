@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     for (const [kind, table, nameColumn] of [['kol', 'kols', 'name'], ['community', 'communities', 'name'], ['tracked', 'tracked_accounts', 'display_name']] as const) {
       const ids = [...new Set<string>(sessionRows.flatMap(s => {
         const p = s.params || {};
-        return kind === 'tracked' ? [p.trackedAccountId].filter(Boolean) : [...(p.entityType === kind ? p.ids || [] : []), p[kind === 'kol' ? 'kolId' : 'communityId']].filter(Boolean);
+        return kind === 'tracked' ? [p.trackedAccountId].filter(Boolean) : [...(p.accounts || []).filter((a:any)=>a.entityType===kind).map((a:any)=>a.id),...(p.entityType === kind ? p.ids || [] : []), p[kind === 'kol' ? 'kolId' : 'communityId']].filter(Boolean);
       }))];
       if (!ids.length) continue;
       const { data: rows, error: subjectError } = await db.from(table).select(`id,${nameColumn}`).in('id', ids);

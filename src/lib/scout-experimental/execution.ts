@@ -57,9 +57,11 @@ export async function collectExperimental(params:Record<string,any>,existing:Set
  }
  // Seeds teach the search but are always excluded from the new-account target.
  for(const url of config.seeds){const platform=plan.sources.find(s=>platformMatches(s.platform,url))?.platform;if(!platform)continue;const p=parseProfile({profileUrl:url},platform);if(p){merge({...p,knownSeed:true,discoveryPaths:[{method:'seed',sourceUrl:url,depth:0}]});await enrich(pool.get(url)!,true);}if(stopReason!=='plan-exhausted')break;}
- const runUnit=async(unit:{platform:string;query:string;method:string},index:number)=>{
+ const runUnit=async(unit:import('./discovery-plan').DiscoveryUnit,index:number)=>{
   if(queries>=12)return;queries++;const before=newCount();
-  try{const result=await checkpointTask(params.sessionId,`experimental-discovery:${index}`,()=>fetchExternal(params.sessionId,capability(unit.platform,'discovery'),{query:unit.query,limit:15,method:unit.method}));providerCount+=result.length;
+  try{const result=await checkpointTask(params.sessionId,`experimental-discovery:${index}`,()=>fetchExternal(params.sessionId,capability(unit.platform,'discovery'),{query:unit.query,limit:15,method:unit.method,...(unit.braveRequest?{braveRequest:unit.braveRequest}:{})}));providerCount+=result.length;
+   const unresolved=result.filter((row:any)=>row.provider==='brave' && !['profile','group'].includes(row.kind));
+   if(unresolved.length)warnings.push(`${unit.platform}: ${unresolved.length} Brave results have unresolved account identity; no author was inferred.`);
    for(const row of result){const p=resultIdentity(row,unit.platform);if(p){merge({...p,discoveryPaths:[{method:unit.method,query:unit.query,sourceUrl:p.posts[0]?.url || row.url || p.url,depth:0}]});
     for(const post of p.posts){const source=trustedRoleSource(post,plan.criteria.keyword,capability(unit.platform,'discovery').config.trustedPublisherUrls || []);if(source){const candidate=parseProfile({profileUrl:source.accountUrl},unit.platform);if(candidate)merge({...candidate,trustedRoleSources:[source],discoveryPaths:[{method:'trusted-role-source',query:unit.query,sourceUrl:source.url,depth:0}]});}}
    }}

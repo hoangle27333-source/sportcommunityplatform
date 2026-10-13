@@ -1,3 +1,4 @@
+import { BRAVE_ADAPTER_REVISION, BRAVE_PRICING_REVISION, BRAVE_REQUEST_USD } from './brave';
 import { createHash } from 'node:crypto';
 import { createAdminClient } from '../supabase/admin';
 import { stableJson } from '../apify/runtime';
@@ -6,7 +7,8 @@ import { takeProviderOperation } from '../apify/execution-budget';
 import type { TrialCapability } from './types';
 export function assertTrial(c:TrialCapability) {
  const paidModel=c.provider==='gemini' && c.operation==='analysis' && c.config.paidModel===true && c.config.model==='gemini-2.5-flash-lite' && c.config.pricingRevision==='2026-10-12-flash-lite-0.10-0.40' && c.max_value_usd<=0.005;
- if(!c.verified || (!Number.isFinite(Date.parse(c.expires_at)) || Date.parse(c.expires_at)<=Date.now()) || (!paidModel && (c.config.trialOnly!==true || c.config.billingDisabled!==true)) || !c.config.receiptUrl || !Number.isFinite(c.units_per_request) || c.units_per_request<=0 || Number(c.used_units)+Number(c.units_per_request)>Number(c.total_units))throw new ScoutError('A verified trial or explicitly budgeted light-model capability is required.','TRIAL_UNAVAILABLE',409);
+ const paidSearch=c.provider==='brave' && c.operation==='discovery' && c.config.paidSearch===true && c.config.pricingRevision===BRAVE_PRICING_REVISION && c.config.adapterRevision===BRAVE_ADAPTER_REVISION && Number(c.max_value_usd)===BRAVE_REQUEST_USD && Number(c.units_per_request)===1;
+ if(!c.verified || (!Number.isFinite(Date.parse(c.expires_at)) || Date.parse(c.expires_at)<=Date.now()) || (!paidModel && !paidSearch && (c.config.trialOnly!==true || c.config.billingDisabled!==true)) || !c.config.receiptUrl || !Number.isFinite(c.units_per_request) || c.units_per_request<=0 || Number(c.used_units)+Number(c.units_per_request)>Number(c.total_units))throw new ScoutError('A verified trial, budgeted search or light-model capability is required.','TRIAL_UNAVAILABLE',409);
 }
 export async function trialRequest<T>(sessionId:string,c:TrialCapability,input:unknown,send:(run:any)=>Promise<{result:T;receipt?:string;pending?:boolean;actualUsd?:number}>):Promise<T> {
  const key=createHash('sha256').update(stableJson({capability:c.id,revision:c.revision,input})).digest('hex');const db=createAdminClient();

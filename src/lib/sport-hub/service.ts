@@ -1,4 +1,6 @@
 import { loadCommunityEngagement } from './community-engagement-store';
+import { postMetadata } from '@/lib/apify/post-metadata';
+import type { PostWorkspaceMetadata } from '@/lib/apify/post-contracts';
 import type { EngagementSummary } from './community-engagement';
 import { getServerUserRole } from "@/lib/auth/financial-sanitizer";
 import { latestGMV } from "./gmv";
@@ -123,15 +125,19 @@ export interface ReportItem {
   createdAt: string;
 }
 
-export interface PostItem {
+export interface PostItem extends Partial<PostWorkspaceMetadata> {
   id: string;
   title: string;
   author: string;
   kolRecordIds: string[];
+  communityRecordIds?: string[];
+  publishedAt?: string | null;
   platform: string;
   likes: number;
   comments: number;
   views: number;
+  shares?: number | null;
+  scoutContentAssessment?: any;
   er: number;
   postUrl: string;
   missingMetrics?: string[];
@@ -208,6 +214,7 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
       ...(isAdmin ? { gmv: (() => { const row = latestGMV(gmvRows.filter(g => g.kol_id === r.id)); return row ? { amount: Number(row.amount), month: row.month, source: row.source } : null; })() } : {}),
       missingMetrics: r.scout_missing_metrics || [],
       scoutProvenance:r.scout_provenance || null,
+
       status: r.status || "Đang hợp tác tích cực",
       info: r.contact_info || "",
       bio: r.bio || "",
@@ -247,6 +254,7 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
       members: Number(r.members_count) || 0,
       missingMetrics: r.scout_missing_metrics || [],
       scoutProvenance:r.scout_provenance || null,
+
       platform: r.platform || "Facebook Group",
       groupUrl: r.group_url || "#",
       activityLevel: r.activity_level || "Rất sôi động (> 20 bài/ngày)",
@@ -363,14 +371,19 @@ export async function getSportHubDashboardData(): Promise<SportHubDashboardData>
     title: r.title || "",
     author: r.author || "",
     kolRecordIds: r.kol_id ? [r.kol_id] : [],
+    communityRecordIds: r.community_id ? [r.community_id] : [],
+    publishedAt: r.published_at || null,
+    ...postMetadata(r),
     platform: r.platform || "Instagram",
     likes: Number(r.likes) || 0,
     comments: Number(r.comments) || 0,
     views: Number(r.views) || 0,
+    shares: r.shares == null ? null : Number(r.shares),
     er: Number(r.er) || 0,
     postUrl: r.post_url || "#",
     missingMetrics: r.scout_missing_metrics || [],
       scoutProvenance:r.scout_provenance || null,
+    scoutContentAssessment:r.scout_content_assessment || null,
     thumbnailUrl: r.thumbnail_url || undefined,
     sport: r.sport || undefined,
     viralTier: r.viral_tier || "Tiêu chuẩn",

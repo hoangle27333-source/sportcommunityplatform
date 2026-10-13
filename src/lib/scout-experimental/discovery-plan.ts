@@ -1,4 +1,4 @@
-export type DiscoveryUnit={platform:string;query:string;method:string};
+export type DiscoveryUnit={platform:string;query:string;method:string;braveRequest?:import('./brave').BraveRequest};
 export function discoveryTask(method:string):'profiles'|'keyword'|'hashtag' {
  return method==='profile'?'profiles':method==='hashtag'?'hashtag':'keyword';
 }

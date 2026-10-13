@@ -1,3 +1,5 @@
+import { assertTopPostSchema } from './top-post-plan';
+import { topCandidateBudget } from './top-post-quality';
 import { buildExperimentalPlan } from '../scout-experimental/plan';
 import {sizeRange, topicQueries} from './account-criteria';
 import { currentAccountModelPolicy, type AccountModelPolicy } from './account-model-policy';
@@ -11,10 +13,10 @@ import { capabilityKey, stableJson } from './runtime';
 import { ScoutError } from './errors';
 import type { VerifiedSearchOptions } from './search-input';
 export type SearchPlan = {
- version:4 | 5 | 6; experimental?:{revision:string;capabilities:import('../scout-experimental/types').TrialCapability[];units:{platform:string;query:string;method:string}[];seeds:string[];knownSeedUrls:string[];maxQueries:number;maxCandidates:number;maxMedia:number}; hash:string; kind:'preview'|'trends'; criteria:Record<string,any>;
+ version:4 | 5 | 6; experimental?:{revision:string;capabilities:import('../scout-experimental/types').TrialCapability[];units:import('../scout-experimental/discovery-plan').DiscoveryUnit[];seeds:string[];knownSeedUrls:string[];maxQueries:number;maxCandidates:number;maxMedia:number}; hash:string; kind:'preview'|'trends'; criteria:Record<string,any>;
  maxSessionUsd:number; allowedMaxSessionUsd?:number; maxSearchRows:number; maxHydratedProfiles:number; maxPostsPerProfile:5 | 10; accountPolicyVersion?:5; modelRevision?:string; modelMode?:AccountModelPolicy['mode']; appliedFilters?:{platform:string;setting:string;mode:'Provider filter'|'Search hint'|'Local verification';detail:string}[];
  rounds:{label:string;queries:string[]}[];
- sources:{platform:string; task:ScoutTask; keys:string[]; builds:Record<string,string>; options:Record<string,VerifiedSearchOptions>; authorSearch:boolean; rounds?:{task:ScoutTask;queries:string[]}[]; warnings:string[]}[];
+ sources:{platform:string; task:ScoutTask; keys:string[]; builds:Record<string,string>; options:Record<string,VerifiedSearchOptions>; authorSearch:boolean; rounds?:{task:ScoutTask;queries:string[];sorting?:'MOST_LIKED'|'MOST_RELEVANT'|'LATEST'}[]; warnings:string[]}[];
 };
 export function suggestedQueries(keyword:string,target:string,kind:string,geography:string|string[],exact=false):string[] {
  if(exact)return [keyword];
@@ -36,6 +38,7 @@ export function instagramTopicTags(keyword:string) {
 }
 export async function buildSearchPlan(kind:'preview'|'trends',params:Record<string,any>):Promise<SearchPlan> {
  if(params.searchStrategy==='seed_content_v1'){if(kind!=='preview')throw new ScoutError('Experimental Search supports profiles only.','INVALID_TASK',400);return buildExperimentalPlan(params);}
+ if(params.selectionMode==='top')await assertTopPostSchema();
  const db=createAdminClient();
  const {data:policy,error:policyError}=await db.rpc('scout_search_budget_policy');
  if(policyError || policy!==4)throw new ScoutError('Adaptive search requires the Scout budget migration.', 'SEARCH_POLICY_UNAVAILABLE',503);
@@ -54,7 +57,7 @@ export async function buildSearchPlan(kind:'preview'|'trends',params:Record<stri
  const accountV5=strictAccount;
  if(accountV5){const {data:accountPolicy,error:accountError}=await db.rpc('scout_account_policy_version');if(accountError || accountPolicy!==5)throw new ScoutError('Account classification requires the Scout account assessment migration.', 'ACCOUNT_POLICY_UNAVAILABLE',503);}
  const entityTypes=selectedEntityTypes(params.targetType,params.entityTypes);
- const criteria={...(accountV5?{accountPolicyVersion:5,assessmentRevision:6,sizeMetric:params.sizeMetric || 'followers',minFollowers:params.minFollowers,maxFollowers:params.maxFollowers,minMembers:params.minMembers,maxMembers:params.maxMembers,entityTypes,geographyMode:params.geographyMode || 'profile-or-recent-posts'}:{}),keyword:params.keyword,targetType:params.targetType,platform:params.platform,geography,limit:params.limit,searchMode:exact?'hashtag':'keyword',qualityMode:params.qualityMode,minInteractions:params.minInteractions,minViews:params.minViews,recentDays:params.recentDays,queryVariants:params.queryVariants,sport:params.sport};
+ const criteria={...(params.qualityFilter?{qualityFilter:params.qualityFilter}:{}),...(accountV5?{accountPolicyVersion:5,assessmentRevision:6,sizeMetric:params.sizeMetric || 'followers',minFollowers:params.minFollowers,maxFollowers:params.maxFollowers,minMembers:params.minMembers,maxMembers:params.maxMembers,entityTypes,geographyMode:params.geographyMode || 'profile-or-recent-posts'}:{}),keyword:params.keyword,targetType:params.targetType,platform:params.platform,geography,limit:params.limit,searchMode:exact?'hashtag':'keyword',qualityMode:params.qualityMode,minInteractions:params.minInteractions,minViews:params.minViews,recentDays:params.recentDays,queryVariants:params.queryVariants,sport:params.sport,...(params.selectionMode==='top'?{selectionMode:'top',rankingMode:'views-first',publishedFrom:params.publishedFrom,publishedTo:params.publishedTo,thresholdsEnabled:params.thresholdsEnabled ?? false}:{})};
  let queries=exact?[params.keyword]:params.queryVariants!==undefined ? [...new Set([suggestedQueries(params.keyword,params.targetType,kind,geography)[0],...params.queryVariants])] : suggestedQueries(params.keyword,params.targetType,kind,geography);
  if(accountV5) {
   const scopes=Array.isArray(geography)?geography:[geography];
@@ -80,7 +83,7 @@ export async function buildSearchPlan(kind:'preview'|'trends',params:Record<stri
  for(const key of [...fallbackKeys,...detailKeys,...postKeys,...groupPostKeys]){const r=receipts?.find(r=>r.capability_key===key && r.verified && r.build && !['latest','beta','stable'].includes(r.build));if(r){builds[key]=r.build;options[key]=r.receipt?.verifiedSearchOptions || {};}}
  let sourceQueries=queries;
  if(platform==='Instagram' && kind==='trends' && !exact)sourceQueries=params.queryVariants!==undefined?[instagramTopicTags(params.keyword)[0],...params.queryVariants.map((q:string)=>q.replace(/^#/,'').replace(/\s/g,''))]:instagramTopicTags(params.keyword);
- let sourceRounds=[{task,queries:sourceQueries.slice(0,1)},{task,queries:sourceQueries.slice(1,3)},{task,queries:sourceQueries.slice(3,4)}];
+ let sourceRounds:NonNullable<SearchPlan['sources'][number]['rounds']>=[{task,queries:sourceQueries.slice(0,1)},{task,queries:sourceQueries.slice(1,3)},{task,queries:sourceQueries.slice(3,4)}];
  if(kind==='preview' && authorSearch && !accountV5)sourceRounds[2]={task:fallbackTask,queries:platform==='Instagram'?instagramTopicTags(params.keyword).slice(0,1):suggestedQueries(params.keyword,params.targetType,'trends',geography).slice(0,1)};
  if(accountV5) {
   const scopes=Array.isArray(geography)?geography:[geography];const place=scopes.filter(s=>!unrestrictedGeography(s)).join(' ');
@@ -90,9 +93,14 @@ export async function buildSearchPlan(kind:'preview'|'trends',params:Record<stri
    {task:fallbackTask,queries:authorSearch?(platform==='Instagram'?instagramTopicTags(params.keyword):[`${params.keyword} ${place}`.trim()]):[]},
    {task:usable.length?task:fallbackTask,queries:usable.length?supplementary:authorSearch?(platform==='Instagram'?aliases.slice(1,3).map(q=>normalized(q).replace(/ /g,'')):supplementary):[]}];
  }
+ if(params.selectionMode==='top') {
+  const supportedSortings=[...new Set(Object.values(options).flatMap(o=>o.tiktokVideoSortings || (o.tiktokVideoFilters?['MOST_LIKED','MOST_RELEVANT']:[])))] as ('MOST_LIKED'|'MOST_RELEVANT'|'LATEST')[];
+  const aliases=exact?[params.keyword]:[...new Set([...sourceQueries,...topicQueries(params.keyword),...(params.queryVariants || [])].map(query=>platform==='Instagram'?normalized(query).replace(/ /g,''):query))];
+  sourceRounds=Array.from({length:4},(_,index)=>({task,queries:[aliases[index%aliases.length]],...(platform==='TikTok' && task==='keyword' && Object.values(options).some(o=>o.tiktokVideoFilters)?{sorting:supportedSortings[index%supportedSortings.length]}:{})}));
+ }
  return {platform,task,keys:usable,builds,options,authorSearch,rounds:sourceRounds,warnings:usable.length<keys.length?['Only verified search branches will run.']:[]};
  });
- const rounds=accountV5?[{label:'Scoped profile search',queries:queries.slice(0,1)},{label:'Broader profile search',queries:[params.keyword]},{label:'Topic content and authors',queries:topicQueries(params.keyword).slice(0,1)},{label:'Additional queries',queries:params.queryVariants || topicQueries(params.keyword).slice(1,4)}]:[{label:'Primary search',queries:queries.slice(0,1)},{label:'Additional queries',queries:queries.slice(1,3)},{label:'Evidence and authors',queries:queries.slice(3,4)}];
+ const rounds=params.selectionMode==='top'?Array.from({length:4},(_,i)=>({label:`Top-post candidates ${i+1}`,queries:sources.flatMap(source=>source.rounds?.[i]?.queries || [])})):accountV5?[{label:'Scoped profile search',queries:queries.slice(0,1)},{label:'Broader profile search',queries:[params.keyword]},{label:'Topic content and authors',queries:topicQueries(params.keyword).slice(0,1)},{label:'Additional queries',queries:params.queryVariants || topicQueries(params.keyword).slice(1,4)}]:[{label:'Primary search',queries:queries.slice(0,1)},{label:'Additional queries',queries:queries.slice(1,3)},{label:'Evidence and authors',queries:queries.slice(3,4)}];
  if(accountV5 && !sources.some(source=>source.keys.length || source.authorSearch))throw new ScoutError('No verified profile or author search capability is available.', 'CAPABILITY_UNVERIFIED',503);
  const audience=sizeRange(params);
  const appliedFilters=accountV5?sources.flatMap(source=>[
@@ -103,6 +111,7 @@ export async function buildSearchPlan(kind:'preview'|'trends',params:Record<stri
   {platform:source.platform,setting:'Result target',mode:'Provider filter' as const,detail:'Provider row limits are bounded; the requested number of qualified accounts is not guaranteed.'},
  ]):undefined;
  const modelPolicy=accountV5?currentAccountModelPolicy():undefined;
- const base={...(modelPolicy?{accountPolicyVersion:5 as const,modelRevision:modelPolicy.revision,modelMode:modelPolicy.mode,appliedFilters}:{}),version:accountV5?5 as const:4 as const,kind,criteria,maxSessionUsd,...(accountV5?{allowedMaxSessionUsd}:{}),maxSearchRows:accountV5?Math.min(600,Math.max(120,12*(params.limit || 5))):120,maxHydratedProfiles:accountV5?Math.min(100,Math.max(10,2*(params.limit || 5))):10,maxPostsPerProfile:accountV5?10 as const:5 as const,rounds,sources};
+ const topFilters=params.selectionMode==='top'?sources.flatMap(source=>[{platform:source.platform,setting:'Ranking',mode:'Local verification' as const,detail:'Views, likes / reactions, comments, shares. Top within the collected sample; existing posts remain eligible.'},{platform:source.platform,setting:'Publication window',mode:'Local verification' as const,detail:params.publishedFrom?`${params.publishedFrom} – ${params.publishedTo}`:`Last ${params.recentDays || 7} days, fixed at session creation.`},{platform:source.platform,setting:'Collection order',mode:'Search hint' as const,detail:source.rounds?.map(r=>r.sorting || 'Provider default').join(' · ') || 'Provider default'}]):undefined;
+ const base={...(topFilters?{appliedFilters:topFilters}:{}),...(modelPolicy?{accountPolicyVersion:5 as const,modelRevision:modelPolicy.revision,modelMode:modelPolicy.mode,appliedFilters}:{}),version:accountV5?5 as const:4 as const,kind,criteria,maxSessionUsd,...(accountV5?{allowedMaxSessionUsd}:{}),maxSearchRows:accountV5?Math.min(600,Math.max(120,12*(params.limit || 5))):params.selectionMode==='top'?topCandidateBudget(params.limit || 5):120,maxHydratedProfiles:accountV5?Math.min(100,Math.max(10,2*(params.limit || 5))):10,maxPostsPerProfile:accountV5?10 as const:5 as const,rounds,sources};
  return {...base,hash:createHash('sha256').update(stableJson(base)).digest('hex')};
 }

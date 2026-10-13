@@ -54,7 +54,7 @@ export const NAV_ITEMS = [
   },
   {
     href: "/trending",
-    label: "Trending",
+    label: "Posts",
     icon: Flame,
   },
   {

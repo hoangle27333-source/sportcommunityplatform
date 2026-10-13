@@ -254,6 +254,16 @@ describe('Latest community sampling', () => {
     expect(result.success).toBe(true); expect(result.channelCoverage.map(c => c.status)).toEqual(['collected', 'unavailable']);
     expect(state.tables.scouted_posts).toHaveLength(2);
   });
+  it('keeps the pre-filter latest sample for unbiased community statistics', async()=>{
+    const {communityEngagement}=await import('../sport-hub/community-engagement');
+    const policy={enabled:true,minViews:1000,minInteractions:50,metricRule:'views-first' as const,policyVersion:1 as const};
+    vi.mocked(scrape).mockResolvedValue([row(1),row(100),{...row(3),likesCount:undefined,commentsCount:undefined}]);
+    const result=await scoutLatestCommunityPosts(communityId,['Instagram'],'s',['https://instagram.com/club'],policy);
+    expect(result.counts).toMatchObject({sampled:3,saved:2,filteredLowEngagement:1});
+    expect(communityEngagement(result.samplePosts).average).toBe(50.5);
+    expect(state.tables.scouted_posts).toHaveLength(2);
+    expect(state.tables.scouted_posts.find(p=>p.post_url.endsWith('sample3')).scout_content_assessment.status).toBe('needs-verification');
+  });
   it('rejects an injected unconnected URL before provider execution', async () => {
     await expect(scoutLatestCommunityPosts(communityId, ['Instagram'], 's', ['https://instagram.com/unrelated'])).rejects.toMatchObject({ code: 'INVALID_CHANNEL' });
     expect(scrape).not.toHaveBeenCalled();
@@ -359,4 +369,92 @@ describe('Experimental saved review through real API handlers and CRM persistenc
    expect(session.review_decisions[cid].decision).toBe(decision);
   }
  });
+});
+
+describe('top-post collection',()=>{
+ const plan=(platform='Facebook',queries=['running','chạy bộ','runner','marathon'])=>({version:4 as const,kind:'trends' as const,hash:'a'.repeat(64),criteria:{selectionMode:'top'},maxSessionUsd:1,maxSearchRows:60,maxHydratedProfiles:0,maxPostsPerProfile:5 as const,rounds:queries.map(query=>({label:query,queries:[query]})),sources:[{platform,task:'keyword' as const,keys:[],builds:{},options:{},authorSearch:false,warnings:[],rounds:queries.map(query=>({task:'keyword' as const,queries:[query]}))}]});
+ const row=(id:string,views?:number,likes=1)=>({url:`https://facebook.com/posts/${id}`,text:'chạy bộ',time:'2026-10-04T12:00:00Z',views,likes,comments:0,shares:2});
+ const params=()=>({sessionId:'s',selectionMode:'top' as const,keyword:'Running',platform:'Facebook',geography:'Any location',limit:1,searchPlan:plan()});
+ it('keeps searching after N matches and returns the stronger later post',async()=>{
+  vi.mocked(scrape).mockImplementation(async(_s,_p,_t,query)=>[row(query,query==='chạy bộ'?10000:10)]);
+  const result=await scoutMarketTrends(params());
+  expect(scrape).toHaveBeenCalledTimes(3);expect(result.posts[0].views).toBe(10000);expect(result.posts[0].shares).toBe(2);
+  expect(result.searchExecution?.stopReason).toBe('candidate-budget');
+  expect(state.tables.scouted_posts[0].shares).toBe(2);
+ });
+ it('returns existing winners again and counts them separately from inserted posts',async()=>{
+  vi.mocked(scrape).mockResolvedValue([row('top',10000)]);
+  const first=await scoutMarketTrends(params());const second=await scoutMarketTrends(params());
+  expect(first.counts.inserted).toBe(1);expect(second.counts.inserted).toBe(0);expect(second.posts).toHaveLength(1);expect(second.posts[0].id).toBe(first.posts[0].id);
+  expect(second.posts[0]).toMatchObject({saveState:'existing',rank:1});expect(state.tables.scouted_posts).toHaveLength(1);
+ });
+ it('splits two groups within the shared limit and retains wholly missing metrics',async()=>{
+  vi.mocked(scrape).mockResolvedValue([row('zero',0,0),row('unknownviews',undefined,10000),{...row('none'),likes:undefined,comments:undefined,shares:undefined}]);
+  const result:any=await scoutMarketTrends({...params(),limit:3});
+  expect(result.groups.topByViews).toHaveLength(1);expect(result.groups.viewsUnavailable).toHaveLength(2);expect(result.groups.needsVerification).toHaveLength(1);
+  expect(result.posts.map((p:any)=>p.rank)).toEqual([1,2,3]);
+ });
+ it('saves verified and unverified records outside N, filters low quality and preserves edited content on refresh',async()=>{
+  const qualityFilter={enabled:true,minViews:1000,minInteractions:50,metricRule:'views-first' as const,policyVersion:1 as const};
+  vi.mocked(scrape).mockResolvedValue([row('high',5000),row('fallback',undefined,70),row('low',0,999999),{...row('unknown'),views:undefined,likes:undefined,comments:undefined,shares:undefined}, {...row('stale',99999),time:'2026-09-01T00:00:00Z'}]);
+  const request={...params(),qualityFilter,geography:'Vietnam'};
+  const first:any=await scoutMarketTrends(request);
+  expect(first.posts).toHaveLength(1);expect(first.savedPosts).toHaveLength(3);expect(state.tables.scouted_posts).toHaveLength(3);
+  expect(first.counts).toMatchObject({saved:3,topDisplayed:1,unverified:3,belowTarget:1,excluded:1});
+  const missing=state.tables.scouted_posts.find(p=>p.post_url.endsWith('/unknown'));
+  expect(missing).toMatchObject({views:null,likes:null,comments:null,shares:null,scout_content_assessment:{status:'needs-verification'}});
+  expect(missing.notes).not.toContain('Verified social scout');
+  state.tables.scouted_posts[0].title='User edited title';state.tables.scouted_posts[0].notes='Keep notes';
+  const second:any=await scoutMarketTrends(request);
+  expect(second.savedPosts).toHaveLength(3);expect(state.tables.scouted_posts).toHaveLength(3);
+  expect(state.tables.scouted_posts[0]).toMatchObject({title:'User edited title',notes:'Keep notes'});
+ });
+ it('does not let an incremental watermark narrow the top window',async()=>{
+  state.tables.scout_watermarks=[{published_at:'2026-10-05T00:00:00Z'}];vi.mocked(scrape).mockResolvedValue([row('prior',100)]);
+  const result=await scoutMarketTrends(params());expect(result.posts).toHaveLength(1);
+  expect(vi.mocked(scrape).mock.calls[0][6]?.newerThan).toBe('2026-09-28T00:00:00.000Z');
+ });
+ it('retains partial provider failures but fails if all sources fail',async()=>{
+  vi.mocked(scrape).mockImplementation(async(_s,_p,_t,q)=>{if(q==='running')throw Object.assign(new Error('Unavailable'),{code:'FAILED'});return [row('ok',200)];});
+  const partial=await scoutMarketTrends(params());expect(partial.success).toBe(true);expect(partial.partial).toBe(true);
+  vi.mocked(scrape).mockRejectedValue(Object.assign(new Error('Unavailable'),{code:'FAILED'}));
+  expect((await scoutMarketTrends(params())).success).toBe(false);
+ });
+ it('stops on budget exhaustion and does not start a replacement for uncertain paid starts',async()=>{
+  vi.mocked(scrape).mockRejectedValue(Object.assign(new Error('Budget reached'),{code:'BUDGET_EXHAUSTED'}));
+  expect((await scoutMarketTrends(params())).searchExecution?.stopReason).toBe('budget-exhausted');expect(scrape).toHaveBeenCalledTimes(1);
+  vi.mocked(scrape).mockRejectedValue(Object.assign(new Error('Unknown paid start'),{code:'START_UNKNOWN'}));
+  await expect(scoutMarketTrends(params())).rejects.toMatchObject({code:'START_UNKNOWN'});
+ });
+ it('saves missing ownership as informational verification without linking the requested account',async()=>{
+  const {scoutTopPosts}=await import('./top-posts');
+  const entityPlan:any=plan('Facebook',['https://facebook.com/groups/123']);entityPlan.sources[0].task='profile-posts';entityPlan.sources[0].rounds=[{task:'profile-posts',queries:['https://facebook.com/groups/123']}];
+  vi.mocked(scrape).mockResolvedValue([row('unknown-owner',5000),{...row('wrong-group',5000),groupUrl:'https://facebook.com/groups/999'}]);
+  const result=await scoutTopPosts({...params(),communityId:'selected-community',searchPlan:entityPlan});
+  expect(result.savedPosts).toHaveLength(1);expect(result.counts.unverified).toBe(1);expect(result.counts.excluded).toBe(1);
+  expect(state.tables.scouted_posts[0].community_id).toBeNull();
+  expect(state.tables.scouted_posts[0].scout_content_assessment).toMatchObject({status:'needs-verification',ownership:'unknown'});
+ });
+ it('collects only owned KOL posts and verified group members across selected channels',async()=>{
+  const {scoutTopPosts}=await import('./top-posts');
+  const entityPlan:any=plan('Instagram',['https://instagram.com/runner']);entityPlan.sources[0].task='profile-posts';entityPlan.sources[0].rounds[0].task='profile-posts';
+  vi.mocked(scrape).mockResolvedValue([{url:'https://instagram.com/p/owned',ownerUsername:'runner',caption:'Original',timestamp:'2026-10-04',videoViewCount:10},{url:'https://instagram.com/p/foreign',ownerUsername:'other',caption:'Original',timestamp:'2026-10-04',videoViewCount:10000}]);
+  const kol=await scoutTopPosts({...params(),kolId:'kol',searchPlan:entityPlan});expect(kol.posts.map(p=>p.url)).toEqual(['https://instagram.com/p/owned']);expect(kol.counts.excluded).toBe(1);
+  const groupPlan:any=plan('Facebook',['https://facebook.com/groups/123']);groupPlan.sources[0].task='profile-posts';groupPlan.sources[0].rounds[0].task='profile-posts';
+  vi.mocked(scrape).mockResolvedValue([{...row('foreign',10000),groupUrl:'https://facebook.com/groups/999'},{...row('member',100),url:'https://facebook.com/groups/123/posts/456'}]);
+  const group=await scoutTopPosts({...params(),communityId:'community',searchPlan:groupPlan});expect(group.posts).toHaveLength(1);expect(group.posts[0].url).toContain('/groups/123/posts/456');
+ });
+});
+
+it('returns refreshed top records with shares without replacing user captions or known missing metrics',async()=>{
+ const {savePosts}=await import('./scout');const post= (await import('./providers')).parsePost({url:'https://facebook.com/posts/top',text:'Observed caption',time:'2026-10-04',views:123,likes:0,comments:0,shareCount:7,_provenance:{runId:'new',fetchedAt:'2026-10-05T01:00:00Z'}},'Facebook')!;
+ state.tables.scouted_posts=[{id:'existing',post_url:post.url,scout_identity:`Facebook:${post.url}`,title:'User caption',shares:null,scout_missing_metrics:['shares','er'],scout_provenance:{fetchedAt:'2026-10-05T00:00:00Z'}}];
+ const counts={inserted:0,refreshed:0,duplicate:0};const rows=await savePosts([{post,platform:'Facebook',sport:'Running'}],counts,true);
+ expect(rows[0]).toMatchObject({id:'existing',saveState:'refreshed',shares:7,title:'User caption',scout_missing_metrics:['er']});expect(counts).toEqual({inserted:0,refreshed:1,duplicate:0});
+});
+
+it('stops top collection immediately on billing restrictions and preserves the actionable error code',async()=>{
+ vi.mocked(scrape).mockRejectedValue(Object.assign(new Error('HTTP 402'),{code:'BILLING_REQUIRED'}));
+ const queries=['running','runner','marathon'];const result=await scoutMarketTrends({sessionId:'s',selectionMode:'top',keyword:'Running',platform:'Facebook',limit:5,searchPlan:{version:4,kind:'trends',hash:'a'.repeat(64),criteria:{selectionMode:'top'},maxSessionUsd:.25,maxSearchRows:60,maxHydratedProfiles:0,maxPostsPerProfile:5,rounds:queries.map(q=>({label:q,queries:[q]})),sources:[{platform:'Facebook',task:'keyword',keys:[],builds:{},options:{},authorSearch:false,warnings:[],rounds:queries.map(q=>({task:'keyword',queries:[q]}))}]}});
+ expect(scrape).toHaveBeenCalledTimes(1);expect(result).toMatchObject({success:false,code:'BILLING_REQUIRED',httpStatus:402,stopReason:'provider-restricted'});expect(result.warnings[0]).toContain('billing');
 });

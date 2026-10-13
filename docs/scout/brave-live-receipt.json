@@ -1,0 +1,78 @@
+{
+  "sessionId": "b35bb3ba-a733-4295-aba4-04bf6d837c78",
+  "accountVerified": {
+    "plan": "Search prepaid, active",
+    "requestUsd": 0.005,
+    "grantedCreditUsd": 5,
+    "purchasedCreditUsd": 0,
+    "autoReload": false,
+    "source": "Authenticated Brave dashboard 2026-10-13"
+  },
+  "adapterRevision": "brave-web-1",
+  "pricingRevision": "brave-search-20261013-0.005",
+  "requests": 6,
+  "platforms": {
+    "Facebook": {
+      "requestsSucceeded": 2,
+      "usableLeads": 19,
+      "unresolved": 8
+    },
+    "TikTok": {
+      "requestsSucceeded": 2,
+      "usableLeads": 9,
+      "unresolved": 21
+    },
+    "Instagram": {
+      "requestsSucceeded": 2,
+      "usableLeads": 12,
+      "unresolved": 6
+    }
+  },
+  "crmWrites": 0,
+  "runs": [
+    {
+      "id": "15a054b0-8caf-4b7e-97e0-2836ec267b95",
+      "state": "succeeded",
+      "actual_usd": 0.005,
+      "reserved_usd": 0.005,
+      "provider_receipt": "{\"adapterRevision\":\"brave-web-1\",\"query\":{\"original\":\"site:facebook.com cầu lông huấn luyện viên Hồ Chí Minh\",\"show_strict_warning\":false,\"cleaned\":\"cầu lông huấn luyện viên Hồ Chí Minh\",\"is_navigational\":true,\"is_news_breaking\":false,\"spellcheck_off\":true,\"country\":\"us\",\"bad_results\":false,\"should_fallback\":false,\"postal_code\":\"\",\"city\":\"\",\"header_country\":\"\",\"more_results_available\":true,\"state\":\"\",\"search_operators\":{\"applied\":true,\"cleaned_query\":\"cầu lông huấn luyện viên Hồ Chí Minh\",\"sites\":[\"facebook.com\"]},\"related_queries\":[]},\"observedAt\":\"2026-10-13T08:35:42.982Z\"}"
+    },
+    {
+      "id": "cb498899-6b97-488e-a757-a8572a62c983",
+      "state": "succeeded",
+      "actual_usd": 0.005,
+      "reserved_usd": 0.005,
+      "provider_receipt": "{\"adapterRevision\":\"brave-web-1\",\"query\":{\"original\":\"site:tiktok.com cầu lông huấn luyện viên Hồ Chí Minh\",\"show_strict_warning\":false,\"cleaned\":\"cầu lông huấn luyện viên Hồ Chí Minh\",\"is_navigational\":false,\"is_news_breaking\":false,\"spellcheck_off\":true,\"country\":\"us\",\"bad_results\":false,\"should_fallback\":false,\"postal_code\":\"\",\"city\":\"\",\"header_country\":\"\",\"more_results_available\":true,\"state\":\"\",\"search_operators\":{\"applied\":true,\"cleaned_query\":\"cầu lông huấn luyện viên Hồ Chí Minh\",\"sites\":[\"tiktok.com\"]},\"related_queries\":[]},\"observedAt\":\"2026-10-13T08:35:46.226Z\"}"
+    },
+    {
+      "id": "1aff09cc-df94-4a04-a358-1e6f0ff9f8e4",
+      "state": "succeeded",
+      "actual_usd": 0.005,
+      "reserved_usd": 0.005,
+      "provider_receipt": "{\"adapterRevision\":\"brave-web-1\",\"query\":{\"original\":\"site:facebook.com badminton coach Vietnam\",\"show_strict_warning\":false,\"cleaned\":\"badminton coach Vietnam\",\"is_navigational\":true,\"is_news_breaking\":false,\"spellcheck_off\":true,\"country\":\"us\",\"bad_results\":false,\"should_fallback\":false,\"postal_code\":\"\",\"city\":\"\",\"header_country\":\"\",\"more_results_available\":true,\"state\":\"\",\"search_operators\":{\"applied\":true,\"cleaned_query\":\"badminton coach Vietnam\",\"sites\":[\"facebook.com\"]},\"related_queries\":[]},\"observedAt\":\"2026-10-13T08:35:44.508Z\"}"
+    },
+    {
+      "id": "05eade95-95b5-4a61-a77c-c426b4f4cc70",
+      "state": "succeeded",
+      "actual_usd": 0.005,
+      "reserved_usd": 0.005,
+      "provider_receipt": "{\"adapterRevision\":\"brave-web-1\",\"query\":{\"original\":\"site:tiktok.com badminton coach Vietnam\",\"show_strict_warning\":false,\"cleaned\":\"badminton coach Vietnam\",\"is_navigational\":false,\"is_news_breaking\":false,\"spellcheck_off\":true,\"country\":\"us\",\"bad_results\":false,\"should_fallback\":false,\"postal_code\":\"\",\"city\":\"\",\"header_country\":\"\",\"more_results_available\":true,\"state\":\"\",\"search_operators\":{\"applied\":true,\"cleaned_query\":\"badminton coach Vietnam\",\"sites\":[\"tiktok.com\"]},\"related_queries\":[]},\"observedAt\":\"2026-10-13T08:35:47.705Z\"}"
+    },
+    {
+      "id": "665e8499-8251-4766-b022-3a7186b6f3e8",
+      "state": "succeeded",
+      "actual_usd": 0.005,
+      "reserved_usd": 0.005,
+      "provider_receipt": "{\"adapterRevision\":\"brave-web-1\",\"query\":{\"original\":\"site:instagram.com cầu lông huấn luyện viên Hồ Chí Minh\",\"show_strict_warning\":false,\"cleaned\":\"cầu lông huấn luyện viên Hồ Chí Minh\",\"is_navigational\":true,\"is_news_breaking\":false,\"spellcheck_off\":true,\"country\":\"us\",\"bad_results\":false,\"should_fallback\":false,\"postal_code\":\"\",\"city\":\"\",\"header_country\":\"\",\"more_results_available\":true,\"state\":\"\",\"search_operators\":{\"applied\":true,\"cleaned_query\":\"cầu lông huấn luyện viên Hồ Chí Minh\",\"sites\":[\"instagram.com\"]},\"related_queries\":[]},\"observedAt\":\"2026-10-13T08:35:49.736Z\"}"
+    },
+    {
+      "id": "5e60e1de-b5d9-4eeb-8f17-dcce15c4d786",
+      "state": "succeeded",
+      "actual_usd": 0.005,
+      "reserved_usd": 0.005,
+      "provider_receipt": "{\"adapterRevision\":\"brave-web-1\",\"query\":{\"original\":\"site:instagram.com badminton coach Vietnam\",\"show_strict_warning\":false,\"cleaned\":\"badminton coach Vietnam\",\"is_navigational\":true,\"is_news_breaking\":false,\"spellcheck_off\":true,\"country\":\"us\",\"bad_results\":false,\"should_fallback\":false,\"postal_code\":\"\",\"city\":\"\",\"header_country\":\"\",\"more_results_available\":true,\"state\":\"\",\"search_operators\":{\"applied\":true,\"cleaned_query\":\"badminton coach Vietnam\",\"sites\":[\"instagram.com\"]},\"related_queries\":[]},\"observedAt\":\"2026-10-13T08:35:51.499Z\"}"
+    }
+  ],
+  "apiValueUsd": 0.030000000000000002,
+  "observedAt": "2026-10-13T08:55:53.166Z"
+}

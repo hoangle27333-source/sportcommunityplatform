@@ -1,0 +1,19 @@
+{
+  "fixtureOnly": true,
+  "providerStarts": 0,
+  "databaseWrites": 0,
+  "browser": "Chrome via CUA",
+  "checks": [
+    "Topic form defaults to top, views-first, seven days and thresholds off",
+    "Custom date input sends both UTC timestamps and displays local timezone on results",
+    "Account form sends selected connected channel, limit, thirty days and enabled thresholds",
+    "Top by Views and Views Unavailable render as separate groups",
+    "Observed zero metrics and Unknown shares/views remain distinct",
+    "Rank, refreshed/existing state, source links and observation timestamp are visible",
+    "Original Vietnamese entity names and captions remain unchanged",
+    "Mobile account form reviewed at 390x844",
+    "Grouped fixture results reopen after reload"
+  ],
+  "issueFixed": "Custom dates were initially visible but absent in state; input event handling and client validation were corrected",
+  "limitations": ["No authenticated production flow", "No live database persistence", "Fresh provider validation awaits shares migration"]
+}

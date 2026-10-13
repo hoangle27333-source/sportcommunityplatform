@@ -1,11 +1,13 @@
 "use client";
 
+import { TopPostFields, QualityFilterFields, topPostDefaults, validateTopPostDates } from "./top-post-fields";
 import { ScoutSearchPlan, useSearchPlan } from "./scout-search-plan";
 import { useEffect, useState } from "react";
 import {
   Hash,
   Search,
   Sparkles,
+  Flame,
   Check,
   AlertCircle,
   Link2,
@@ -92,6 +94,8 @@ export function MarketTrendScoutModal({
   const [searchMode, setSearchMode] = useState<"hashtag" | "keyword">(
     initialCriteria.searchMode || (initialCriteria.keyword?.startsWith("#") ? "hashtag" : "keyword")
   );
+  const [selectionMode,setSelectionMode]=useState(initialCriteria.selectionMode==='top' || !initialCriteria.qualityMode?'top':'legacy');
+  const [topFields,setTopFields]=useState(()=>topPostDefaults(initialCriteria));
   const [qualityMode,setQualityMode]=useState<'high-engagement'|'topic'>(initialCriteria.qualityMode || 'high-engagement');
   const [minInteractions,setMinInteractions]=useState(initialCriteria.minInteractions ?? 100);
   const [minViews,setMinViews]=useState(initialCriteria.minViews ?? 10000);
@@ -134,7 +138,7 @@ export function MarketTrendScoutModal({
 
   const [queryVariants,setQueryVariants]=useState<string|undefined>();
   const [maxSessionUsd,setMaxSessionUsd]=useState<number|undefined>();
-  const planCriteria={keyword:keyword.trim(),searchMode,qualityMode,minInteractions,minViews,recentDays,sport:sport.map(s=>s==='Other Sports'?customSport.trim():s),geography,platform:selectedPlatforms,limit,queryVariants:queryVariants===undefined?undefined:queryVariants.split('\n').map(v=>v.trim()).filter(Boolean),maxSessionUsd};
+  const planCriteria={qualityFilter:topFields.qualityFilter,...(selectionMode==='top'?topFields:{}),keyword:keyword.trim(),searchMode,qualityMode,minInteractions,minViews,recentDays,sport:sport.map(s=>s==='Other Sports'?customSport.trim():s),geography,platform:selectedPlatforms,limit,queryVariants:queryVariants===undefined?undefined:queryVariants.split('\n').map(v=>v.trim()).filter(Boolean),maxSessionUsd,...(selectionMode==='top'?topFields:{})};
   const searchPlan=useSearchPlan('trends',planCriteria,isOpen && !!keyword.trim() && !!selectedPlatforms.length);
 
   // Sync selected platforms when capabilities change or mode changes
@@ -188,6 +192,7 @@ export function MarketTrendScoutModal({
     setBusy(true);
     setError("");
     try {
+      if(selectionMode==='top')validateTopPostDates(topFields);
       if (
         capabilitiesLoading ||
         !selectedPlatforms.length ||
@@ -217,7 +222,7 @@ export function MarketTrendScoutModal({
           ...planCriteria,planHash:searchPlan.plan.hash,
           keyword: keyword.trim(),
           searchMode,
-          qualityMode, minInteractions, minViews, recentDays,
+          qualityFilter:topFields.qualityFilter, qualityMode, ...(selectionMode==='top'?topFields:{minInteractions,minViews,recentDays}),
           sport: sports,
           geography,
           platform: selectedPlatforms,
@@ -243,11 +248,49 @@ export function MarketTrendScoutModal({
 
   return (
     <ScoutDialogFrame
-      title="Find Content"
+      title={selectionMode==='top'?'Find Top Posts':'Find Content'}
       onClose={onClose}
-      description="Find recent sports posts using observed engagement. Matching items are saved and deduplicated; engagement does not prove growth over time."
+      description="Find sports posts within your selected publication window. All retained posts, including Needs Verification, are saved or refreshed automatically."
     >
       <form onSubmit={submit} className="space-y-4">
+        {/* ─── COLLECTION MODE SELECTOR (Segmented Pills) ─── */}
+        <div>
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setSelectionMode('top')}
+              className={`flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
+                selectionMode === 'top'
+                  ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+              <span>Find Top Posts</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setSelectionMode('legacy')}
+              className={`flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
+                selectionMode !== 'top'
+                  ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-400" />
+              <span>Standard Search</span>
+            </button>
+          </div>
+        </div>
+
+        {selectionMode === 'top' ? (
+          <TopPostFields value={topFields} onChange={setTopFields} disabled={busy} />
+        ) : (
+          <QualityFilterFields value={topFields} onChange={setTopFields} disabled={busy} />
+        )}
         {/* ─── 1. SEARCH METHOD SELECTOR (Pill / Tabs) ─── */}
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -506,40 +549,40 @@ export function MarketTrendScoutModal({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Maximum Posts
+              {selectionMode === 'top' ? 'Target Sample Size' : 'Collection limit'}
             </label>
-            <select
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              disabled={busy}
-              className={`${scoutInputClass} text-xs cursor-pointer`}
-            >
-              <option value={5}>5 posts</option>
-              <option value={10}>10 posts</option>
-              <option value={20}>20 posts</option>
-              <option value={30}>30 posts</option>
-            </select>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[5, 10, 20, 30].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setLimit(num)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition text-center cursor-pointer ${
+                    limit === num
+                      ? 'bg-slate-900 border-slate-900 text-white shadow-xs font-bold'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  {num} posts
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="space-y-2">
+        {selectionMode!=='top' && <div className="space-y-2">
           <label className="block text-xs font-bold text-slate-700" htmlFor="content-quality-mode">Content Selection</label>
           <select id="content-quality-mode" value={qualityMode} disabled={busy} onChange={e=>setQualityMode(e.target.value as 'high-engagement'|'topic')} className={scoutInputClass}>
             <option value="high-engagement">High Engagement (Recommended)</option>
             <option value="topic">All Topic Matches</option>
           </select>
-          <p className="text-xs text-slate-500">{qualityMode==='high-engagement' ? 'Keep recent posts meeting either threshold. Rank by likes + comments, then views. Return fewer if the bounded search finds too few matches.' : 'Collect relevant posts regardless of engagement. These results are not verified trends.'}</p>
-          {qualityMode==='high-engagement' && <details>
-            <summary className="cursor-pointer text-sm font-semibold">Advanced: Engagement Criteria</summary>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
-              <label className="text-xs">Minimum Likes + Comments<input type="number" min={1} max={1000000} required value={minInteractions} disabled={busy} onChange={e=>setMinInteractions(Number(e.target.value))} className={scoutInputClass}/></label>
-              <label className="text-xs">Minimum Views (Alternative)<input type="number" min={1} max={1000000000} required value={minViews} disabled={busy} onChange={e=>setMinViews(Number(e.target.value))} className={scoutInputClass}/></label>
-              <div><label className="text-xs" htmlFor="content-recent-days">Published Within</label><select id="content-recent-days" value={recentDays} disabled={busy} onChange={e=>setRecentDays(Number(e.target.value))} className={scoutInputClass}><option value={3}>3 days</option><option value={7}>7 days</option><option value={14}>14 days</option><option value={30}>30 days</option></select></div>
-            </div>
-            <p className="text-xs text-slate-500 mt-2">Defaults are selection thresholds, not proof of virality. Searches request up to three times the desired count, capped at 60 candidates in total, within provider budgets. Missing metrics stay Unknown.</p>
-          </details>}
+          <p className="text-xs text-slate-500">All retained posts are saved automatically. The post quality filter above applies to every collection mode.</p>
+          <label className="block text-xs" htmlFor="content-recent-days">Published Within</label><select id="content-recent-days" value={recentDays} disabled={busy} onChange={e=>setRecentDays(Number(e.target.value))} className={scoutInputClass}><option value={3}>3 days</option><option value={7}>7 days</option><option value={14}>14 days</option><option value={30}>30 days</option></select>
+
         </div>
 
+        }
         <ScoutSearchPlan {...searchPlan} variants={queryVariants} onVariants={setQueryVariants} budget={maxSessionUsd} onBudget={setMaxSessionUsd}/>
 
         {/* ─── BIDIRECTIONAL SYNERGY CALLOUT ─── */}
@@ -588,7 +631,7 @@ export function MarketTrendScoutModal({
           <button
             type="submit"
             disabled={
-              busy ||
+              busy || !topFields.qualityFilter ||
               capabilitiesLoading ||
               !searchPlan.plan || searchPlan.loading ||
               !keyword.trim() ||

@@ -96,3 +96,27 @@ it('replays author-only discovery and topic post evidence without collecting aga
  expect(result).toMatchObject({providerStarts:0,assessmentVersion:6,counts:{qualifiedNew:1}});expect(result.candidates).toHaveLength(1);expect(result.candidates[0]).toMatchObject({url:'https://tiktok.com/@alex',reviewState:'Matched'});
  expect(result.candidates[0].assessment.topic.evidence).toContain('https://tiktok.com/@alex/video/1');expect(state.paid).not.toHaveBeenCalled();expect(state.tables.scout_sessions[0]).toEqual(original);expect(state.tables.scout_provider_runs).toEqual(ledger);
 });
+
+it('replays top posts idempotently without paid starts, watermark changes or CRM writes',async()=>{
+ const parent=state.tables.scout_sessions[0];parent.params={...parent.params,selectionMode:'top',rankingMode:'views-first',thresholdsEnabled:false,searchPlan:{version:4,kind:'trends',hash:'a'.repeat(64),criteria:{selectionMode:'top'},maxSearchRows:60,maxSessionUsd:1,maxHydratedProfiles:0,maxPostsPerProfile:5,rounds:[{label:'Search',queries:['#running']}],sources:[{platform:'Facebook',task:'hashtag',keys:[],builds:{},options:{},warnings:[],authorSearch:false,rounds:[{task:'hashtag',queries:['#running']}]}]},retrievalWindows:{'top-window':JSON.stringify({from:'2026-10-04T00:00:00.000Z',to:'2026-10-11T00:00:00.000Z'})}};
+ const original=structuredClone(parent),ledger=structuredClone(state.tables.scout_provider_runs);
+ const first=await (await reassessSession(source)).json();const second=await (await reassessSession(source)).json();expect(first.sessionId).toBe(second.sessionId);
+ const child=state.tables.scout_sessions.find(s=>s.id===first.sessionId);const result=await executeStoredReassessment(child);
+ expect(result).toMatchObject({providerStarts:0,selectionMode:'top',counts:{qualified:1,inserted:0},stopReason:'stored-evidence'});
+ expect(result.groups.viewsUnavailable).toHaveLength(1);expect(result.posts[0].saveState).toBe('evidence-only');
+ expect(state.paid).not.toHaveBeenCalled();expect(state.tables.scout_sessions[0]).toEqual(original);expect(state.tables.scout_provider_runs).toEqual(ledger);expect(state.tables.scouted_posts).toBeUndefined();expect(state.tables.scout_watermarks).toBeUndefined();
+});
+
+it('replays cached top collection from round checkpoints with no paid run or CRM writes',async()=>{
+ const parent=state.tables.scout_sessions[0];
+ const qualityFilter={enabled:true,minViews:1000,minInteractions:50,metricRule:'views-first',policyVersion:1};
+ parent.kind='trends';parent.params={keyword:'Running',searchMode:'keyword',platform:'Facebook',geography:'Any location',limit:1,selectionMode:'top',qualityFilter,searchPlan:{version:4,kind:'trends',sources:[{platform:'Facebook',task:'keyword',rounds:[{queries:['Running']}]}],rounds:[]},retrievalWindows:{'top-window':JSON.stringify({from:'2026-10-04T00:00:00.000Z',to:'2026-10-11T00:00:00.000Z'})}};
+ state.tables.scout_provider_runs=[];
+ state.tables.scout_task_checkpoints=[{session_id:source,task_key:'top-round:0',result:{observations:[{platform:'Facebook',rows:[{url:'https://facebook.com/posts/cached',text:'Running',time:'2026-10-10T00:00:00Z',likes:100},{url:'https://facebook.com/posts/unknown',text:'Running',time:'2026-10-10T00:00:00Z'}]}]}}];
+ const original=structuredClone(parent),checkpoints=structuredClone(state.tables.scout_task_checkpoints);
+ const child={id:'child',owner_id:state.owner,kind:'trends',params:{...parent.params,parentSessionId:source,executionMode:'stored-evidence'}};
+ state.tables.scout_sessions.push(child);
+ const result=await executeStoredReassessment(child);
+ expect(result.savedPosts).toHaveLength(2);expect(result.posts).toHaveLength(1);expect(result.providerStarts).toBe(0);expect(result.message).toContain('retained as evidence');
+ expect(state.paid).not.toHaveBeenCalled();expect(state.tables.scouted_posts).toBeUndefined();expect(state.tables.scout_sessions[0]).toEqual(original);expect(state.tables.scout_task_checkpoints).toEqual(checkpoints);
+});

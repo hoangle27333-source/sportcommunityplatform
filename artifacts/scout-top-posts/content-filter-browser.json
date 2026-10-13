@@ -1,0 +1,17 @@
+{
+  "profile": "Hoang / hoangle27333-source",
+  "localUrl": "http://localhost:3111/scout",
+  "checks": {
+    "defaultEnabled": true,
+    "minimumViews": 1000,
+    "minimumInteractions": 50,
+    "adminSaveDefault": true,
+    "perRunToggle": true,
+    "kolSelectorAndForm": true,
+    "communitySelectorAndForm": true,
+    "reloadedSavedPosts": 13,
+    "displayedTopPosts": 5,
+    "needsVerificationInformational": true
+  },
+  "providerAcceptance": "cached Facebook observations; no fresh paid entity run"
+}

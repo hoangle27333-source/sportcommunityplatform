@@ -1,0 +1,16 @@
+{
+  "target": "https://sportcommunityplatform-7vhqph661-hoang-le2.vercel.app",
+  "sourceSessionId": "b35bb3ba-a733-4295-aba4-04bf6d837c78",
+  "storedChildId": "94b0def9-f4a9-5c9f-a8c1-eef09a9c59ab",
+  "availableBravePlatforms": 3,
+  "approvedBraveCalls": 6,
+  "exactApprovedRequestsVerified": true,
+  "savedCandidateCount": 55,
+  "qualifiedCount": 0,
+  "stableReload": true,
+  "unapprovedImportBlocked": true,
+  "reassessmentProviderStarts": 0,
+  "braveApiValueUsd": 0.03,
+  "crmWrites": 0,
+  "observedAt": "2026-10-13T08:53:47.800Z"
+}

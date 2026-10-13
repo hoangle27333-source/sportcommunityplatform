@@ -28,7 +28,7 @@ export async function collectPlannedSearch(params:Record<string,any>,existing:Se
  let requestedRows=0,providerCount=0,duplicateCount=0,unparseableCount=0,noNewRounds=0;const rounds:any[]=[];const warnings:string[]=[];let stopReason='plan-exhausted';
  const qualified=()=>plan.kind==='preview'?Object.values(profiles).flat().filter(p=>!existing.has(`${p.platform}:${p.url}`) && assessSearchProfile(p,params.keyword,params.geography,params.targetType,assessmentOptions?{...assessmentOptions,entityAssessment:p.accountEntityAssessment}:undefined).resultGroup==='Qualified').length:Object.entries(rows).flatMap(([platform,values])=>values.map(r=>({platform,post:parsePost(r,platform)}))).filter(({platform,post})=>post && !existing.has(`${platform}:${post.url}`) && assessSearchContent(post,{...params,keyword:params.keyword,searchMode:params.searchMode || plan.criteria.searchMode,geography:params.geography,newerThan:cutoff}).resultGroup==='Qualified').length;
  for(let index=0;index<plan.rounds.length;index++) {
-  if(qualified()>=(params.limit || 5)){stopReason='target-reached';break;}
+  if((plan.kind==='preview' || !params.qualityFilter) && qualified()>=(params.limit || 5)){stopReason='target-reached';break;}
   const round=plan.rounds[index];const fallback=index===2 && plan.kind==='preview';
   const work=plan.sources.flatMap(source=>{
    if(!source.rounds && fallback && !source.authorSearch)return [];
@@ -112,7 +112,7 @@ export async function collectPlannedSearch(params:Record<string,any>,existing:Se
   if(noNewRounds>=2){stopReason='no-new-identities';break;}
  }
  if(!Object.keys(rows).length && warnings.length && stopReason!=='budget-exhausted')throw new ScoutError(warnings.join(' '),'SEARCH_FAILED',502);
- if(qualified()>=(params.limit || 5))stopReason='target-reached';
+ if((plan.kind==='preview' || !params.qualityFilter) && qualified()>=(params.limit || 5))stopReason='target-reached';
  if(stopReason==='budget-exhausted')warnings.push('The reviewed budget was reached. Available results have been retained.');
  return {rounds,stopReason,requestedRows,providerCount,uniqueCount:identities.size,duplicateCount,unparseableCount,hydratedProfiles:attempted.size,warnings:[...new Set(warnings)],rows,profiles};
 }

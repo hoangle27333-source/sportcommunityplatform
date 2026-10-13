@@ -1,0 +1,20 @@
+# Automatic Scout Post ingestion and quality settings
+
+New content sessions save every retained Verified and Needs Verification post without approval. Top N limits the displayed ranking only. Known wrong topic, geography, publication window or channel membership is excluded. Missing ownership is saved without asserting a KOL/community relationship. Saved profile discovery approval remains unchanged.
+
+The authenticated content-settings endpoint provides defaults; only admins can update them. Default filtering is enabled with 1,000 minimum views and 50 observed interactions when views are unavailable. Observed views, including zero, are authoritative. Missing views fall back to reactions/likes + comments + shares. All missing metrics remain Unknown and do not block saving. Facebook total reactions take priority over likes and are counted once. Disabled quality filtering still enforces scope. The resolved policy is included in plan criteria/hash and persisted session params; changing global defaults does not alter a running session or replay.
+
+The content-filter migration creates a service-role-only settings singleton, adds per-post assessment provenance, permits null views/likes/comments, and makes community statistics read the pre-filter latest-30 session sample. Historical posts are not deleted or backfilled. Existing zero placeholders remain accompanied by missing-metric metadata. Refresh preserves captions and reviewer notes, and missing observations do not overwrite known metrics. Replay remains read-only and starts zero providers.
+
+The English UI provides the filter in topic and entity collection forms, per-run overrides, and an admin Save as default action. Needs Verification is informational and does not create pending post approval. Source captions and names remain unchanged.
+
+## Verification on 2026-10-13
+
+- Full unit/fixture suite passed (571 tests across 71 files at the full-suite checkpoint), including settings API authorization/validation tests. App and Scout typechecks passed. Production build passed using an isolated output directory.
+- Supabase SQL Editor in Chrome Hoang / hoangle27333-source successfully applied `20261013020000_scout_content_filter.sql`. PostgREST read-back confirms settings and assessment columns.
+- New database-backed acceptance session `f25f737e-e5e5-4311-8d64-d2141b045a6a` used Facebook observations from the provider cache: 56 collected observations within the 60-row request budget; 13 retained and persisted (11 Verified, 2 Needs Verification), 5 top displayed, 22 low-engagement filtered, 19 scope exclusions. Eight inserted and five existing records were returned. All new missing views are null. No provider run started; incremental cost was $0 with a $0.15 approved cap. This is live database/cache-evidence proof, not a fresh-provider coverage claim.
+- Authenticated Chrome Hoang browser displayed enabled defaults 1,000/50, successfully saved those defaults through the admin action, and toggled a per-run override. Screenshot: `artifacts/scout-top-posts/content-filter-settings-live.png`.
+- Evidence/read-back checks are in `artifacts/scout-top-posts/content-filter-live.json`. Historical sessions were not reprocessed or changed. Post-session results were opened in the authenticated Hoang browser; the two Needs Verification posts appear as automatically saved informational records.
+
+- Live cached-evidence replay returned all 13 retained posts with zero provider starts, unchanged source session and unchanged CRM records (`content-filter-replay.json`). The local browser reload preserved 13 Saved Posts, 5 displayed results and informational Needs Verification labels. The KOL selector now initializes saved accounts on first load.
+- Final local checks: 571 tests across 71 files passed, app/Scout typechecks passed, and the final production build passed. Chrome Hoang acceptance covered topic settings, admin default save, KOL and community forms, plus completed-session reload. KOL/community collection execution is covered by fixtures; no fresh paid entity-provider run was started for this filter revision.

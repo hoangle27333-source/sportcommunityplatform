@@ -6,9 +6,9 @@ import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Trending Viral Posts & Reels · SPORT INFLUENCER HUB",
+  title: "Posts · SPORT INFLUENCER HUB",
   description:
-    "Scouted viral sports reels, engagement analytics, and creator performance on TikTok, Instagram, and Facebook.",
+    "Scouted creator posts, trending reels, and viral sports content across TikTok, Instagram, and Facebook.",
 };
 
 const EMPTY_FALLBACK: any = {

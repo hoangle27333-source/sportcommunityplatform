@@ -1,9 +1,10 @@
+import { buildBraveRequest, normalizeBraveResponse, braveIdentity, BRAVE_ADAPTER_REVISION, BRAVE_REQUEST_USD, type BraveRequest } from './brave';
 import { createHash } from 'node:crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { extractJson } from '../ai/json';
 import { parseProfile, parsePost, scrape, providerPlans, type SocialProfile, type SocialPost } from '../apify/providers';
 import { canonicalUrl, platformMatches, urlKind } from '../apify/discovery-quality';
-import { capabilityKey } from '../apify/runtime';
+import { capabilityKey, stableJson } from '../apify/runtime';
 import { ScoutError } from '../apify/errors';
 import { verifyApifyFreeCredit } from './apify-credit';
 import { trialRequest } from './trial';
@@ -19,18 +20,24 @@ export function normalizeBrightPost(row:any,platform:string):SocialPost|null {
  const p=parsePost({...row,url:row.url || row.post_url,caption:row.description || row.content || row.caption,authorUrl:row.profile_url || row.user_url || row.author_url,ownerUsername:row.account || row.username,timestamp:row.date_posted || row.create_time},platform);
  return p?{...p,videoUrl:row.video_url,videoDuration:typeof row.video_duration==='number'?row.video_duration:undefined,publicLinks:Array.isArray(row.tagged_users)?row.tagged_users.flatMap((x:any)=>typeof x.url==='string'?[x.url]:[]):[]}:null;
 }
-export async function fetchExternal(sessionId:string,c:TrialCapability,input:{query?:string;url?:string;limit:number;method?:string}) {
+export async function fetchExternal(sessionId:string,c:TrialCapability,input:{query?:string;url?:string;limit:number;method?:string;braveRequest?:BraveRequest}) {
  if(c.provider==='apify'){
   // Apify has its own persisted start receipt. The external trial reservation fences its allocation.
   // See the trial bridge below; never use direct HTTP starts here.
   return apifyTrial(sessionId,c,input);
  }
+ let braveRequest:BraveRequest|undefined;
+ if(c.provider==='brave'){
+  braveRequest=buildBraveRequest(c.platform,input.query || '',input.limit);
+  if(c.config.adapterRevision!==BRAVE_ADAPTER_REVISION || stableJson(braveRequest)!==stableJson(input.braveRequest))throw new ScoutError('Brave request differs from the approved plan.','PLAN_STALE',409);
+  if(!process.env.BRAVE_SEARCH_API_KEY)throw new ScoutError('Brave server credentials are missing.','NOT_CONFIGURED',503);
+ }
  return trialRequest<any[]>(sessionId,c,input,async run=>{
   if(c.provider==='brave'){
    const token=process.env.BRAVE_SEARCH_API_KEY;if(!token)throw new Error('Brave key is missing.');
-   const domain={Facebook:'facebook.com',TikTok:'tiktok.com',Instagram:'instagram.com'}[c.platform] || '';
-   const result=await json(`https://api.search.brave.com/res/v1/web/search?${new URLSearchParams({q:`site:${domain} ${input.query}`,count:String(Math.min(input.limit,20)),search_lang:'vi'})}`,{headers:{'X-Subscription-Token':token}});
-   return {result:(result.web?.results || []).map((r:any)=>({url:r.url,title:r.title,description:r.description})),actualUsd:0};
+   const request=braveRequest!;
+   const result=await json(`https://api.search.brave.com/res/v1/web/search?${new URLSearchParams(request.params)}`,{headers:{'X-Subscription-Token':token,Accept:'application/json'}});
+   return {result:normalizeBraveResponse(result,request),receipt:JSON.stringify({adapterRevision:request.revision,query:result.query,observedAt:new Date().toISOString()}),actualUsd:BRAVE_REQUEST_USD};
   }
   if(c.provider!=='brightdata' || !/^gd_[a-z0-9]+$/i.test(c.config.datasetId || ''))throw new Error('Verified Bright Data dataset is required.');
   const token=process.env.BRIGHT_DATA_API_TOKEN;if(!token)throw new Error('Bright Data key is missing.');const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
@@ -40,7 +47,7 @@ export async function fetchExternal(sessionId:string,c:TrialCapability,input:{qu
   const r=await json(`https://api.brightdata.com/datasets/v3/snapshot/${run.provider_receipt}?format=json`,{headers});if(!Array.isArray(r))throw new Error('Unexpected snapshot schema.');return {result:r.slice(0,c.operation==='posts'?10:1),receipt:run.provider_receipt,actualUsd:0};
  });
 }
-async function apifyTrial(sessionId:string,c:TrialCapability,input:{query?:string;url?:string;limit:number;method?:string}) {
+async function apifyTrial(sessionId:string,c:TrialCapability,input:{query?:string;url?:string;limit:number;method?:string;braveRequest?:BraveRequest}) {
  // Do not wrap scrape() in trialRequest: PendingScout is normal, not an unknown external POST.
  const { createAdminClient }=await import('../supabase/admin');const {assertTrial}=await import('./trial');
  const {stableJson}=await import('../apify/runtime');const db=createAdminClient();
@@ -113,6 +120,7 @@ export async function analyzeContent(sessionId:string,c:TrialCapability,p:Social
  return {...visual,entityType:visual.entityType==='Unknown'?text.entityType:visual.entityType,identityEvidence:visual.identityEvidence.length?visual.identityEvidence:text.identityEvidence,commercialActivity:visual.commercialActivity || text.commercialActivity,posts:[...combined.values()]};
 }
 export function resultIdentity(row:any,platform:string):SocialProfile|null {
+ if(row.provider==='brave')return braveIdentity(row,platform);
  const mapped=platform==='Facebook' && /^\d+$/.test(String(row.user?.id || ''))?{...row,authorUrl:row.user?.profileUrl || `https://facebook.com/${row.user.id}`,ownerFullName:row.user?.name,thumbnailUrl:row.media?.[0]?.thumbnail || row.attachments?.[0]?.thumbnail}:row;
  const post=parsePost(mapped,platform);if(post?.authorUrl){const p=parseProfile({...mapped,profileUrl:post.authorUrl,name:post.author,username:post.username},platform);return p?{...p,posts:[post]}:null;}
  const profile=parseProfile(row,platform);if(profile)return profile;

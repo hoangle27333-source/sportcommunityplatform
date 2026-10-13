@@ -1,0 +1,17 @@
+{
+  "sessionId": "6fe73fca-6365-47f8-b0df-73ad4948feca",
+  "chromeProfile": "Hoang / hoangle27333-source",
+  "authenticatedRole": "admin",
+  "reopened": true,
+  "providerRunCountBefore": 3,
+  "providerRunCountAfter": 3,
+  "persistedPostCount": 5,
+  "observedShares": [
+    0,
+    0,
+    41,
+    23,
+    2
+  ],
+  "screenshot": "live-facebook-ui.png"
+}

@@ -44,6 +44,15 @@ export type ScoutSubject = {
 };
 
 /** Reusable Social Post Card displaying publishing account, platform, caption, and metrics */
+export function TopPostResults({result}:{result:any}) {
+ const groups=[['Top by Views',result.groups?.topByViews || []],['Other Posts — Views Unavailable',result.groups?.viewsUnavailable || []]] as const;
+ const criteria=result.qualityCriteria || {};
+ return <div className="space-y-4" aria-label="Top post results"><p className="text-sm font-semibold">{result.message}</p><p className="text-xs text-slate-600">Views → Likes / Reactions → Comments → Shares. {criteria.publishedFrom && new Date(criteria.publishedFrom).toLocaleString('en-US')} – {criteria.publishedTo && new Date(criteria.publishedTo).toLocaleString('en-US')}. {criteria.thresholdsEnabled?'Minimum engagement enabled.':'No minimum engagement threshold.'}</p><p className="text-xs text-slate-600">Collection stopped: {({'candidate-budget':'Candidate budget reached','sources-exhausted':'Sources exhausted','no-new-identities':'No new posts in two rounds','budget-exhausted':'Session budget reached','stored-evidence':'Saved evidence replay','time-limit':'Time limit reached','provider-restricted':'Provider access must be resolved'} as Record<string,string>)[result.stopReason || result.searchExecution?.stopReason] || 'Complete'}</p>
+ {result.collectionCoverage?.filter((c:any)=>c.status==='failed').map((c:any,i:number)=><p key={i} className="text-xs text-amber-800">{c.platform}: {c.reason}</p>)}
+ {groups.map(([label,posts])=><section key={label} className="space-y-3"><h4 className="text-sm font-semibold">{label} ({posts.length.toLocaleString('en-US')})</h4>{!posts.length && <p className="text-xs text-slate-500">No retained posts in this group.</p>}{posts.map((post:any)=><ScoutPostCard key={post.id || post.url} post={post}/>)}</section>)}
+ </div>;
+}
+
 function ScoutPostCard({ post }: { post: any }) {
   const authorName =
     post.author ||
@@ -132,7 +141,7 @@ function ScoutPostCard({ post }: { post: any }) {
 
         {/* Post Actions / View Post */}
         <div className="flex items-center space-x-2 shrink-0">
-          {post.viral_tier && post.viral_tier !== 'Unknown' && (
+          {!post.rank && post.viral_tier && post.viral_tier !== 'Unknown' && (
             <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
               {t(post.viral_tier)}
             </span>
@@ -152,6 +161,8 @@ function ScoutPostCard({ post }: { post: any }) {
         </div>
       </div>
 
+      {(post.scout_content_assessment || post.contentAssessment) && <p className="text-xs text-slate-600">{(post.scout_content_assessment || post.contentAssessment).status==='verified'?'Verified':'Needs Verification'} · {post.saveState==='evidence-only'?'Evidence preview':'Saved automatically'}</p>}
+      {post.rank && <p className="text-xs text-slate-600">Rank {post.rank.toLocaleString('en-US')} · {({'inserted':'Inserted','refreshed':'Refreshed','existing':'Existing','evidence-only':'Saved evidence'} as Record<string,string>)[post.saveState] || 'Unknown'} · Observed {post.scout_provenance?.fetchedAt || post.provenance?.fetchedAt ? new Date(post.scout_provenance?.fetchedAt || post.provenance.fetchedAt).toLocaleString('en-US') : 'Unknown'}</p>}
       {/* ─── 2. Post Caption ─── */}
       <p className="text-xs text-slate-800 leading-relaxed font-normal line-clamp-3 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
         {post.title || post.caption || 'Untitled Social Post'}
@@ -184,6 +195,7 @@ function ScoutPostCard({ post }: { post: any }) {
           </span>
         )}
 
+      {post.rank && <span className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px]">{typeof post.shares==='number'?formatNumber(post.shares):'Unknown'} shares</span>}
         {/* CRM Match */}
         {post.kol_id && (
           <span className="inline-flex items-center space-x-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 ml-auto text-[11px]">
@@ -321,6 +333,8 @@ function ScoutSkippedPostCard({ post }: { post: any }) {
 export function ScoutTaskLauncher({
   context,
   subjects = [],
+  loadingSubjects = false,
+  onEntityTypeChange,
   entity,
   resumeSessionId,
   initialCriteria,
@@ -330,6 +344,8 @@ export function ScoutTaskLauncher({
 }: {
   context: ScoutContext;
   subjects?: ScoutSubject[];
+  loadingSubjects?: boolean;
+  onEntityTypeChange?: (type: 'kol' | 'community' | 'tracked') => void;
   entity?: KOL | Community;
   resumeSessionId?: string;
   initialCriteria?: Record<string, any>;
@@ -473,7 +489,8 @@ export function ScoutTaskLauncher({
             </div>
           )}
 
-          {postsList.length > 0 && (
+          {result.selectionMode==='top' && <TopPostResults result={result}/>}
+          {result.selectionMode!=='top' && postsList.length > 0 && (
             <div className="space-y-3 pt-2">
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
                 <Flame className="w-4 h-4 text-orange-500 fill-orange-500" />
@@ -620,50 +637,122 @@ export function ScoutTaskLauncher({
         title={context.intent === 'content' ? 'Collect Posts' : 'Refresh Data'}
         onClose={onClose}
       >
-        <label className="block text-sm font-semibold">
-          {context.intent === 'content'
-            ? 'Choose a saved profile'
-            : 'Choose accounts to refresh'}
-          <select
-            multiple={context.intent === 'refresh'}
-            value={
-              context.intent === 'refresh' ? selected : selected[0] || ''
-            }
-            onChange={(e) =>
-              setSelected(
-                Array.from(e.target.selectedOptions, (option) => option.value)
-              )
-            }
-            className={`${scoutInputClass} mt-2`}
-          >
-            {context.intent === 'content' && (
-              <option value="">Choose a profile</option>
+        {onEntityTypeChange && !context.ids?.length && (
+          <div className="mb-4">
+            <span className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Account Type
+            </span>
+            <div className="inline-flex rounded-xl border border-slate-200 p-1 bg-slate-50 gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected([]);
+                  onEntityTypeChange('kol');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  context.entityType !== 'community' &&
+                  context.entityType !== 'tracked'
+                    ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                KOLs & Creators
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected([]);
+                  onEntityTypeChange('community');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  context.entityType === 'community'
+                    ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Communities & Clubs
+              </button>
+              {context.intent === 'refresh' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelected([]);
+                    onEntityTypeChange('tracked');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    context.entityType === 'tracked'
+                      ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Tracked Accounts
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {loadingSubjects ? (
+          <div className="py-8 flex flex-col items-center justify-center space-y-2">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+            <p className="text-xs text-slate-500">Loading saved profiles…</p>
+          </div>
+        ) : (
+          <>
+            <label className="block text-sm font-semibold">
+              {context.intent === 'content'
+                ? `Choose a saved ${context.entityType === 'community' ? 'community' : 'profile'}`
+                : 'Choose accounts to refresh'}
+              <select
+                multiple={context.intent === 'refresh'}
+                value={
+                  context.intent === 'refresh' ? selected : selected[0] || ''
+                }
+                onChange={(e) =>
+                  setSelected(
+                    Array.from(e.target.selectedOptions, (option) => option.value)
+                  )
+                }
+                className={`${scoutInputClass} mt-2`}
+              >
+                {context.intent === 'content' && (
+                  <option value="">
+                    {context.entityType === 'community'
+                      ? 'Choose a community'
+                      : 'Choose a profile'}
+                  </option>
+                )}
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!subjects.length && (
+              <p className="mt-3 text-sm text-slate-500">
+                {context.entityType === 'community'
+                  ? 'No saved communities available. Add a community in its directory first.'
+                  : context.entityType === 'tracked'
+                  ? 'No tracked accounts available. Add a tracked account first.'
+                  : 'No saved profiles available. Add a profile in its directory first.'}
+              </p>
             )}
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {!subjects.length && (
-          <p className="mt-3 text-sm">
-            No saved profiles available. Add a profile in its directory first.
-          </p>
+            {selected.length > 50 && (
+              <p role="alert" className="mt-3 text-sm text-amber-800">
+                Choose up to 50 accounts per refresh.
+              </p>
+            )}
+            <button
+              type="button"
+              className={`${scoutButtonClass} mt-4`}
+              disabled={!picked.length || selected.length > 50}
+              onClick={() => setSelectionReady(true)}
+            >
+              Continue
+            </button>
+          </>
         )}
-        {selected.length > 50 && (
-          <p role="alert" className="mt-3 text-sm text-amber-800">
-            Choose up to 50 accounts per refresh.
-          </p>
-        )}
-        <button
-          type="button"
-          className={`${scoutButtonClass} mt-4`}
-          disabled={!picked.length || selected.length > 50}
-          onClick={() => setSelectionReady(true)}
-        >
-          Continue
-        </button>
       </ScoutDialogFrame>
     );
 
@@ -813,7 +902,7 @@ export function ScoutSessionResults({
     ? 'Task Failed'
     : isNoResults
     ? 'No Results'
-    : result?.groups && !result.counts?.qualified && (result.groups.needsVerification?.length || result.groups.belowTarget?.length)
+    : session.kind==='preview' && result?.groups && !result.counts?.qualified && (result.groups.needsVerification?.length || result.groups.belowTarget?.length)
     ? 'Needs Review'
     : isPartial
     ? 'Completed with Warnings'
@@ -833,11 +922,11 @@ export function ScoutSessionResults({
 
   // Counts & metrics breakdown
   const counts = result?.counts || {};
-  const postsList: any[] = result?.groups?.qualified || result?.posts || [];
+  const postsList: any[] = session.kind==='preview'?result?.groups?.qualified || []:result?.posts || [];
   const skippedList: any[] = result?.skippedPosts || [];
   const candidatesList: any[] = result?.candidates || [];
 
-  const savedCount = counts.qualified ?? (session.kind==='preview'?candidatesList.filter(c=>c.reviewState==='Matched').length:(postsList.length || counts.inserted || 0));
+  const savedCount = (session.kind==='preview'?counts.qualified:counts.saved ?? counts.qualified) ?? (session.kind==='preview'?candidatesList.filter(c=>c.reviewState==='Matched').length:(postsList.length || counts.inserted || 0));
   const refreshedCount = counts.refreshed ?? 0;
   const unverifiedCount = counts.unverified ?? (session.kind==='preview'?candidatesList.filter(c=>c.reviewState==='Needs Review').length:0);
   const excludedCount = counts.excluded ?? result?.excludedCount ?? 0;
@@ -1025,7 +1114,7 @@ export function ScoutSessionResults({
           </div>
         )}
 
-        {result?.qualityCriteria && <p className="text-xs text-slate-600" aria-label="Content quality criteria">
+        {result?.qualityCriteria && result.selectionMode!=='top' && <p className="text-xs text-slate-600" aria-label="Content quality criteria">
           {result.qualityCriteria.mode==='high-engagement'
             ? `High Engagement: last ${result.qualityCriteria.recentDays} days; at least ${Number(result.qualityCriteria.minInteractions).toLocaleString('en-US')} likes / reactions + comments or ${Number(result.qualityCriteria.minViews).toLocaleString('en-US')} views. Ranked by interactions, then views. This is not a measured growth trend.`
             : 'Topic matches: no minimum engagement requirement.'}
@@ -1072,7 +1161,7 @@ export function ScoutSessionResults({
             <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 shadow-2xs flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
-                  {session.kind==='preview'?'Qualified Profiles':result?.executionMode==='stored-evidence'?'Matched Evidence':'Qualified Posts'}
+                  {session.kind==='preview'?'Qualified Profiles':result?.executionMode==='stored-evidence'?'Matched Evidence':'Saved Posts'}
                 </span>
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               </div>
@@ -1081,7 +1170,7 @@ export function ScoutSessionResults({
                   {savedCount.toLocaleString('en-US')}
                 </span>
                 <span className="text-[10px] text-emerald-600 mt-0.5 block truncate">
-                  {session.kind==='preview'?'Approval required before import':result?.executionMode==='stored-evidence'?'Preview only':result?.groups?`${counts.inserted || 0} inserted · ${counts.duplicate || 0} duplicate`:'Stored in database'}
+                  {session.kind==='preview'?'Approval required before import':result?.executionMode==='stored-evidence'?'Preview only':result?.groups?`${counts.saved ?? counts.inserted ?? 0} saved · ${counts.inserted || 0} inserted · ${counts.refreshed || 0} refreshed · ${counts.duplicate || 0} existing · ${counts.unverified || 0} need verification · ${counts.belowTarget || counts.filteredLowEngagement || 0} filtered`:'Stored in database'}
                 </span>
               </div>
             </div>
@@ -1115,7 +1204,7 @@ export function ScoutSessionResults({
                   {unverifiedCount.toLocaleString('en-US')}
                 </span>
                 <span className="text-[10px] text-amber-600 mt-0.5 block truncate">
-                  Requires review
+                  {session.kind==='preview'?'Requires review':result.executionMode==='stored-evidence'?'Evidence only':'Informational; no approval needed'}
                 </span>
               </div>
             </div>
@@ -1157,7 +1246,8 @@ export function ScoutSessionResults({
         )}
 
         {/* ─── 1. SAVED POSTS (Rich Social Post Cards with Author & Metrics) ─── */}
-        {postsList.length > 0 && (
+        {result?.selectionMode==='top' && <TopPostResults result={result}/>}
+        {result?.selectionMode!=='top' && postsList.length > 0 && (
           <section className="mt-4 space-y-3" aria-label="Saved posts">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
@@ -1177,8 +1267,8 @@ export function ScoutSessionResults({
           </section>
         )}
 
-        {result?.searchExecution && <div className="rounded-xl border border-slate-200 p-3 text-xs space-y-1"><p className="font-semibold">Search summary</p><p>{result.searchExecution.rounds?.length || 0} rounds · {result.searchExecution.uniqueCount || 0} unique results · {result.searchExecution.duplicateCount || 0} duplicate observations · {result.searchExecution.unparseableCount || 0} unusable rows</p><p>Stopped: {String(result.searchExecution.stopReason).replaceAll('-', ' ')}</p>{result.searchCost && <p>{session.params.searchStrategy==='seed_content_v1'?'Provider charges + model estimate':'Actual provider cost'}: {result.searchCost.actualUsd===null?'Pending reconciliation':`$${Number(result.searchCost.actualUsd).toFixed(3)}`} · Reviewed cap ${Number(result.searchCost.approvedCapUsd).toFixed(2)}</p>}</div>}
-        {result?.groups && (session.kind==='preview'?['excluded']:['needsVerification','belowTarget','excluded']).map(group=>result.groups[group]?.length>0 && <section key={group} className="mt-4 space-y-2" aria-label={group==='needsVerification'?'Needs Verification':group==='belowTarget'?'Below Target':'Excluded'}><h3 className="text-xs font-bold">{group==='needsVerification'?'Needs Verification':group==='belowTarget'?'Below Target':'Excluded'} ({result.groups[group].length.toLocaleString('en-US')})</h3><p className="text-xs text-slate-500">Saved in Scout for inspection; not added to Trending.</p><div className="max-h-64 overflow-y-auto space-y-2">{result.groups[group].map((post:any,index:number)=>session.kind==='preview'?<div key={post.accountKey || index} className="rounded-lg border p-2 text-xs"><p>{post.name}</p><p>{post.reasons?.join(' · ')}</p></div>:<ScoutSkippedPostCard key={post.url || index} post={post}/>)}</div></section>)}
+        {result?.searchExecution && <div className="rounded-xl border border-slate-200 p-3 text-xs space-y-1"><p className="font-semibold">Search summary</p><p>{result.searchExecution.rounds?.length || 0} rounds · {result.searchExecution.uniqueCount || 0} unique results · {result.searchExecution.duplicateCount || 0} duplicate observations · {result.searchExecution.unparseableCount || 0} unusable rows</p><p>Stopped: {String(result.searchExecution.stopReason).replaceAll('-', ' ')}</p>{result.searchCost && <p>{session.params.searchStrategy==='seed_content_v1'?'API usage value + model estimate':'Actual provider cost'}: {result.searchCost.actualUsd===null?'Pending reconciliation':`$${Number(result.searchCost.actualUsd).toFixed(3)}`} · Reviewed cap ${Number(result.searchCost.approvedCapUsd).toFixed(2)}</p>}</div>}
+        {result?.groups && (session.kind==='preview'?['excluded']:['needsVerification','belowTarget','excluded']).map(group=>result.groups[group]?.length>0 && <section key={group} className="mt-4 space-y-2" aria-label={group==='needsVerification'?'Needs Verification':group==='belowTarget'?'Filtered — Low Engagement':'Excluded'}><h3 className="text-xs font-bold">{group==='needsVerification'?'Needs Verification':group==='belowTarget'?'Filtered — Low Engagement':'Excluded'} ({result.groups[group].length.toLocaleString('en-US')})</h3><p className="text-xs text-slate-500">{group==='needsVerification'?result.executionMode==='stored-evidence'?'Evidence preview only; no database writes.':result.savedPosts?'Saved automatically with incomplete evidence. No approval is required.':'Retained as Scout evidence; not saved by this historical session.':'Excluded from database ingestion; evidence retained in Scout.'}</p><div className="max-h-64 overflow-y-auto space-y-2">{result.groups[group].map((post:any,index:number)=>session.kind==='preview'?<div key={post.accountKey || index} className="rounded-lg border p-2 text-xs"><p>{post.name}</p><p>{post.reasons?.join(' · ')}</p></div>:<ScoutSkippedPostCard key={post.url || index} post={post}/>)}</div></section>)}
 
         {/* ─── 2. POSTS NOT SAVED (Audited Skipped List with Author & Metrics) ─── */}
         {!result?.groups && skippedList.length > 0 && (

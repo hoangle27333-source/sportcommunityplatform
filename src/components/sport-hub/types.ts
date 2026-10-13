@@ -100,15 +100,19 @@ export interface Community {
   audienceAudit?: KolAudienceAudit;
 }
 
-export interface Post {
+export interface Post extends Partial<import('@/lib/apify/post-contracts').PostWorkspaceMetadata> {
   id: string;
   title: string;
   author: string;
   kolRecordIds: string[];
+  communityRecordIds?: string[];
+  publishedAt?: string | null;
   platform: string;
   likes: number;
   comments: number;
   views: number;
+  shares?: number | null;
+  scoutContentAssessment?: any;
   er: number;
   postUrl: string;
   missingMetrics?: string[];

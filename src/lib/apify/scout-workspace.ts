@@ -4,7 +4,7 @@ import {scoutOutcome} from './scout-outcome';
 export const SCOUT_PLATFORMS = ['Instagram', 'Facebook', 'TikTok'] as const;
 export type ScoutPlatform = typeof SCOUT_PLATFORMS[number];
 export type ScoutIntent = 'profiles' | 'content' | 'refresh';
-export type ScoutKind = 'preview' | 'trends' | 'kol-posts' | 'community-posts' | 'sync' | 'tracked' | 'comments' | 'inspect';
+export type ScoutKind = 'preview' | 'trends' | 'account-posts' | 'kol-posts' | 'community-posts' | 'sync' | 'tracked' | 'comments' | 'inspect';
 export type ScoutContext = {
   intent: ScoutIntent;
   mode?: 'search' | 'entity' | 'link';
@@ -14,7 +14,7 @@ export type ScoutContext = {
   url?: string;
 };
 export const TASK_LABELS: Record<string, string> = {
-  preview: 'Find Profiles', trends: 'Find Content', 'kol-posts': 'Collect Posts',
+  preview: 'Find Profiles', trends: 'Scout Trending Posts', 'account-posts': 'Scout Account Posts', 'kol-posts': 'Collect Posts',
   'community-posts': 'Collect Posts', sync: 'Refresh Data', tracked: 'Refresh Data',
   comments: 'Collect Comments', inspect: 'Fetch Verified Details',
 };
@@ -24,7 +24,7 @@ export type ScoutSessionSummary = {
   id: string; kind: ScoutKind; title: string; subject: string; createdAt: string;
   status: 'pending' | 'running' | 'complete' | 'failed'; partial: boolean; empty?: boolean;
   reviewState: 'needs-review' | 'reviewed' | 'none'; remainingCandidates: number;
-  progress: { stage?: string }; dispatchState?: string; warnings: string[]; counts: Record<string, number>;
+  progress: { stage?: string; totalAccounts?: number; completedAccounts?: number; accountResults?: Record<string,unknown>[]; skippedChannels?: Record<string,unknown>[] }; dispatchState?: string; warnings: string[]; counts: Record<string, number>;
   params: Record<string, unknown>; result?: Record<string, unknown>;
 };
 
@@ -35,17 +35,17 @@ export function sessionSummary(session: any, subjects: Record<string, string> = 
   const candidates = session.candidates || session.result?.candidates || [];
   const imported = new Set(session.progress?.importedCandidateIds || []);
   const remainingCandidates = candidates.filter((c: any) => c.reviewState !== 'Excluded' && !imported.has(c.candidateId) && session.review_decisions?.[c.candidateId]?.decision !== 'rejected').length;
-  const ids: string[] = params.ids || [params.kolId || params.communityId || params.trackedAccountId].filter(Boolean);
+  const ids: string[] = params.accounts?.map((a:any)=>a.id) || params.ids || [params.kolId || params.communityId || params.trackedAccountId].filter(Boolean);
   const names = ids.map(id => subjects[id]).filter(Boolean);
   const subject = params.keyword || params.url || (names.length ? `${names.slice(0, 2).join(', ')}${ids.length > 2 ? ` +${ids.length - 2}` : ''}` : `${ids.length} saved ${params.entityType === 'community' ? 'communities' : 'accounts'}`);
   return {
-    id: session.id, kind: session.kind, title: TASK_LABELS[session.kind] || 'Scout Task', subject,
+    id: session.id, kind: session.kind, title: params.selectionMode==='top' ? 'Find Top Posts' : TASK_LABELS[session.kind] || 'Scout Task', subject,
     createdAt: session.created_at, status, partial: !!outcome?.partial, empty:status==='complete' && !outcome?.groups?.needsVerification?.length && !outcome?.groups?.belowTarget?.length && (session.kind==='preview' ? !candidates.length : ['trends','kol-posts','community-posts'].includes(session.kind) && Array.isArray(outcome?.posts) && !outcome.posts.length && !outcome.counts?.refreshed && !outcome.counts?.duplicate),
-    reviewState: session.kind === 'trends' && status==='complete' && (outcome?.groups?.needsVerification?.length || outcome?.groups?.belowTarget?.length) ? 'needs-review' : session.kind === 'preview' && status === 'complete' ? remainingCandidates ? 'needs-review' : 'reviewed' : 'none',
-    remainingCandidates:session.kind==='trends'?(outcome?.groups?.needsVerification?.length || 0)+(outcome?.groups?.belowTarget?.length || 0):remainingCandidates, dispatchState:session.dispatch_state, progress: { stage: session.progress?.stage },
+    reviewState: session.kind === 'preview' && status === 'complete' ? remainingCandidates ? 'needs-review' : 'reviewed' : 'none',
+    remainingCandidates:session.kind==='preview'?remainingCandidates:0, dispatchState:session.dispatch_state, progress: { stage: session.progress?.stage,...(session.kind==='account-posts'?{totalAccounts:session.progress?.totalAccounts,completedAccounts:session.progress?.completedAccounts,accountResults:session.progress?.accountResults,skippedChannels:session.progress?.skippedChannels}:{}) },
     warnings: explainSavedProviderWarnings([...(status==='pending' ? session.warnings || [] : (session.warnings || []).filter((w:string)=>w!=='Waiting for the worker queue to recover.')), ...(session.result?.warnings || [])], []),
     counts: Object.fromEntries(Object.entries(session.result?.counts || {}).filter((entry):entry is [string,number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))),
-    params: Object.fromEntries(Object.entries(params).filter(([key]) => ['maxModelUsd','searchStrategy','seedUrls','seedDatasetId','datasetSeedUrls','providerSelection','approvedKeywords','keywordsApproved','assessmentRevision','accountPolicyVersion','sizeMetric','minFollowers','maxFollowers','minMembers','maxMembers','entityTypes','geographyMode','searchPlan','maxSessionUsd','planHash','parentSessionId','executionMode','queryVariants','qualityMode','recentDays','minInteractions','minViews','keyword','targetType','platform','geography','limit','searchMode','sport','kolId','communityId','forceRefresh','ids','entityType','trackedAccountId','url','selectedPostIds','notes','uiContext','collectionMode','channelUrls'].includes(key))),
+    params: Object.fromEntries(Object.entries(params).filter(([key]) => ['accounts','mode','limitPerAccount','suggestionIdentity','suggestionPostIds','verificationSessionId','maxModelUsd','searchStrategy','seedUrls','seedDatasetId','datasetSeedUrls','providerSelection','approvedKeywords','keywordsApproved','assessmentRevision','accountPolicyVersion','sizeMetric','minFollowers','maxFollowers','minMembers','maxMembers','entityTypes','geographyMode','searchPlan','maxSessionUsd','planHash','parentSessionId','executionMode','queryVariants','qualityMode','recentDays','minInteractions','minViews','keyword','targetType','platform','geography','limit','searchMode','sport','kolId','communityId','forceRefresh','ids','entityType','trackedAccountId','url','selectedPostIds','notes','uiContext','collectionMode','channelUrls','selectionMode','rankingMode','publishedFrom','publishedTo','thresholdsEnabled','qualityFilter'].includes(key))),
   };
 }
 
@@ -61,6 +61,7 @@ export function taskRequest(context: ScoutContext, params: Record<string, unknow
   const uiContext = { source: context.source || '/scout' };
   if (context.intent === 'profiles') return { url: '/api/sport-hub/scout', body: { ...params, action: 'preview', uiContext } };
   if (context.intent === 'content' && context.mode !== 'entity') return { url: '/api/sport-hub/scout/market-trends', body: { ...params, uiContext } };
+  if (context.intent === 'content' && params.accounts) return {url:'/api/sport-hub/scout/account-posts',body:{...params,uiContext}};
   if (context.intent === 'content') {
     const community = context.entityType === 'community';
     return { url: `/api/sport-hub/scout/${community ? 'community' : 'kol'}-posts`, body: { ...params, [community ? 'communityId' : 'kolId']: context.ids?.[0], uiContext } };

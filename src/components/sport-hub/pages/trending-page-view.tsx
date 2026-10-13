@@ -1,4 +1,6 @@
 "use client";
+
+function PostVerificationBadge({assessment}:{assessment?:{status:string;reason?:string}}){if(!assessment)return null;return <span title={assessment.reason || 'Evidence status; approval is not required.'} className="ml-1 inline-flex rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-700">{assessment.status==='verified'?'Verified':'Needs Verification'}</span>;}
 import { ScoutTaskLauncher } from "../scout-task-launcher";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -667,6 +669,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                             >
                               <Flame className="w-3 h-3 text-rose-500" />
                               <span>{t(p.viralGrade)}</span>
+                              <PostVerificationBadge assessment={p.scoutContentAssessment}/>
                             </span>
                           </td>
                           <td className="py-2 px-3 text-center whitespace-nowrap">
@@ -740,6 +743,7 @@ export function TrendingPageView({ initialData }: TrendingPageViewProps) {
                         >
                           <Flame className="w-3 h-3" />
                           <span>{t(p.viralGrade)}</span>
+                              <PostVerificationBadge assessment={p.scoutContentAssessment}/>
                         </span>
                       </div>
 

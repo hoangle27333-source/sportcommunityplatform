@@ -1,3 +1,6 @@
+vi.mock('./content-settings',async()=>({...await vi.importActual<any>('./content-settings'),resolveContentFilter:async()=>({enabled:true,minViews:1000,minInteractions:50,metricRule:'views-first',policyVersion:1})}));
+vi.mock('./top-post-plan',()=>({assertTopPostSchema:async()=>{}}));
+vi.mock('./post-metadata',()=>({assertPostWorkspaceSchema:async()=>{}}));
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({enqueue:vi.fn(),updates:[] as any[],inserts:[] as any[],role:'editor'}));
 const session={id:'00000000-0000-0000-0000-000000000001',status:'pending',progress:{stage:'queued'},warnings:[]};
@@ -45,4 +48,11 @@ it('blocks hashtag and unsupported-platform query variants before creating work'
 it('requires a reviewed plan for every new profile search',async()=>{
  await expect(startSession('preview',{keyword:'Badminton',platform:'TikTok'})).rejects.toMatchObject({code:'PLAN_REQUIRED'});
  expect(state.inserts).toHaveLength(0);expect(state.enqueue).not.toHaveBeenCalled();vi.useRealTimers();
+});
+
+it('validates top-post windows, requires a reviewed plan and preserves new criteria',async()=>{
+ const {requestSchema}=await import('./sessions');const valid={selectionMode:'top',rankingMode:'views-first',keyword:'Running',publishedFrom:'2026-10-01T00:00:00.000Z',publishedTo:'2026-10-08T00:00:00.000Z',thresholdsEnabled:false};
+ for(const change of [{publishedTo:undefined},{publishedTo:valid.publishedFrom},{publishedTo:'2026-12-01T00:00:00.000Z'},{publishedFrom:'2026-08-01T00:00:00.000Z'},{collectionMode:'latest-30'}])expect(requestSchema.safeParse({...valid,...change}).success).toBe(false);
+ await expect(startSession('trends',valid)).rejects.toMatchObject({code:'PLAN_REQUIRED'});
+ await startSession('trends',{...valid,planHash:'a'.repeat(64)});expect(state.inserts[0].params).toMatchObject(valid);vi.useRealTimers();
 });

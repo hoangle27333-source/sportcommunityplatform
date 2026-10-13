@@ -1585,6 +1585,12 @@ export function DiscoveryScoutModal({
                         )}
                       </div>
 
+                      {candidate.searchHints?.length ? <details className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
+                        <summary className="cursor-pointer font-semibold">Brave discovery hints ({formatNumber(candidate.searchHints.length)})</summary>
+                        <p>Search snippets guide verification. They do not establish profile attributes or qualification.</p>
+                        {candidate.searchHints.map((hint,index)=><div key={`${hint.url}:${index}`} className="mt-2"><a href={hint.url} target="_blank" rel="noreferrer" className="underline">{hint.title || 'View discovery source'}</a><p>{hint.snippet}</p><p>Query: {hint.query.requested}</p></div>)}
+                      </details> : null}
+
                       {/* Evidence Accordion if available (only show when entityAssessment is not present to avoid duplicate panels) */}
                       {!candidate.entityAssessment && candidate.evidence.length > 0 && (
                         <details className="text-xs text-slate-600 rounded-lg bg-slate-50/80 p-2 border border-slate-200/60">

@@ -1,0 +1,139 @@
+{
+  "sessionId": "d5991f70-d799-40d9-8136-5ee52c8a5695",
+  "status": "complete",
+  "counts": {
+    "excluded": 0,
+    "inserted": 4,
+    "duplicate": 0,
+    "qualified": 4,
+    "refreshed": 0,
+    "topByViews": 0,
+    "unverified": 12,
+    "belowTarget": 1,
+    "viewsUnavailable": 4
+  },
+  "stopReason": "candidate-budget",
+  "groups": {
+    "topByViews": 0,
+    "viewsUnavailable": 4
+  },
+  "searchExecution": {
+    "rounds": [
+      {
+        "round": 1,
+        "newIdentities": 6,
+        "requestedRows": 10
+      },
+      {
+        "round": 2,
+        "newIdentities": 8,
+        "requestedRows": 20
+      },
+      {
+        "round": 3,
+        "newIdentities": 3,
+        "requestedRows": 30
+      }
+    ],
+    "stopReason": "candidate-budget",
+    "uniqueCount": 17,
+    "providerCount": 17,
+    "requestedRows": 60,
+    "duplicateCount": 0,
+    "unparseableCount": 0
+  },
+  "searchCost": {
+    "actualUsd": 0.0243,
+    "reservedUsd": 0.7176,
+    "approvedCapUsd": 0.25,
+    "costPerQualifiedNew": 0.006075,
+    "trialCreditValueUsd": 0
+  },
+  "persisted": [
+    {
+      "id": "f5dfeccc-918f-4489-9705-26fd55fb6052",
+      "post_url": "https://instagram.com/p/DdlEEDziZEa",
+      "views": 0,
+      "likes": 2,
+      "comments": 0,
+      "shares": null,
+      "scout_missing_metrics": [
+        "views",
+        "shares",
+        "er"
+      ]
+    },
+    {
+      "id": "f917059c-2605-41d6-b4c0-f1f5bb8487d9",
+      "post_url": "https://instagram.com/p/DdXoZIjDNQp",
+      "views": 0,
+      "likes": 1,
+      "comments": 0,
+      "shares": null,
+      "scout_missing_metrics": [
+        "views",
+        "shares",
+        "er"
+      ]
+    },
+    {
+      "id": "bf6d176b-3282-4121-bcf3-1eb04c2cbdfa",
+      "post_url": "https://instagram.com/p/Dear7I2jXhr",
+      "views": 0,
+      "likes": 0,
+      "comments": 0,
+      "shares": null,
+      "scout_missing_metrics": [
+        "views",
+        "shares",
+        "er"
+      ]
+    },
+    {
+      "id": "70ddb459-24c0-4122-97e5-14e8f5cae9c2",
+      "post_url": "https://instagram.com/p/DeVpK5Jj_yN",
+      "views": 0,
+      "likes": 0,
+      "comments": 0,
+      "shares": null,
+      "scout_missing_metrics": [
+        "views",
+        "shares",
+        "er"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "platform": "Instagram",
+      "state": "succeeded",
+      "build": "0.0.796",
+      "build_id": "EU82CClFsIaPWKvDo",
+      "provider_run_id": "WmmkMniSrnPQq1kEA",
+      "actual_usd": 0.0162,
+      "reserved_usd": 0.25
+    },
+    {
+      "platform": "Instagram",
+      "state": "succeeded",
+      "build": "0.0.796",
+      "build_id": "EU82CClFsIaPWKvDo",
+      "provider_run_id": "qIBgwpCZFgX5QnyhK",
+      "actual_usd": 0,
+      "reserved_usd": 0.2338
+    },
+    {
+      "platform": "Instagram",
+      "state": "succeeded",
+      "build": "0.0.796",
+      "build_id": "EU82CClFsIaPWKvDo",
+      "provider_run_id": "Bvz0ZcaTvFq8qswqS",
+      "actual_usd": 0.0081,
+      "reserved_usd": 0.2338
+    }
+  ],
+  "warnings": [
+    "Found 4/10 posts in the selected window. Criteria were not relaxed.",
+    "Instagram: An item was skipped because its format could not be validated."
+  ]
+}

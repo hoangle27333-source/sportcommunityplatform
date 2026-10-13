@@ -1,5 +1,5 @@
 import { beforeEach,it,expect,vi } from 'vitest';
-const state=vi.hoisted(()=>({calls:[] as any[],failFacebook:false,unknownStart:false,junk:false,analysisFailure:false}));
+const state=vi.hoisted(()=>({calls:[] as any[],failFacebook:false,unknownStart:false,junk:false,analysisFailure:false,brave:false}));
 vi.mock('../supabase/admin',()=>({createAdminClient:()=>({from:()=>{const q:any={select:()=>q,in:async()=>({data:[],error:null})};return q;}})}));
 vi.mock('../apify/session-snapshot',()=>({sessionSnapshot:async(_id:any,_ns:any,_key:any,create:any)=>create()}));
 vi.mock('../apify/task-checkpoint',()=>({checkpointTask:async(_id:any,_key:any,work:any)=>work()}));
@@ -10,6 +10,7 @@ vi.mock('./providers',async importOriginal=>{
   if(state.unknownStart){const error:any=new Error('Provider start unresolved');error.code='START_UNKNOWN';throw error;}
   if(c.platform==='Facebook'&&state.failFacebook)throw new Error('Facebook unavailable');
   const prefix=c.platform==='TikTok'?'https://tiktok.com/@':'https://facebook.com/';
+  if(c.operation==='discovery'&&state.brave){const {buildBraveRequest,normalizeBraveResponse}=await import('./brave');const request=buildBraveRequest(c.platform,input.query);return normalizeBraveResponse({type:'search',query:{original:request.params.q},web:{results:[{url:`${prefix}good`,title:'Badminton coach',description:'Badminton training'},{url:`${prefix}good/posts/123`,title:'Unresolved post'}]}},request);}
   if(c.operation==='discovery'&&state.junk)return [{profileUrl:`${prefix}thu.vui.texas`,name:'Thú Vui Texas',bio:'Life in America',followers:1000}];
   if(c.operation==='discovery')return [{profileUrl:`${prefix}${input.query==='later'?'good':'weak'+input.query}`,bio:'Badminton enthusiast',followers:1000,entityType:'person'}];
   if(c.operation==='profile')return [{profileUrl:input.url,followers:1000,entityType:'person',location:'Ho Chi Minh City'}];
@@ -23,7 +24,7 @@ vi.mock('./providers',async importOriginal=>{
 });
 import { collectExperimental } from './execution';
 const plan=(platforms=['Facebook'])=>({version:6,criteria:{keyword:'badminton',geography:'Ho Chi Minh City',targetType:'Individual KOLs',limit:1,minFollowers:1000},sources:platforms.map(platform=>({platform})),experimental:{knownSeedUrls:[],seeds:[],capabilities:platforms.flatMap(platform=>['discovery','profile','posts','analysis'].map(operation=>({platform,operation,provider:'apify'}))),units:['one','two','three','four','later','six'].flatMap(query=>platforms.map(platform=>({query,platform,method:'content-author'})))}});
-beforeEach(()=>{state.calls=[];state.failFacebook=false;state.unknownStart=false;state.junk=false;state.analysisFailure=false;});
+beforeEach(()=>{state.calls=[];state.failFacebook=false;state.unknownStart=false;state.junk=false;state.analysisFailure=false;state.brave=false;});
 it('keeps successfully collected details and posts when analysis runs out of trial capacity',async()=>{
  state.analysisFailure=true;
  const result=await collectExperimental({sessionId:'fixture',searchPlan:plan()},new Set(),[]);
@@ -62,4 +63,14 @@ it('audits unrelated provider hits without enriching or counting them as new acc
  expect(result.discardedDiscovery?.map(p=>p.name)).toEqual(['Thú Vui Texas']);
  expect(state.calls.every(c=>c.operation==='discovery')).toBe(true);
  expect(result.rounds.every(r=>r.newCandidates===0&&r.qualifiedNew===0)).toBe(true);
+});
+
+it('enriches Brave search hints through Apify without qualifying snippets or inferring post authors',async()=>{
+ state.brave=true;const p:any=plan();p.experimental.capabilities[0].provider='brave';
+ const result=await collectExperimental({sessionId:'fixture',searchPlan:p},new Set(),[]);
+ const profile=result.profiles.Facebook.find(p=>p.url.endsWith('good'))!;
+ expect(state.calls.some(c=>c.operation==='profile')).toBe(true);expect(state.calls.some(c=>c.operation==='posts')).toBe(true);
+ expect(profile.bio).toBe('');expect(profile.searchHints?.[0].title).toBe('Badminton coach');
+ expect(profile.posts).toHaveLength(3);expect(profile.location).toBe('Ho Chi Minh City');
+ expect(result.warnings.some(w=>w.includes('unresolved account identity'))).toBe(true);
 });
