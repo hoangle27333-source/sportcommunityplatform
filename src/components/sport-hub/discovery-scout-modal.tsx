@@ -1486,8 +1486,8 @@ export function DiscoveryScoutModal({
                         )}
                       </div>
 
-                      {/* Evidence Accordion if available */}
-                      {candidate.evidence.length > 0 && (
+                      {/* Evidence Accordion if available (only show when entityAssessment is not present to avoid duplicate panels) */}
+                      {!candidate.entityAssessment && candidate.evidence.length > 0 && (
                         <details className="text-xs text-slate-600 rounded-lg bg-slate-50/80 p-2 border border-slate-200/60">
                           <summary className="font-semibold text-slate-700 cursor-pointer select-none">
                             Profile evidence signals ({candidate.evidence.length})
@@ -1504,10 +1504,10 @@ export function DiscoveryScoutModal({
                       {/* Editable Verification & Classification Box */}
                       {isEditorOpen && (
                         <div
-                          className={`p-3.5 rounded-xl border transition-all space-y-3 ${
+                          className={`p-3 sm:p-3.5 rounded-xl border transition-all space-y-2.5 ${
                             isNeedsReview
-                              ? "bg-amber-50/40 border-amber-200/80 shadow-xs"
-                              : "bg-slate-50 border-slate-200 shadow-xs"
+                              ? "bg-amber-50/30 border-amber-200/90 shadow-2xs"
+                              : "bg-slate-50 border-slate-200 shadow-2xs"
                           }`}
                         >
                           {/* Box Header */}
@@ -1529,7 +1529,7 @@ export function DiscoveryScoutModal({
                           </div>
 
                           {/* 3-Column Responsive Selectors */}
-                          <div className={`grid grid-cols-1 ${candidate.entityAssessment ? "sm:grid-cols-2" : "sm:grid-cols-3"} gap-3`}>
+                          <div className={`grid grid-cols-1 ${candidate.entityAssessment ? "sm:grid-cols-2" : "sm:grid-cols-3"} gap-2.5`}>
                             {/* Field 1: Entity / Profile Type */}
                             {!candidate.entityAssessment && <div className="space-y-1">
                               <label className="block text-[11px] font-bold text-slate-700">
@@ -1636,7 +1636,28 @@ export function DiscoveryScoutModal({
                             </div>
                           </div>
 
-                          {candidate.assessmentVersion===7 && <div className="space-y-2 text-xs"><p className="text-slate-600">Your corrections are saved as team review, separately from provider observations. Audience size requirements still apply.</p><button type="button" disabled={savingReview || importing || isApproved || !attributesChanged(candidate)} onClick={()=>void saveAttributes(candidate)} className="rounded border border-indigo-300 px-3 py-1.5 text-indigo-700 disabled:opacity-40">Save topic and location</button>{candidate.manualAttributeReview && <p className="text-slate-500">Team review saved: {candidate.manualAttributeReview.confirmedAt}</p>}</div>}
+                          {candidate.assessmentVersion===7 && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/70 text-xs">
+                              <p className="text-[11px] text-slate-500 leading-snug">
+                                Your corrections are saved as team review, separately from provider observations. Audience size requirements still apply.
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {candidate.manualAttributeReview && (
+                                  <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded font-mono">
+                                    Team review saved: {candidate.manualAttributeReview.confirmedAt}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={savingReview || importing || isApproved || !attributesChanged(candidate)}
+                                  onClick={()=>void saveAttributes(candidate)}
+                                  className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 text-xs transition shadow-2xs disabled:opacity-40 cursor-pointer"
+                                >
+                                  Save topic and location
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           {/* Quick Action Alerts if Mismatched */}
                           {!candidate.entityAssessment && edit.classification !== expected && edit.classification !== "Unknown" && (
                             <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs">
@@ -1706,7 +1727,28 @@ export function DiscoveryScoutModal({
                         </div>
                       )}
 
-                      {isPending && blockers.length > 0 && <div id={`approval-blockers-${candidate.candidateId}`} role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><p className="font-semibold">Approval is blocked</p><ul className="mt-1 list-disc pl-4 space-y-1">{blockers.map(reason=><li key={reason}>{reason}</li>)}</ul>{candidate.assessmentVersion===7 && <p className="mt-2">You can correct topic and location above, then save your team review. Audience size and account type must still meet the selected criteria.</p>}</div>}
+                      {isPending && blockers.length > 0 && (
+                        <div
+                          id={`approval-blockers-${candidate.candidateId}`}
+                          role="note"
+                          className="rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-xs text-amber-900 space-y-1"
+                        >
+                          <p className="font-bold flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>Approval is blocked</span>
+                          </p>
+                          <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-amber-800">
+                            {blockers.map((reason) => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
+                          {candidate.assessmentVersion === 7 && (
+                            <p className="text-[10px] text-amber-700 pt-0.5">
+                              You can correct topic and location above, then save your team review. Audience size and account type must still meet the selected criteria.
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {/* Action Buttons Row */}
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                         <div className="flex flex-wrap items-center gap-2">
