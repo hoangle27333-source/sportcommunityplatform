@@ -2,7 +2,6 @@
 import { approvalBlockers } from '@/lib/apify/approval-readiness';
 import { hasDiscoveryLead } from '@/lib/scout-experimental/retrieval-admission';
 import { ExperimentalScoutFields,emptyExperimental,type ExperimentalInputs } from './experimental-scout-fields';
-import { AccountEvidencePanel } from './account-evidence-panel';
 import { AccountSizeFields,savedSizeCriteria } from './account-size-fields';
 import type {AccountSizeCriteria} from '@/lib/apify/account-criteria';
 import { ENTITY_TYPES, legacyClassification, selectedEntityTypes, type EntityType } from '@/lib/apify/account-evidence';
@@ -1311,7 +1310,7 @@ export function DiscoveryScoutModal({
                 const isPending = reviewStatus(candidate) === "Pending";
                 const isNeedsReview = candidate.reviewState === "Needs Review";
                 const isMatched = candidate.reviewState === "Matched";
-                const isEditorOpen = isNeedsReview || expandedEdits.has(candidate.candidateId);
+                const isEditorOpen = isNeedsReview || expandedEdits.has(candidate.candidateId) || Boolean(candidate.entityAssessment && isPending);
 
                 return (
                   <div
@@ -1500,10 +1499,11 @@ export function DiscoveryScoutModal({
                         </details>
                       )}
 
-                      <AccountEvidencePanel candidate={candidate} disabled={savingReview || importing || isApproved} onDraftChange={type=>setTypeDrafts(prev=>({...prev,[candidate.candidateId]:type}))} onCorrect={type=>void handleFeedbackAndReject(candidate,'Wrong Entity Type',undefined,type)}/>
                       {/* Editable Verification & Classification Box */}
                       {isEditorOpen && (
                         <div
+                          role="region"
+                          aria-label="Account evidence"
                           className={`p-3 sm:p-3.5 rounded-xl border transition-all space-y-2.5 ${
                             isNeedsReview
                               ? "bg-amber-50/30 border-amber-200/90 shadow-2xs"
@@ -1529,45 +1529,97 @@ export function DiscoveryScoutModal({
                           </div>
 
                           {/* 3-Column Responsive Selectors */}
-                          <div className={`grid grid-cols-1 ${candidate.entityAssessment ? "sm:grid-cols-2" : "sm:grid-cols-3"} gap-2.5`}>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                             {/* Field 1: Entity / Profile Type */}
-                            {!candidate.entityAssessment && <div className="space-y-1">
-                              <label className="block text-[11px] font-bold text-slate-700">
-                                Entity Type
-                              </label>
-                              <select
-                                disabled={savingReview || importing || isApproved}
-                                value={edit.classification}
-                                onChange={(e) => updateCandidateEdit(candidate.candidateId, candidate, { classification: e.target.value as CandidateClassification })}
-                                className={`w-full text-xs font-medium rounded-lg border px-2.5 py-1.5 transition bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 ${
-                                  edit.classification === expected
-                                    ? "border-emerald-300 text-slate-900"
-                                    : edit.classification === "Unknown"
-                                    ? "border-amber-300 text-amber-900"
-                                    : "border-red-300 text-red-900"
-                                }`}
-                              >
-                                <option value="Individual">Individual Creator</option>
-                                <option value="Community">Community / Fanpage / Club</option>
-                                <option value="Brand/Business">Brand / Business / Shop</option>
-                                <option value="Unknown">Unknown / Unclassified</option>
-                              </select>
-                              <div className="text-[10px]">
-                                {edit.classification === expected ? (
-                                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                                    <Check className="w-3 h-3 text-emerald-600 shrink-0" /> Matches target type
-                                  </span>
-                                ) : edit.classification === "Unknown" ? (
-                                  <span className="text-amber-700 font-medium flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Select entity type
-                                  </span>
-                                ) : (
-                                  <span className="text-red-600 font-medium flex items-center gap-1">
-                                    <X className="w-3 h-3 text-red-600 shrink-0" /> Does not match target
-                                  </span>
-                                )}
+                            {candidate.entityAssessment ? (
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-bold text-slate-700">
+                                  Correct account type
+                                </label>
+                                <div className="flex items-center gap-1.5">
+                                  <select
+                                    disabled={savingReview || importing || isApproved}
+                                    aria-label={`Correct account type for ${candidate.name}`}
+                                    value={typeDrafts[candidate.candidateId] || candidate.entityAssessment.reviewedType || candidate.entityAssessment.suggestedType || 'Unknown'}
+                                    onChange={(e) => {
+                                      const val = e.target.value as EntityType;
+                                      setTypeDrafts(prev => ({ ...prev, [candidate.candidateId]: val }));
+                                    }}
+                                    className="w-full text-xs font-semibold rounded-lg border border-slate-300 px-2.5 py-1.5 transition bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                                  >
+                                    {ENTITY_TYPES.map(val => (
+                                      <option key={val} value={val}>{t(val)}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    disabled={savingReview || importing || isApproved}
+                                    onClick={() => {
+                                      const val = typeDrafts[candidate.candidateId] || candidate.entityAssessment?.reviewedType || candidate.entityAssessment?.suggestedType || 'Unknown';
+                                      void handleFeedbackAndReject(candidate, 'Wrong Entity Type', undefined, val);
+                                    }}
+                                    className="shrink-0 px-2.5 py-1.5 text-[11px] font-bold rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition disabled:opacity-40 cursor-pointer shadow-2xs"
+                                  >
+                                    Save type correction
+                                  </button>
+                                </div>
+                                <div className="text-[10px] space-y-0.5">
+                                  <div className="flex flex-wrap items-center gap-1 text-slate-500">
+                                    <span>Suggested: <strong>{t(candidate.entityAssessment.suggestedType)}</strong></span>
+                                    <span>·</span>
+                                    <span>Reviewed type: <strong>{t(candidate.entityAssessment.reviewedType || 'Not reviewed')}</strong></span>
+                                  </div>
+                                  {typeDrafts[candidate.candidateId] && typeDrafts[candidate.candidateId] !== (candidate.entityAssessment.reviewedType || candidate.entityAssessment.suggestedType) && (
+                                    <span className="text-amber-700 font-medium block">
+                                      Unsaved account type. Save the correction before approving.
+                                    </span>
+                                  )}
+                                  {!['Individual', 'Community', 'Club', 'Unknown'].includes(typeDrafts[candidate.candidateId] || candidate.entityAssessment.suggestedType) && (
+                                    <span className="text-red-600 font-medium block">
+                                      This type is retained for Scout review and cannot be imported into the current CRM.
+                                    </span>
+                                  )}
+                                </div>
                               </div>
-                            </div>}
+                            ) : (
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-bold text-slate-700">
+                                  Entity Type
+                                </label>
+                                <select
+                                  disabled={savingReview || importing || isApproved}
+                                  value={edit.classification}
+                                  onChange={(e) => updateCandidateEdit(candidate.candidateId, candidate, { classification: e.target.value as CandidateClassification })}
+                                  className={`w-full text-xs font-medium rounded-lg border px-2.5 py-1.5 transition bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 ${
+                                    edit.classification === expected
+                                      ? "border-emerald-300 text-slate-900"
+                                      : edit.classification === "Unknown"
+                                      ? "border-amber-300 text-amber-900"
+                                      : "border-red-300 text-red-900"
+                                  }`}
+                                >
+                                  <option value="Individual">Individual Creator</option>
+                                  <option value="Community">Community / Fanpage / Club</option>
+                                  <option value="Brand/Business">Brand / Business / Shop</option>
+                                  <option value="Unknown">Unknown / Unclassified</option>
+                                </select>
+                                <div className="text-[10px]">
+                                  {edit.classification === expected ? (
+                                    <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                                      <Check className="w-3 h-3 text-emerald-600 shrink-0" /> Matches target type
+                                    </span>
+                                  ) : edit.classification === "Unknown" ? (
+                                    <span className="text-amber-700 font-medium flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Select entity type
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-600 font-medium flex items-center gap-1">
+                                      <X className="w-3 h-3 text-red-600 shrink-0" /> Does not match target
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
 
                             {/* Field 2: Topic Relevance */}
                             <div className="space-y-1">
@@ -1631,6 +1683,9 @@ export function DiscoveryScoutModal({
                                   <span className="text-amber-700 font-medium flex items-center gap-1">
                                     <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" /> Location unverified
                                   </span>
+                                )}
+                                {candidate.geographyAssessment?.reason && (
+                                  <p className="text-slate-500 text-[10px] mt-0.5 leading-tight">{candidate.geographyAssessment.reason}</p>
                                 )}
                               </div>
                             </div>
