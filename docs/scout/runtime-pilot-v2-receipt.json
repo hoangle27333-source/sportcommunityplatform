@@ -1,0 +1,63 @@
+{
+  "sessionId": "7415f05b-c6dd-493a-b560-a9e5ec30799e",
+  "startedAt": "2026-10-12T08:38:04.319Z",
+  "scope": "Real database/provider/model with bounded local executor; not a hosted Vercel Workflow run",
+  "approvedCapUsd": 0.3,
+  "status": "complete",
+  "runs": [
+    {
+      "id": "a3b46e87-8de2-41b8-aba1-2717a9615f78",
+      "provider_run_id": null,
+      "state": "rejected:PROVIDER_ERROR",
+      "actual_usd": 0,
+      "reserved_usd": 0.05
+    },
+    {
+      "id": "d20385fb-74dd-41dc-a0f9-457b5556f9cd",
+      "provider_run_id": null,
+      "state": "rejected:PROVIDER_ERROR",
+      "actual_usd": 0,
+      "reserved_usd": 0.05
+    }
+  ],
+  "externalRuns": [
+    {
+      "id": "607495e1-d807-425c-a8af-b99619145e02",
+      "state": "reserved",
+      "actual_usd": null,
+      "reserved_usd": 0.05,
+      "capability_id": "c79bd896-eff6-4d4a-adae-49574078257c"
+    },
+    {
+      "id": "77ad9d46-bf2f-4d40-afac-28afcdc0238f",
+      "state": "reserved",
+      "actual_usd": null,
+      "reserved_usd": 0.05,
+      "capability_id": "c79bd896-eff6-4d4a-adae-49574078257c"
+    }
+  ],
+  "finishedAt": "2026-10-12T08:38:28.906Z",
+  "completedReplayProviderStarts": 0,
+  "crmWrites": 0,
+  "counts": {
+    "found": 0,
+    "excluded": 0,
+    "existing": 0,
+    "qualified": 0,
+    "shortfall": 5,
+    "unverified": 0,
+    "qualifiedNew": 0
+  },
+  "warnings": [
+    "Provider start was rejected. Start a new session after resolving the provider restriction.",
+    "Scout provider returned HTTP 400",
+    "Found 0/5 qualified new accounts; 5 still needed. Search stopped: no-new-accounts. Missing evidence remains available for review."
+  ],
+  "searchCost": {
+    "actualUsd": null,
+    "reservedUsd": 0.2,
+    "approvedCapUsd": 0.3,
+    "costPerQualifiedNew": null,
+    "trialCreditValueUsd": 0.1
+  }
+}

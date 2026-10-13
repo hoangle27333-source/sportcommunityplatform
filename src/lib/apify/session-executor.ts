@@ -1,3 +1,4 @@
+import { experimentalCost } from '../scout-experimental/cost';
 import { savedExperimentalProfiles } from '../scout-experimental/saved';
 import { executeStoredReassessment } from './reassessment';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -41,7 +42,7 @@ export async function executeSession(id: string) {
     else result=await executeExtendedSession(s);
     const {data:runs,error:runError}=await db.from('scout_provider_runs').select('warnings,state,observed_at,actual_usd,reserved_usd').eq('session_id',id); if(runError) throw runError;
     let external:any[]=[];
-    if(s.params.searchPlan?.version===6){const {data,error}=await db.from('scout_external_runs').select('state,actual_usd,reserved_usd,created_at,reserved_units').eq('session_id',id);if(error)throw error;external=data || [];}
+    if(s.params.searchPlan?.version===6){const {data,error}=await db.from('scout_external_runs').select('state,actual_usd,reserved_usd,created_at,reserved_units,input,capability:scout_trial_capabilities(provider)').eq('session_id',id);if(error)throw error;external=data || [];}
     const allRuns=[...(runs || []),...external];
     const {data:latest,error:warningError}=await db.from('scout_sessions').select('warnings').eq('id',id).single(); if(warningError) throw warningError;
     const runWarnings=(runs || []).flatMap(r=>r.warnings || []);
@@ -51,7 +52,7 @@ export async function executeSession(id: string) {
     const coverage={tasks:(runs || []).length,completedTasks:(runs || []).filter(r=>r.state==='succeeded').length,warningCount:warnings.length,cachedEvidence:evidence.filter(e=>e.provenance?.cached).length,missingFields:evidence.flatMap(e=>e.missingMetrics || e.provenance?.missingFields || [])};
     const actualUsd=allRuns.some(r=>r.actual_usd==null)?null:allRuns.reduce((sum,r)=>sum+Number(r.actual_usd),0);
     const qualifiedNew=s.kind==='preview' ? result.groups?.qualified?.filter((c:any)=>!c.isExisting).length || 0 : result.counts?.inserted || 0;
-    result={...result,...(s.params.searchPlan?{searchCost:{actualUsd,trialCreditValueUsd:external.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),reservedUsd:allRuns.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),approvedCapUsd:s.params.searchPlan.maxSessionUsd,costPerQualifiedNew:actualUsd!==null && qualifiedNew?actualUsd/qualifiedNew:null}}:{}),progress:{stage:'complete'},coverage,counts:result.counts || {found:result.totalFound || 0,excluded:result.excludedCount || 0},sessionId:id,partial:!!result.partial || warnings.length>0,warnings:[...(result.warnings || []),...warnings],sourceFreshness};
+    result={...result,...(s.params.searchPlan?{searchCost:{actualUsd,trialCreditValueUsd:external.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),reservedUsd:allRuns.reduce((sum,r)=>sum+Number(r.reserved_usd || 0),0),...(s.params.searchPlan?.version===6?experimentalCost(runs || [],external):{}),approvedCapUsd:s.params.searchPlan.maxSessionUsd,costPerQualifiedNew:actualUsd!==null && qualifiedNew?actualUsd/qualifiedNew:null}}:{}),progress:{stage:'complete'},coverage,counts:result.counts || {found:result.totalFound || 0,excluded:result.excludedCount || 0},sessionId:id,partial:!!result.partial || warnings.length>0,warnings:[...(result.warnings || []),...warnings],sourceFreshness};
     const outcome=result.success===false ? 'failed' : 'complete';
     const {error:save}=await db.from('scout_sessions').update({status:outcome,result,warnings:result.warnings,lease_until:null,lease_token:null,progress:{stage:outcome}}).eq('id',id).eq('lease_token',leaseToken); if(save) throw save;
     return false;

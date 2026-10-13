@@ -29,10 +29,12 @@ vi.mock('@/lib/supabase/admin', () => ({
       let payload: any;
       const query: any = {
         select: () => query,
+        order: async () => ({data:[...state.feedbackRows].reverse(),error:null}),
         eq: (key: string, value: any) => {
           filters.push([key, value]);
           return query;
         },
+        is: (key:string,value:any)=>{filters.push([key,value]);return query;},
         or: () => query,
         insert: async (data: any) => {
           if (table === 'scout_feedback') {
@@ -209,6 +211,7 @@ describe('scout feedback API route', () => {
     expect(res.status).toBe(409);
     const json = await res.json();
     expect(json.success).toBe(false);
+    expect(state.feedbackRows).toHaveLength(0);
   });
 
   it('validates that corrected type is provided for Wrong Entity Type', async () => {
@@ -220,4 +223,12 @@ describe('scout feedback API route', () => {
     expect(json.success).toBe(false);
     expect(json.error).toContain('Choose the corrected entity type');
   });
+  it('keeps current negative feedback active when correcting only the account type', async()=>{
+    state.session.candidates[0].manualAttributeReview={contextKey:'running|nationwide',topic:'passed',geography:'passed',actorId:'owner',confirmedAt:'2026-10-12T12:00:00Z'};
+    state.feedbackRows=[{account_key:'Instagram:https://instagram.com/test',context_key:'running|nationwide',reason:'Not Relevant',created_at:'2026-10-12T13:00:00Z'}];
+    const response=await request({reason:'Correct Classification',entityType:'Individual'});
+    expect(response.status).toBe(200);
+    expect((await response.json()).candidate.resultGroup).toBe('Excluded');
+  });
+
 });

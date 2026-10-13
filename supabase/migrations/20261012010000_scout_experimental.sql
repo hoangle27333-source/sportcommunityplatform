@@ -41,15 +41,15 @@ grant all on public.scout_seed_datasets,public.scout_seed_records,public.scout_t
 
 create or replace function public.reserve_scout_external(p_session uuid,p_key text,p_capability uuid,p_revision text,p_input jsonb)
 returns jsonb language plpgsql security definer set search_path=public as $$
-declare c scout_trial_capabilities; s scout_sessions; r scout_external_runs; cfg scout_budget_settings;
+declare c scout_trial_capabilities; s scout_sessions; saved_run scout_external_runs; cfg scout_budget_settings;
  session_spend numeric; day_spend numeric; model_spend numeric; wallet scout_trial_accounts; paid_model boolean;
 begin
  perform pg_advisory_xact_lock(610050);
  select * into s from scout_sessions where id=p_session for update;
  if s.id is null or s.params->>'searchStrategy' is distinct from 'seed_content_v1' then raise exception 'INVALID_SESSION'; end if;
  if not exists(select 1 from profiles where id=s.owner_id and role in ('admin','editor')) then raise exception 'FORBIDDEN'; end if;
- select * into r from scout_external_runs where session_id=p_session and task_key=p_key;
- if r.id is not null then return jsonb_build_object('claimed',false,'run',to_jsonb(r)); end if;
+ select * into saved_run from scout_external_runs where session_id=p_session and task_key=p_key;
+ if saved_run.id is not null then return jsonb_build_object('claimed',false,'run',to_jsonb(saved_run)); end if;
  select * into c from scout_trial_capabilities where id=p_capability for update;
  paid_model := c.provider='gemini' and c.operation='analysis' and c.config->>'paidModel'='true' and c.config->>'model'='gemini-2.5-flash-lite' and c.config->>'pricingRevision'='2026-10-12-flash-lite-0.10-0.40' and c.max_value_usd<=0.005;
  if c.id is null or not c.verified or c.expires_at<=now() or c.revision<>p_revision
@@ -59,6 +59,7 @@ begin
  if wallet.id is null or not wallet.verified or wallet.provider<>c.provider or wallet.expires_at<=now()
  or wallet.reserved_value_usd+c.max_value_usd>wallet.total_value_usd then raise exception 'TRIAL_EXHAUSTED'; end if;
  end if;
+ if (select count(*) from scout_external_runs r join scout_trial_capabilities tc on tc.id=r.capability_id where r.session_id=p_session and tc.operation=c.operation)>=(case c.operation when 'discovery' then 12 when 'profile' then 20 when 'posts' then 20 else 40 end) then raise exception 'QUOTA_EXHAUSTED'; end if;
  if c.used_units+c.units_per_request>c.total_units then raise exception 'TRIAL_EXHAUSTED'; end if;
  select * into cfg from scout_budget_settings where id;
  if not cfg.enabled then raise exception 'SCOUT_DISABLED'; end if;
@@ -76,8 +77,8 @@ begin
  or day_spend+c.max_value_usd>cfg.daily_usd or c.max_value_usd>cfg.run_usd then raise exception 'BUDGET_EXHAUSTED'; end if;
  update scout_trial_capabilities set used_units=used_units+c.units_per_request where id=c.id;
  insert into scout_external_runs(session_id,task_key,capability_id,input,reserved_units,reserved_usd)
- values(p_session,p_key,c.id,p_input,c.units_per_request,c.max_value_usd) returning * into r;
- return jsonb_build_object('claimed',true,'run',to_jsonb(r));
+ values(p_session,p_key,c.id,p_input,c.units_per_request,c.max_value_usd) returning * into saved_run;
+ return jsonb_build_object('claimed',true,'run',to_jsonb(saved_run));
 end $$;
 revoke all on function public.reserve_scout_external(uuid,text,uuid,text,jsonb) from public,anon,authenticated;
 grant execute on function public.reserve_scout_external(uuid,text,uuid,text,jsonb) to service_role;
@@ -108,6 +109,7 @@ begin
  cap := least(case when p_platform='TikTok' then cfg.tiktok_run_usd else cfg.run_usd end,least(cfg.session_usd,coalesce((s.params->'searchPlan'->>'maxSessionUsd')::numeric,(s.params->>'maxSessionUsd')::numeric,cfg.session_usd))-session_spend,cfg.daily_usd-day_spend,
  case when s.verification then cfg.verification_usd-verification_spend else case when p_platform='TikTok' then cfg.tiktok_run_usd else cfg.run_usd end end);
  if s.params->>'searchStrategy'='seed_content_v1' then
+ if not exists(select 1 from scout_trial_capabilities tc where tc.provider='apify' and tc.platform=p_platform and tc.verified and tc.expires_at>now() and tc.config->>'trialOnly'='true' and tc.config->>'billingDisabled'='true') then raise exception 'TRIAL_UNAVAILABLE'; end if;
  cap := least(cap,(select min(tc.max_value_usd) from scout_trial_capabilities tc where tc.provider='apify' and tc.platform=p_platform and tc.verified and tc.expires_at>now()));
  if cap is null then raise exception 'TRIAL_UNAVAILABLE'; end if;
  end if;

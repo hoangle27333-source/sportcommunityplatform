@@ -1,5 +1,5 @@
 import { parseProfile,parsePost,type SocialProfile } from '../apify/providers';
-import { canonicalUrl } from '../apify/discovery-quality';
+import { canonicalUrl,platformMatches,urlKind } from '../apify/discovery-quality';
 /** New-schema mapping stays isolated from historical session parsers. */
 export function experimentalApifyProfile(row:any,platform:string) {
  const p=parseProfile({...row,bio:row.biography || row.bio || [row.intro,row.work || row.WORK].filter(Boolean).join('\n'),location:row.location || row.address || row.current_city || row.CURRENT_CITY},platform);
@@ -14,5 +14,10 @@ export function experimentalApifyPost(row:any,p:SocialProfile) {
  // Facebook emits numeric author URLs while discovery returns vanity URLs.
  // Bind only through the exact account ID observed in profile details, never a name/input URL.
  if(p.platform==='Facebook' && row.user?.id && p.providerAccountIds?.includes(String(row.user.id)))post.authorUrl=p.url;
+ const links=Array.isArray(row.collaborators)?row.collaborators.flatMap((c:any)=>{
+  const url=canonicalUrl(c.profileUrl || c.url || (p.platform==='Facebook'&&/^\d+$/.test(String(c.id || ''))?`https://facebook.com/${c.id}`:''));
+  return platformMatches(p.platform,url)&&['profile','group'].includes(urlKind(url))?[url]:[];
+ }):[];
+ post.publicLinks=[...new Set([...(post.publicLinks || []),...links])];
  return post;
 }

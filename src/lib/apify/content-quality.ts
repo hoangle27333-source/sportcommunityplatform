@@ -2,7 +2,9 @@ import { unrestrictedGeography } from './geography';
 import {assessProfile,tokens} from './discovery-quality';
 import type {SocialPost} from './providers';
 function topicTokens(text:string) {
- return tokens(text).join(' ').replace(/\bcau long\b|\bcaulong(?:vietnam)?\b/g,'badminton').split(' ').filter(Boolean);
+ // Recognize explicit sport phrases inside hashtags, without treating arbitrary substrings as evidence.
+ const expanded=text.replace(/#[\p{L}\p{N}_]+/gu,tag=>{const plain=tag.slice(1).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();return /^(?:badminton|caulong|(?:giai|tap|danh|choi|hoc|yeu|congdong|clb|hoi)caulong)/.test(plain)?`${tag} badminton`:tag;});
+ return tokens(expanded).join(' ').replace(/\bcau long\b|\bcaulong(?:vietnam)?\b/g,'badminton').split(' ').filter(Boolean);
 }
 export function hasTopicEvidence(text:string,keyword:string) {
  const query=topicTokens(keyword).filter(t=>!['vietnam','hcm','hanoi','danang','tp','city','nationwide'].includes(t));

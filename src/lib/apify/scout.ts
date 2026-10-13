@@ -1,10 +1,11 @@
+import { hasDiscoveryLead } from '../scout-experimental/retrieval-admission';
 import { type AccountSizeCriteria } from './account-criteria';
 import { currentAccountModelPolicy, plannedAccountModelPolicy, assertAccountModelPolicy, accountModelPolicyKey, type AccountModelPolicy } from './account-model-policy';
 import { legacyEntityType, ENTITY_TYPES, assessAccountEntity, legacyClassification, type EntityAssessment, type EntityType } from './account-evidence';
 import { classifyAccount, evidenceHash } from './account-model';
 import { createHash } from 'node:crypto';
 import { collectPlannedSearch } from './planned-search';
-import { assessSearchProfile, assessSearchContent, assessProfileFollowers, assessAccountSize, assessReviewedProfile } from './search-assessment';
+import { assessSearchProfile, assessSearchContent, assessProfileFollowers, assessAccountSize, assessReviewedProfile, activeNegativeFeedback } from './search-assessment';
 import type { SearchPlan } from './search-plan';
 import { assessSearchPost } from './content-quality';
 import { canonicalScopes } from './geography';
@@ -121,6 +122,7 @@ export async function previewDiscoveryCandidates(params: AccountSizeCriteria & {
   const planned=params.savedExperimentalProfiles?{profiles:Object.fromEntries(platforms.map(platform=>[platform,params.savedExperimentalProfiles!.filter(p=>p.platform===platform)])),rows:{},warnings:[],stopReason:'stored-evidence',providerCount:0}:params.searchPlan && !isStoredEvidence() ? await collectPlannedSearch(params,new Set([...(existing || []).map(e=>e.scout_identity || `${String(e.platform).split(' ')[0]}:${canonicalUrl(e.profile_url || e.group_url || '')}`),...(feedback || []).filter(f=>f.context_key===contextKey(params.keyword,geography) && ['Not Relevant','Wrong Location'].includes(f.reason)).map(f=>f.account_key)]),feedback || []) : null;
   const strictCriteria=revision>=6;
   const assessmentOptions=accountV5?{...params.searchPlan?.criteria,...params,version:revision,minFollowers:params.minFollowers ?? params.searchPlan?.criteria?.minFollowers,entityTypes:params.entityTypes || params.searchPlan?.criteria?.entityTypes,geographyMode:params.geographyMode || params.searchPlan?.criteria?.geographyMode}:undefined;
+  const discardedDiscovery:any[] = [...((planned as any)?.discardedDiscovery || [])];
   const candidates: DiscoveryCandidate[] = []; const seen = new Set<string>();
   const warnings:string[]=[...(planned?.warnings || [])];
   const providerResults = new Set<string>();
@@ -180,6 +182,7 @@ export async function previewDiscoveryCandidates(params: AccountSizeCriteria & {
       }
     }
     if (!profile) continue;
+    if(experimental && !hasDiscoveryLead(profile,params.keyword)){discardedDiscovery.push({...profile,reason:"No observed topic hint, supporting content or seed connection. Search query is not evidence."});continue;}
     if(accountV5 && savedPosts.length)profile={...profile,posts:[...profile.posts,...savedPosts.filter(post=>post.authorUrl===profile!.url)]};
     const accountKey = `${platform}:${profile.url}`; if (seen.has(accountKey)) continue; seen.add(accountKey);
     const inferredEntity=accountV5 && !experimental?profile.accountEntityAssessment || await checkpointTask(params.sessionId,`account-v5:${evidenceHash(profile)}:${accountModelPolicyKey(modelPolicy)}`,()=>classifyAccount(profile!,modelPolicy.revision,modelPolicy.mode)):undefined;
@@ -220,19 +223,22 @@ export async function previewDiscoveryCandidates(params: AccountSizeCriteria & {
   const qualifiedNew=visible.filter(c=>c.reviewState==='Matched' && !c.isExisting).length;
   const reasonCounts:Record<string,number>={};
   for(const c of candidates.filter(c=>c.reviewState==='Excluded')) for(const reason of c.reasons) if(reason==='Topic is not supported by profile evidence' || reason==='Observed location conflicts with selected geography' || reason.startsWith('Team feedback:') || reason.startsWith('Entity type:') && c.classification !== (target==='Communities & Clubs' ? 'Community' : 'Individual')) reasonCounts[reason]=(reasonCounts[reason] || 0)+1;
-  const diagnostics = { ...(accountV5?{accountModelPolicy:modelPolicy,accountModelPolicyKey:accountModelPolicyKey(modelPolicy)}:{}),qualifiedNew,shortfall:Math.max(0,requestedCount-qualifiedNew),stopReason:planned?.stopReason || 'stored-evidence',assessmentVersion:accountV5?revision:params.searchPlan || (params.assessmentVersion || 0)>=4 ?4:3,reasonCounts,items:candidates.map(c=>({accountKey:c.accountKey,name:c.name,reviewState:c.reviewState,reasons:c.reasons,evidence:c.evidence})),requestedCount, providerCount: planned?.providerCount ?? providerResults.size, uniqueProfileCount: candidates.length, excludedCount: candidates.filter(c => c.reviewState === 'Excluded').length, returnedCount: visible.length };
+  const diagnostics = { discardedDiscovery,discardedDiscoveryCount:discardedDiscovery.length, ...(accountV5?{accountModelPolicy:modelPolicy,accountModelPolicyKey:accountModelPolicyKey(modelPolicy)}:{}),qualifiedNew,shortfall:Math.max(0,requestedCount-qualifiedNew),stopReason:planned?.stopReason || 'stored-evidence',assessmentVersion:accountV5?revision:params.searchPlan || (params.assessmentVersion || 0)>=4 ?4:3,reasonCounts,items:candidates.map(c=>({accountKey:c.accountKey,name:c.name,reviewState:c.reviewState,reasons:c.reasons,evidence:c.evidence})),requestedCount, providerCount: planned?.providerCount ?? providerResults.size, uniqueProfileCount: candidates.length, excludedCount: candidates.filter(c => c.reviewState === 'Excluded').length, returnedCount: visible.length };
+  if(discardedDiscovery.length)warnings.push(`${discardedDiscovery.length.toLocaleString("en-US")} discovery hits were discarded because they had no observed topic hint or seed connection. They remain in the discovery audit; this does not classify their accounts as off-topic.`);
   if (qualifiedNew < requestedCount) warnings.push(`Found ${qualifiedNew}/${requestedCount} qualified new accounts; ${Math.max(0,requestedCount-qualifiedNew)} still needed. Search stopped: ${planned?.stopReason || 'available-evidence-exhausted'}. Missing evidence remains available for review.`);
   const { error: saveError } = await db.from('scout_sessions').update({ candidates: visible }).eq('id', params.sessionId); check(saveError);
   return { ...((accountV5 || params.searchPlan || (params.assessmentVersion || 0)>=4)?{searchExecution:planned?{...planned,rows:undefined,profiles:undefined}:undefined,groups:{qualified:visible.filter(c=>c.reviewState==='Matched'),needsVerification:visible.filter(c=>c.reviewState==='Needs Review'),belowTarget:[],excluded:candidates.filter(c=>c.reviewState==='Excluded')},counts:{qualifiedNew,shortfall:Math.max(0,requestedCount-qualifiedNew),qualified:visible.filter(c=>c.reviewState==='Matched').length,unverified:visible.filter(c=>c.reviewState==='Needs Review').length,excluded:diagnostics.excludedCount,found:visible.length,existing:visible.filter(c=>c.isExisting).length}}:{}), success: true, sessionId: params.sessionId, criteria: { ...(experimental?{searchStrategy:'seed_content_v1'}:{}),...(accountV5?{accountPolicyVersion:5,...(strictCriteria?{assessmentRevision:revision,sizeMetric:assessmentOptions?.sizeMetric || 'followers',maxFollowers:assessmentOptions?.maxFollowers,minMembers:assessmentOptions?.minMembers,maxMembers:assessmentOptions?.maxMembers}:{}),minFollowers:assessmentOptions?.minFollowers,entityTypes:assessmentOptions?.entityTypes,geographyMode:assessmentOptions?.geographyMode || 'profile-or-recent-posts'}:{}),keyword: params.keyword, targetType: target, platform: platforms.length === 1 ? platforms[0] : platforms, geography, limit: requestedCount }, candidates: visible, effectiveQuery: params.keyword, totalFound: visible.length, newCount: visible.filter(c => !c.isExisting).length, existingCount: visible.filter(c => c.isExisting).length, excludedCount: diagnostics.excludedCount, diagnostics,partial:warnings.length>0,warnings, failed: failures, ranking: 'followers-members-desc,avg-views-desc,er-desc;unknown-last' };
 }
 export async function ingestSelectedCandidates(params: { sessionId: string; selected: { candidateId: string; classification?: Classification; relevant?: boolean; locationConfirmed?: boolean }[]; actorId: string; }) {
-  const db = createAdminClient(); const { data: session, error } = await db.from('scout_sessions').select('*').eq('id', params.sessionId).eq('owner_id', params.actorId).single(); if (error || !session) throw new ScoutError('Preview not found', 'NOT_FOUND', 404);
-  if (session.kind !== 'preview' || session.status !== 'complete') throw new ScoutError('Discovery preview is not ready', 'INVALID_PREVIEW', 400);
+  const db = createAdminClient(); const { data: loadedSession, error } = await db.from('scout_sessions').select('*').eq('id', params.sessionId).eq('owner_id', params.actorId).single(); if (error || !loadedSession) throw new ScoutError('Preview not found', 'NOT_FOUND', 404);
+  if (loadedSession.kind !== 'preview' || loadedSession.status !== 'complete') throw new ScoutError('Discovery preview is not ready', 'INVALID_PREVIEW', 400);
   if (!params.selected.length || new Set(params.selected.map(s => s.candidateId)).size !== params.selected.length) throw new ScoutError('Select unique candidates to import', 'INVALID_SELECTION', 400);
   const importToken=randomUUID();
-  const {data:claimed,error:claimError}=await db.from('scout_sessions').update({import_token:importToken,import_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',params.sessionId).or(`import_lease_until.is.null,import_lease_until.lt.${new Date().toISOString()}`).select('*').maybeSingle();check(claimError);
+  const {data:claimed,error:claimError}=await db.from('scout_sessions').update({import_token:importToken,import_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',params.sessionId).eq('owner_id',params.actorId).or(`import_lease_until.is.null,import_lease_until.lt.${new Date().toISOString()}`).select('*').maybeSingle();check(claimError);
   if(!claimed)throw new ScoutError('This preview is already being imported. Retry after the current import finishes.','IMPORT_IN_PROGRESS',409);
-  const reviewDecisions = claimed.review_decisions || session.review_decisions || {};
+  // Use the snapshot returned by the lease claim, including edits completed after the initial read.
+  const session=claimed;
+  const reviewDecisions = session.review_decisions || {};
   const heartbeat=setInterval(()=>void db.from('scout_sessions').update({import_lease_until:new Date(Date.now()+120000).toISOString()}).eq('id',params.sessionId).eq('import_token',importToken).then(({error})=>{if(error)console.error('[social-scout] Import lease renewal failed',error.code);}),30000);
   try {
   const expected = cleanTarget(session.params.targetType) === 'Communities & Clubs' ? 'Community' : 'Individual';
@@ -254,7 +260,7 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
     if (!platformMatches(c.platform, c.url) || urlKind(c.url) !== (expected === 'Community' && c.url.includes('/groups/') ? 'group' : 'profile') || c.accountKey !== `${c.platform}:${canonicalUrl(c.url)}`) throw new ScoutError('This preview contains an invalid profile URL. Search again before importing.', 'INVALID_PROFILE_URL', 409);
     const feedback = (latestFeedback || []).filter(f => f.account_key === c.accountKey);
     const typeCorrection = feedback.find(f => f.classification && ['Wrong Entity Type', 'Correct Classification'].includes(f.reason));
-    if (typeCorrection && (typeCorrection.classification !== c.classification || c.entityAssessment && typeCorrection.entity_type && typeCorrection.entity_type !== c.entityAssessment.suggestedType) || feedback.some(f => f.context_key === contextKey(session.params.keyword, session.params.geography) && ['Not Relevant', 'Wrong Location'].includes(f.reason))) throw new ScoutError('Team feedback invalidated this candidate. Search again before importing.', 'PREVIEW_STALE', 409);
+    if (typeCorrection && (typeCorrection.classification !== c.classification || c.entityAssessment && typeCorrection.entity_type && typeCorrection.entity_type !== c.entityAssessment.suggestedType) || activeNegativeFeedback(c,session.params.keyword,session.params.geography,feedback)) throw new ScoutError('Team feedback invalidated this candidate. Search again before importing.', 'PREVIEW_STALE', 409);
     if (c.reviewState === 'Needs Review' && (s.classification !== expected || s.relevant !== true || s.locationConfirmed !== true)) throw new ScoutError('Confirm entity type, relevance and location before importing Needs Review candidates', 'REVIEW_REQUIRED', 400);
     if (c.reviewState === 'Matched' && c.classification !== expected) throw new ScoutError('Candidate has the wrong entity type', 'WRONG_TYPE', 400);
     if (reviewDecisions?.[s.candidateId]?.decision !== 'approved') throw new ScoutError('This profile is not approved. Approve it before importing.', 'REVIEW_REQUIRED', 400);
@@ -278,11 +284,14 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
       metrics.scout_missing_metrics = ['followers', 'avgViews', 'er'].filter(k => (c as any)[k] === null);
       metrics.last_scouted_at = new Date().toISOString();
     }
+    const experimentalImport=c.assessmentVersion===7;
+    const observedProvenance=experimentalImport?{...c.provenance,assessmentRevision:7,contentEvidence:c.contentEvidence,assessment:c.assessment,manualAttributeReview:c.manualAttributeReview,discoveryPaths:c.discoveryPaths,geographyAssessment:c.geographyAssessment}:c.provenance;
+    const observedSports=detectSportNiche(experimentalImport?session.params.keyword:`${c.name} ${c.bio}`);
     let entityId = existing?.id;
     if (existing) {
       if (expected === 'Community' && c.members == null) metrics.scout_missing_metrics = existing.scout_missing_metrics || [];
       if (expected === 'Individual') metrics.scout_missing_metrics = (existing.scout_missing_metrics || []).filter((k: string) => (c as any)[k] === null);
-      const payload: any = { ...metrics, scout_identity: c.accountKey,scout_provenance:c.provenance };
+      const payload: any = { ...metrics, scout_identity: c.accountKey,scout_provenance:observedProvenance };
       for(const field of existing.user_locked_fields || []) { const mapped:Record<string,string>={avgViews:'avg_views',followers:'followers',er:'er'}; delete payload[mapped[field] || field]; }
       if (expected === 'Individual') {
         const changes: any = {}; const locked = new Set(existing.user_locked_fields || []);
@@ -292,15 +301,15 @@ export async function ingestSelectedCandidates(params: { sessionId: string; sele
       const { error: updateError } = await db.from(table).update(payload).eq('id', existing.id); check(updateError);
       if (expected === 'Individual') updatedKols++; else updatedCommunities++;
     } else {
-      const payload = expected === 'Community' ? { name: c.name, sports: detectSportNiche(`${c.name} ${c.bio}`), geography: c.verifiedGeography || 'Unknown', platform: c.url.includes('/groups/') ? 'Facebook Group' : c.platform, group_url: c.url, activity_level: 'Unknown', privacy: 'Unknown', purposes: [], price_per_pin: 0, status: 'New Scout (Unverified)' } : { name: c.name, sports: detectSportNiche(`${c.name} ${c.bio}`), geography: c.verifiedGeography || 'Unknown', platform: c.platform, profile_url: c.url, bio: c.bio, avatar_url: c.avatarUrl, tier: c.followers === null ? 'Unknown' : calculateTier(c.followers), quotation: 0, status: 'New Scout (Unverified)' };
-      const { data: inserted, error: insertError } = await db.from(table).insert({ ...payload, ...metrics, scout_identity: c.accountKey,scout_provenance:c.provenance }).select('id').single(); check(insertError); if (!inserted) throw new Error('Database did not return the imported profile'); entityId = inserted.id;
+      const payload = expected === 'Community' ? { name: c.name, sports: observedSports, geography: c.verifiedGeography || 'Unknown', platform: c.url.includes('/groups/') ? 'Facebook Group' : c.platform, group_url: c.url, activity_level: 'Unknown', privacy: 'Unknown', purposes: [], price_per_pin: 0, status: 'New Scout (Unverified)' } : { name: c.name, sports: observedSports, geography: c.verifiedGeography || 'Unknown', platform: c.platform, profile_url: c.url, bio: c.bio, avatar_url: c.avatarUrl, tier: c.followers === null ? 'Unknown' : calculateTier(c.followers), quotation: 0, status: 'New Scout (Unverified)' };
+      const { data: inserted, error: insertError } = await db.from(table).insert({ ...payload, ...metrics, scout_identity: c.accountKey,scout_provenance:observedProvenance }).select('id').single(); check(insertError); if (!inserted) throw new Error('Database did not return the imported profile'); entityId = inserted.id;
       if (expected === 'Individual') insertedKols++; else insertedCommunities++;
     }
     if (expected === 'Individual' && c.followers !== null && c.avgViews !== null && c.er !== null) {
       const { error: snapshotError } = await db.from('kol_metric_snapshots').upsert({ kol_id: entityId, scout_session_id: params.sessionId, followers: c.followers, avg_views: c.avgViews, er: c.er }, { onConflict: 'kol_id,scout_session_id', ignoreDuplicates: true }); check(snapshotError);
     }
     if (expected === 'Individual' && c.posts?.length) {
-      const saved = await savePosts(c.posts.filter(p => p.authorUrl === c.url).map(post => ({ post, platform: c.platform, kolId: entityId, sport: detectSportNiche(`${c.name} ${c.bio}`).join(', ') })));
+      const saved = await savePosts(c.posts.filter(p => p.authorUrl === c.url).map(post => ({ post, platform: c.platform, kolId: entityId, sport: observedSports.join(', ') })));
       insertedPosts += saved.length;
     }
   }

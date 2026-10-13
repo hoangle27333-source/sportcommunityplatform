@@ -1,0 +1,178 @@
+{
+  "observedAt": "2026-10-12T08:55:29.600Z",
+  "credit": {
+    "remainingUsd": 0.8192779911539514,
+    "cycleEndsAt": "2026-11-04T23:59:59.999Z",
+    "capUsd": 5,
+    "usedUsd": 4.180722008846049
+  },
+  "allocatedUsd": 0.8,
+  "source": "Authenticated Apify users/me and users/me/limits; isPaying=false, FREE, max monthly usage <= included credits",
+  "model": "gemini-2.5-flash-lite",
+  "modelAvailable": true,
+  "adminBudgetsChanged": false,
+  "capabilities": [
+    {
+      "provider": "apify",
+      "operation": "discovery",
+      "platform": "Facebook",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.05,
+      "builds": {
+        "apify~facebook-search-scraper:profiles:profiles": "0.0.333",
+        "apify~facebook-search-scraper:profiles:pages": "0.0.333",
+        "apify~facebook-search-scraper:hashtag:posts": "0.0.333",
+        "apify~facebook-search-scraper:keyword:posts": "0.0.333"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "profile",
+      "platform": "Facebook",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.05,
+      "builds": {
+        "apify~facebook-pages-scraper:profile-details:default": "0.0.518"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "posts",
+      "platform": "Facebook",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.05,
+      "builds": {
+        "apify~facebook-posts-scraper:profile-posts:default": "0.0.398"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "discovery",
+      "platform": "Instagram",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.05,
+      "builds": {
+        "apify~instagram-scraper:profiles:user": "0.0.796",
+        "apify~instagram-scraper:hashtag:posts": "0.0.796"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "profile",
+      "platform": "Instagram",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.05,
+      "builds": {
+        "apify~instagram-scraper:profile-details:details": "0.0.797"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "posts",
+      "platform": "Instagram",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.05,
+      "builds": {
+        "apify~instagram-scraper:profile-posts:posts": "0.0.797"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "discovery",
+      "platform": "TikTok",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.5,
+      "builds": {
+        "clockworks~tiktok-scraper:profiles:default": "0.0.612",
+        "clockworks~tiktok-scraper:hashtag:default": "0.0.612",
+        "clockworks~tiktok-scraper:keyword:default": "0.0.612"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "profile",
+      "platform": "TikTok",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.5,
+      "builds": {
+        "clockworks~tiktok-scraper:profile-details:default": "0.0.612"
+      }
+    },
+    {
+      "provider": "apify",
+      "operation": "posts",
+      "platform": "TikTok",
+      "revision": "verified-free-20261012-2",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 50,
+      "units_per_request": 1,
+      "max_value_usd": 0.5,
+      "builds": {
+        "clockworks~tiktok-scraper:profile-posts:default": "0.0.612"
+      }
+    },
+    {
+      "provider": "gemini",
+      "operation": "analysis",
+      "platform": "*",
+      "revision": "flash-lite-budgeted-20261012-1",
+      "verified": true,
+      "expires_at": "2026-11-04T23:59:59.999Z",
+      "total_units": 32,
+      "units_per_request": 1,
+      "max_value_usd": 0.005,
+      "mediaHosts": [
+        "scontent-sjc3-1.xx.fbcdn.net",
+        "scontent-lga3-3.xx.fbcdn.net",
+        "scontent-lga3-2.xx.fbcdn.net",
+        "scontent.flas1-1.fna.fbcdn.net",
+        "scontent.flas1-2.fna.fbcdn.net",
+        "scontent-lax3-2.xx.fbcdn.net",
+        "scontent-den2-1.xx.fbcdn.net",
+        "scontent-dfw5-2.xx.fbcdn.net",
+        "external-dfw6-2.xx.fbcdn.net",
+        "p16-common-sign.tiktokcdn-eu.com",
+        "p16-common-sign.tiktokcdn-us.com",
+        "p19-common-sign.tiktokcdn-us.com",
+        "p19-common-sign.tiktokcdn.com",
+        "p16-common-sign.tiktokcdn.com"
+      ]
+    }
+  ],
+  "applied": true,
+  "currentFreeAllocationAvailableUsd": 0.66,
+  "allocationCreatedOnce": true
+}

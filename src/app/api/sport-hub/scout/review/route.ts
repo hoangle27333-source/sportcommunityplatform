@@ -1,3 +1,4 @@
+import { guardReviewSnapshot, nextReviewProgress } from '@/lib/apify/review-snapshot';
 import {assessAccountSize,assessReviewedProfile} from '@/lib/apify/search-assessment';
 import { ENTITY_TYPES } from '@/lib/apify/account-evidence';
 import { NextRequest, NextResponse } from 'next/server';
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       if(item.decision==='approved' && (session.params.assessmentRevision>=6 || [5,6].includes(session.params.searchPlan?.version))){const size=assessAccountSize(candidate,{...session.params.searchPlan?.criteria,...session.params});if(size && size.state!=='passed')throw new ScoutError('Observed audience size must meet the selected range before approval.','FOLLOWER_THRESHOLD_REQUIRED',400);}
       if(item.decision==='approved' && (session.params.assessmentRevision===7 || session.params.searchPlan?.version===6)) {
         const {data:feedback,error}=await db.from('scout_feedback').select('*').order('created_at',{ascending:false});if(error)throw error;
-        const checked=assessReviewedProfile(candidate,session.params.keyword,session.params.geography,session.params.targetType,{...session.params.searchPlan?.criteria,...session.params,version:7},feedback || []);
+        const checked=assessReviewedProfile(candidate,session.params.keyword,session.params.geography,session.params.targetType,{...session.params.searchPlan?.criteria,...session.params,version:7,entityAssessment:candidate.entityAssessment},feedback || []);
         if(checked.resultGroup!=='Qualified')throw new ScoutError('Collect the missing evidence before approving this experimental result.','EVIDENCE_REQUIRED',400);
       }
       const decision = profileReviewDecision(candidate, session.params.targetType, item, actorId);
@@ -65,9 +66,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Compare the snapshot to prevent another tab's decision from being overwritten.
-    const { data: saved, error: saveError } = await db.from('scout_sessions')
-      .update({ review_decisions: next })
-      .eq('id', session.id).eq('owner_id', actorId).eq('review_decisions', JSON.stringify(previous))
+    const { data: saved, error: saveError } = await guardReviewSnapshot(db.from('scout_sessions')
+      .update({ review_decisions: next, progress:nextReviewProgress(session) })
+      .eq('id', session.id).eq('owner_id', actorId),session)
       .or(`import_lease_until.is.null,import_lease_until.lt.${new Date().toISOString()}`).select('id').maybeSingle();
     if (saveError) throw saveError;
     if (!saved) throw new ScoutError('The review changed or an import is in progress. Reopen the preview before trying again.', 'REVIEW_STALE', 409);

@@ -1,0 +1,54 @@
+{
+  "observedAt": "2026-10-12T13:47:53.412Z",
+  "mode": "read-only stored evidence replay",
+  "providerCalls": 0,
+  "modelCalls": 0,
+  "databaseWrites": 0,
+  "sessions": [
+    {
+      "sessionId": "f03b1eb1-0a93-52dc-a3da-8fcd1f684c1e",
+      "revision": 7,
+      "total": 28,
+      "approved": 0,
+      "manualReviews": 0,
+      "staleApprovals": [],
+      "assessmentDrift": []
+    },
+    {
+      "sessionId": "4624d972-bc75-4747-a475-1a42fe7ff548",
+      "revision": 7,
+      "total": 28,
+      "approved": 0,
+      "manualReviews": 0,
+      "staleApprovals": [],
+      "assessmentDrift": []
+    },
+    {
+      "sessionId": "726ba266-b3f0-4816-83ac-642178814eb3",
+      "revision": 7,
+      "total": 28,
+      "approved": 0,
+      "manualReviews": 0,
+      "staleApprovals": [],
+      "assessmentDrift": []
+    },
+    {
+      "sessionId": "7415f05b-c6dd-493a-b560-a9e5ec30799e",
+      "revision": 7,
+      "total": 0,
+      "approved": 0,
+      "manualReviews": 0,
+      "staleApprovals": [],
+      "assessmentDrift": []
+    },
+    {
+      "sessionId": "497f84b1-27a9-4dee-8d98-3bdebea53b03",
+      "revision": 7,
+      "total": 0,
+      "approved": 0,
+      "manualReviews": 0,
+      "staleApprovals": [],
+      "assessmentDrift": []
+    }
+  ]
+}

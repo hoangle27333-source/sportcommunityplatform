@@ -1,0 +1,111 @@
+{
+  "sessionId": "726ba266-b3f0-4816-83ac-642178814eb3",
+  "startedAt": "2026-10-12T08:51:29.074Z",
+  "scope": "Real database/provider/model with bounded local executor; not a hosted Vercel Workflow run",
+  "approvedCapUsd": 1,
+  "status": "complete",
+  "runs": [
+    {
+      "id": "1f5db7ce-195f-4ca6-8cc3-c08834d76891",
+      "provider_run_id": "rRPgsu9BM8BrboLTg",
+      "state": "succeeded",
+      "actual_usd": 0.0565,
+      "reserved_usd": 0.5
+    },
+    {
+      "id": "d2eea343-01a9-44f3-82a8-37e28a836f7c",
+      "provider_run_id": "AssYvWCBt7i2ah5n1",
+      "state": "succeeded",
+      "actual_usd": 0.038000000000000006,
+      "reserved_usd": 0.5
+    },
+    {
+      "id": "9395a7b5-7c64-4e87-8e72-a9cba93d3b6f",
+      "provider_run_id": "qFFRr2Wg84Wa5wB2e",
+      "state": "succeeded",
+      "actual_usd": 0.001,
+      "reserved_usd": 0.5
+    },
+    {
+      "id": "0f91aa9e-54d6-4d57-a6a8-4dba1a792b73",
+      "provider_run_id": "JrcHb04OS9387xDzA",
+      "state": "succeeded",
+      "actual_usd": 0,
+      "reserved_usd": 0.5
+    },
+    {
+      "id": "6e62b20d-3f81-42a8-8491-a0c1e773aff3",
+      "provider_run_id": "AM1LEm7dTdFD5r01L",
+      "state": "succeeded",
+      "actual_usd": 0.0047,
+      "reserved_usd": 0.5
+    }
+  ],
+  "externalRuns": [
+    {
+      "id": "74ff245b-82d9-4e43-89b2-3ae02b69b7a7",
+      "state": "succeeded",
+      "actual_usd": 0,
+      "reserved_usd": 0.5,
+      "capability_id": "c79bd896-eff6-4d4a-adae-49574078257c"
+    },
+    {
+      "id": "adac5c75-2143-409f-a2d1-45c68c6d4392",
+      "state": "succeeded",
+      "actual_usd": 0.0006629000000000001,
+      "reserved_usd": 0.005,
+      "capability_id": "34994eb1-3812-4c0f-8444-275390e56ab5"
+    },
+    {
+      "id": "64f6dcf2-df5d-4b93-a0e7-c52d40aa8726",
+      "state": "succeeded",
+      "actual_usd": 0,
+      "reserved_usd": 0.5,
+      "capability_id": "0322660f-4da5-4528-9559-b34df01ad7de"
+    },
+    {
+      "id": "072c3f0f-fad0-4efc-935b-a2c098213091",
+      "state": "succeeded",
+      "actual_usd": 0,
+      "reserved_usd": 0.5,
+      "capability_id": "c79bd896-eff6-4d4a-adae-49574078257c"
+    },
+    {
+      "id": "218cc836-af31-4e17-a09f-82a099a25489",
+      "state": "succeeded",
+      "actual_usd": 0,
+      "reserved_usd": 0.5,
+      "capability_id": "0322660f-4da5-4528-9559-b34df01ad7de"
+    },
+    {
+      "id": "3d3e9ce6-89cf-4e12-adc8-f98447250278",
+      "state": "succeeded",
+      "actual_usd": 0,
+      "reserved_usd": 0.5,
+      "capability_id": "a1311328-db34-4d42-ab1f-6b0cbcf628d8"
+    }
+  ],
+  "finishedAt": "2026-10-12T08:55:23.894Z",
+  "completedReplayProviderStarts": 0,
+  "crmWrites": 0,
+  "counts": {
+    "found": 28,
+    "excluded": 8,
+    "existing": 0,
+    "qualified": 0,
+    "shortfall": 5,
+    "unverified": 20,
+    "qualifiedNew": 0
+  },
+  "warnings": [
+    "TRIAL_EXHAUSTED",
+    "Found 0/5 qualified new accounts; 5 still needed. Search stopped: trial-or-budget-limit. Missing evidence remains available for review."
+  ],
+  "searchCost": {
+    "actualUsd": 0.10086289999999999,
+    "reservedUsd": 5.005,
+    "approvedCapUsd": 1,
+    "costPerQualifiedNew": null,
+    "trialCreditValueUsd": 2.505
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "observedAt": "2026-10-12T06:45:53.444Z",
+  "provider": "Apify",
+  "platform": "Facebook",
+  "seedRequested": 3,
+  "seedObserved": 2,
+  "seedQualified": 0,
+  "newAuthors": 5,
+  "newQualified": 0,
+  "apifyFreeCreditUsedUsd": 0.10400000000000001,
+  "modelEstimatedUsd": 0.0058286,
+  "manualPrecision": null,
+  "accountImports": 0,
+  "productionDeploy": false,
+  "receiptFile": "private/scout-dataset/seed-content-apify-pilot.json",
+  "fixtureProof": "453 unit tests; current/experimental UI; embedded PostgreSQL reservation fixture",
+  "liveLimit": "Only isolated seed identification and content-author retrieval; no full eight-session acceptance."
+}

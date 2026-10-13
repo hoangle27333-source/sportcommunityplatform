@@ -8,9 +8,11 @@ export function ExperimentalScoutFields({value,onChange,topic,geography,target}:
  const [error,setError]=useState('');
  useEffect(()=>{
   const controller=new AbortController();
-  const timer=setTimeout(()=>void fetch(`/api/sport-hub/scout/experimental?${new URLSearchParams({topic,geography,target,dataset:value.seedDatasetId || ''})}`,{signal:controller.signal}).then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.error);setConfig(data);setError('');}).catch(e=>{if(e.name!=='AbortError')setError(e.message);}),200);
+  const query=new URLSearchParams({topic,geography,target,dataset:value.seedDatasetId || ''});
+  [...value.seedUrls,...value.datasetSeedUrls].filter(Boolean).slice(0,10).forEach(url=>query.append('seed',url));
+  const timer=setTimeout(()=>void fetch(`/api/sport-hub/scout/experimental?${query}`,{signal:controller.signal}).then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.error);setConfig(data);setError('');}).catch(e=>{if(e.name!=='AbortError')setError(e.message);}),200);
   return()=>{clearTimeout(timer);controller.abort();};
- },[topic,geography,target,value.seedDatasetId]);
+ },[topic,geography,target,value.seedDatasetId,value.seedUrls.join('\n'),value.datasetSeedUrls.join('\n')]);
  const update=(next:Partial<ExperimentalInputs>)=>onChange({...value,...next,keywordsApproved:false});
  const input='w-full rounded-lg border border-slate-200 bg-white p-2 text-xs';
  return <fieldset className="space-y-3 rounded-xl border border-indigo-200 p-3 text-xs" aria-label="Experimental search configuration">
@@ -24,8 +26,9 @@ export function ExperimentalScoutFields({value,onChange,topic,geography,target}:
   <label className="block">Seed dataset<select className={input} value={value.seedDatasetId || ''} onChange={e=>update({seedDatasetId:e.target.value || undefined,datasetSeedUrls:[]})}><option value="">No dataset</option>{config?.datasets?.map((d:any)=><option key={d.id} value={d.id}>{d.file_name} · {d.profile_rows.toLocaleString('en-US')} historical rows</option>)}</select></label>
   {config?.seeds?.length>0 && <details><summary>Select database seeds (up to 10 total seeds)</summary>{config.seeds.map((s:any)=><label key={s.url} className="flex gap-2 py-1"><input type="checkbox" checked={value.datasetSeedUrls.includes(s.url)} onChange={e=>update({datasetSeedUrls:e.target.checked?[...value.datasetSeedUrls,s.url]:value.datasetSeedUrls.filter(u=>u!==s.url)})}/><span>{s.name} · {s.sport} · {s.platform}</span></label>)}</details>}
   <label className="block">Seed account URLs (one per line, up to 10 total)<textarea className={input} value={value.seedUrls.join('\n')} onChange={e=>update({seedUrls:e.target.value.split('\n')})} placeholder="https://www.facebook.com/example"/></label>
-  <button type="button" className="rounded-lg border p-2" disabled={!topic.trim()} onClick={()=>update({approvedKeywords:[...(config?.suggestions?.synonyms || []),...(config?.suggestions?.expansions || [])].slice(0,12)})}>Suggest keywords</button>
+  <button type="button" className="rounded-lg border p-2" disabled={!topic.trim()} onClick={()=>update({approvedKeywords:[...(config?.suggestions?.synonyms || []),...(config?.suggestions?.seedBranches || []),...(config?.suggestions?.expansions || [])].slice(0,12)})}>Suggest keywords</button>
   <p>Synonyms: {config?.suggestions?.synonyms?.join(' · ') || 'Enter a topic'}. Broader queries discover candidates; they do not change the qualifying topic.</p>
+  {config?.suggestions?.seedBranches?.length>0 && <p>Seed-informed branches: {config.suggestions.seedBranches.join(' · ')}. Seed names guide retrieval and do not establish topic or identity.</p>}
   <label className="block">Search queries to approve (one per line, up to 12)<textarea className={input} value={value.approvedKeywords.join('\n')} onChange={e=>update({approvedKeywords:e.target.value.split('\n')})}/></label>
   <label className="flex gap-2"><input type="checkbox" checked={value.keywordsApproved} onChange={e=>onChange({...value,keywordsApproved:e.target.checked})}/>I reviewed these queries and seed accounts.</label>
   <p>Maximum 12 executed queries, 60 candidates, 20 profile details, 10 sampled owned posts and 6 images or video clips per account. One verified sport post in the selected location can meet the content-location policy; this does not establish residence.</p>

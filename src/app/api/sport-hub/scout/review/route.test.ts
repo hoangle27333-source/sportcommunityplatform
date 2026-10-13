@@ -7,11 +7,11 @@ vi.mock('@/lib/apify/sessions', () => ({
 }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from: () => {
   const filters: [string, any][] = []; let payload: any;
-  const query: any = { select: () => query, eq: (key: string, value: any) => {filters.push([key,value]); return query;}, or: () => query, update: (value: any) => {payload=value;return query;},
+  const query: any = { select: () => query, eq: (key: string, value: any) => {filters.push([key,value]); return query;}, is:(key:string,value:any)=>{filters.push([key,value]);return query;}, or: () => query, update: (value: any) => {payload=value;return query;},
     single: async () => ({data: state.session?.owner_id === state.actor ? structuredClone(state.session) : null,error:null}),
     maybeSingle: async () => {
       if (state.writeFailure) return {data:null,error:new Error('Write failed')};
-      if (state.conflict || Date.parse(state.session.import_lease_until || '') > Date.now() || !filters.some(([k,v]) => k==='review_decisions' && v===JSON.stringify(state.session.review_decisions))) return {data:null,error:null};
+      if (state.conflict || Date.parse(state.session.import_lease_until || '') > Date.now() || !filters.some(([k,v]) => k==='progress->>reviewRevision' && v===(state.session.progress.reviewRevision ?? null))) return {data:null,error:null};
       Object.assign(state.session,payload); return {data:{id:state.session.id},error:null};
     },
   }; return query;
@@ -75,4 +75,17 @@ describe('persisted profile review', () => {
     expect(state.session.review_decisions[candidateId].decision).toBe('approved');
     expect(state.session.review_decisions[candidate2].decision).toBe('approved');
   });
+  it('advances the revision even for writes in the same millisecond',async()=>{
+    vi.useFakeTimers();vi.setSystemTime(new Date('2026-10-12T12:00:00Z'));
+    try{
+      state.session.progress.reviewRevision='initial';
+      const previous=state.session.progress.reviewRevision;
+      expect((await request({decision:'rejected'})).status).toBe(200);
+      expect(state.session.progress.reviewRevision).not.toBe(previous);
+      const next=state.session.progress.reviewRevision;
+      expect((await request({decision:'pending'})).status).toBe(200);
+      expect(state.session.progress.reviewRevision).not.toBe(next);
+    }finally{vi.useRealTimers();}
+  });
+
 });

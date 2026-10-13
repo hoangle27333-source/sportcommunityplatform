@@ -13,7 +13,7 @@ import { checkpointTask } from './task-checkpoint';
 import { sessionSnapshot } from './session-snapshot';
 import { PendingScout, ScoutError } from './errors';
 import { quotas } from './collection';
-export type SearchExecution={seedAssessments?:any[];rounds:any[];stopReason:string;requestedRows:number;providerCount:number;uniqueCount:number;duplicateCount:number;unparseableCount:number;hydratedProfiles:number;warnings:string[];rows:Record<string,any[]>;profiles:Record<string,SocialProfile[]>};
+export type SearchExecution={discardedDiscovery?:any[];seedAssessments?:any[];rounds:any[];stopReason:string;requestedRows:number;providerCount:number;uniqueCount:number;duplicateCount:number;unparseableCount:number;hydratedProfiles:number;warnings:string[];rows:Record<string,any[]>;profiles:Record<string,SocialProfile[]>};
 /** Round checkpoints are reused by durable Workflow retries; provider receipts fence starts within a round. */
 export async function collectPlannedSearch(params:Record<string,any>,existing:Set<string>,feedback:any[]=[]):Promise<SearchExecution> {
  if(params.searchPlan.version===6)return collectExperimental(params,existing,feedback);

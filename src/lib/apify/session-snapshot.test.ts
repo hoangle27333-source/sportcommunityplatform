@@ -1,6 +1,6 @@
 import {beforeEach,describe,it,expect,vi} from 'vitest';
 const state=vi.hoisted(()=>({session:{id:'s',created_at:'2026-10-05T00:00:00Z',params:{}} as any,watermark:null as any,fail:false}));
-vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({from(table:string){let value:any;const filters:[string,any][]=[];const q:any={select:()=>q,eq:(k:string,v:any)=>{filters.push([k,v]);return q;},update:(v:any)=>{value=v;return q;},single:async()=>({data:structuredClone(state.session),error:null}),maybeSingle:async()=>{
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({rpc:async(_name:string,args:any)=>{if(state.fail)return {data:null,error:Error('Write failed')};const scope=state.session.params[args.p_namespace] ||= {};const existing=scope[args.p_key];scope[args.p_key]=existing ?? args.p_value;return {data:scope[args.p_key],error:null};},from(table:string){let value:any;const filters:[string,any][]=[];const q:any={select:()=>q,eq:(k:string,v:any)=>{filters.push([k,v]);return q;},update:(v:any)=>{value=v;return q;},single:async()=>({data:structuredClone(state.session),error:null}),maybeSingle:async()=>{
  if(table==='scout_watermarks')return {data:state.watermark,error:null};
  if(state.fail)return {data:null,error:Error('Write failed')};
  if(!filters.every(([k,v])=>k==='params'?JSON.stringify(state.session.params)===v:state.session[k]===v))return {data:null,error:null};
@@ -23,3 +23,5 @@ describe('durable task input snapshots',()=>{
  });
  it('fails before collection if the snapshot cannot be saved',async()=>{state.fail=true;await expect(retrievalWindow('Instagram','profile-posts','a','s')).rejects.toThrow('Write failed');});
 });
+
+it('keeps large seed plans out of URL equality filters',async()=>{state.session.params.searchPlan={seedSnapshot:'x'.repeat(100000)};expect(await sessionSnapshot('s','providerBuilds','large-plan',async()=> 'build')).toBe('build');expect(state.session.params.searchPlan.seedSnapshot.length).toBe(100000);});

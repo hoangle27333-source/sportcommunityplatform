@@ -1,0 +1,24 @@
+{
+  "inspectedSession": "f03b1eb1-0a93-52dc-a3da-8fcd1f684c1e",
+  "savedCandidates": 28,
+  "unknownGeography": 28,
+  "unknownTopic": 27,
+  "passedTopic": 1,
+  "confirmedEntityType": 4,
+  "failedFollowers": 8,
+  "tests": 494,
+  "testFiles": 62,
+  "typecheck": "passed",
+  "localBuild": "passed",
+  "browserCurrent": "passed intercepted fixtures",
+  "browserExperimental": "passed intercepted fixtures",
+  "providerStarts": 0,
+  "modelStarts": 0,
+  "liveReviewChanges": 0,
+  "productionDeployment": "dpl_2wR4ysVNsDRT139yFvMnNP4o16pf",
+  "productionState": "READY",
+  "productionHttp": {
+    "status": 200,
+    "finalUrl": "https://sportcommunityplatform.vercel.app/login"
+  }
+}

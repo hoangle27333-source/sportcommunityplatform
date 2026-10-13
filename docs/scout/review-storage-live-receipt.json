@@ -1,0 +1,13 @@
+{
+  "observedAt": "2026-10-12T13:48:40.595Z",
+  "database": "configured Supabase",
+  "reviewSave": true,
+  "readBack": true,
+  "staleUpdateRejected": true,
+  "subsequentReviewSaved": true,
+  "temporarySessionRemoved": true,
+  "userSessionWrites": 0,
+  "crmWrites": 0,
+  "providerCalls": 0,
+  "modelCalls": 0
+}

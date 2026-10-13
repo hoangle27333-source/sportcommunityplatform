@@ -1,5 +1,6 @@
 import type { EntityType } from '../apify/account-evidence';
 export const EXPERIMENTAL_REVISION = 'seed-content-1';
+export const CONTENT_PROMPT_REVISION = 'content-json-4';
 export type ProviderId = 'apify' | 'brave' | 'brightdata' | 'gemini';
 export type Operation = 'discovery' | 'profile' | 'posts' | 'analysis';
 export type ProviderSelection = { discovery: 'apify'|'brave'; profile: 'apify'|'brightdata'; posts: 'apify'|'brightdata' };

@@ -1,0 +1,19 @@
+{
+  "observedAt": "2026-10-12T07:35:17.129Z",
+  "datasetId": "e7129cef15e454eccbdccf260e09c32840586a4b53d34335202e1bc21917755a",
+  "sourceProfileRows": 97,
+  "sourceRawUniqueUrls": 96,
+  "canonicalSeedRecords": 95,
+  "unresolvedShareUrls": 2,
+  "counts": {
+    "scout_seed_datasets": 1,
+    "scout_seed_records": 95,
+    "scout_trial_accounts": 0,
+    "scout_trial_capabilities": 0,
+    "scout_external_runs": 0
+  },
+  "crmWrites": 0,
+  "providerStarts": 0,
+  "modelCalls": 0,
+  "experimentalEnabled": false
+}

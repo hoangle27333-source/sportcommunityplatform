@@ -4,7 +4,7 @@ import { ENTITY_TYPES, type EntityType } from '@/lib/apify/account-evidence';
 import type { DiscoveryCandidate } from '@/lib/apify/scout';
 import { t, formatNumber } from '@/lib/i18n';
 
-export function AccountEvidencePanel({candidate,disabled,onCorrect}:{candidate:DiscoveryCandidate;disabled:boolean;onCorrect:(type:EntityType)=>void}) {
+export function AccountEvidencePanel({candidate,disabled,onCorrect,onDraftChange}:{candidate:DiscoveryCandidate;disabled:boolean;onCorrect:(type:EntityType)=>void;onDraftChange?:(type:EntityType)=>void}) {
   const entity=candidate.entityAssessment,geo=candidate.geographyAssessment;
   const [type,setType]=useState<EntityType>(entity?.reviewedType || entity?.suggestedType || 'Unknown');
   useEffect(()=>{
@@ -21,15 +21,17 @@ export function AccountEvidencePanel({candidate,disabled,onCorrect}:{candidate:D
     <p><strong>Suggested type:</strong> {t(entity.suggestedType)} · {t(entity.status)} · {t(entity.source)}</p>
     <p><strong>Reviewed type:</strong> {t(entity.reviewedType || 'Not reviewed')}</p>
     <label className="flex flex-wrap items-center gap-2">Correct account type
-      <select aria-label={`Correct account type for ${candidate.name}`} value={type} onChange={event=>setType(event.target.value as EntityType)} disabled={disabled} className="rounded border border-slate-300 p-1">
+      <select aria-label={`Correct account type for ${candidate.name}`} value={type} onChange={event=>{const value=event.target.value as EntityType;setType(value);onDraftChange?.(value);}} disabled={disabled} className="rounded border border-slate-300 p-1">
         {ENTITY_TYPES.map(value=><option key={value} value={value}>{t(value)}</option>)}
       </select>
       <button type="button" disabled={disabled} onClick={()=>onCorrect(type)} className="rounded border border-indigo-300 px-2 py-1 text-indigo-700">Save type correction</button>
     </label>
+    {type!==(entity.reviewedType || entity.suggestedType) && <p className="text-amber-700">Unsaved account type. Save the correction before approving.</p>}
     {entity.status!=='supported' && !entity.reviewedType && <p className="text-slate-500">Account type requires confirmation before CRM import.</p>}
     {candidate.assessment?.followers && <p><strong>Followers range:</strong> {candidate.assessment.followers.reason}</p>}
     {candidate.assessment?.members && <p><strong>Members range:</strong> {candidate.assessment.members.reason}</p>}
     {candidate.assessment?.topic && <div><p><strong>Topic evidence:</strong> {candidate.assessment.topic.reason}</p><ul>{candidate.assessment.topic.evidence.map((value,index)=><li key={index}>{/^https?:\/\//.test(value)?<a href={value} target="_blank" rel="noreferrer" className="underline">View topic evidence</a>:value}</li>)}</ul></div>}
+    {candidate.manualAttributeReview && <p><strong>Location review:</strong> {candidate.assessment?.geography?.reason}</p>}
     {candidate.contentEvidence && <details><summary>Content analysis and discovery sources</summary>
       <p>{candidate.contentEvidence.model} · {candidate.contentEvidence.observedAt}</p>
       {candidate.contentEvidence.commercialActivity && <p>Commercial activity</p>}

@@ -47,6 +47,7 @@ try {
  await page.getByLabel('Correct account type for Alex Runner').selectOption('Individual');
  await page.getByRole('button',{name:'Save type correction',exact:true}).click();
  await page.getByRole('button',{name:'Approve for Import',exact:true}).click();
+ await page.getByRole('button',{name:/^Approved\s/}).click();
  await page.getByText('Reviewed type:',{exact:false}).waitFor();
  if(!requests.some(r=>r.path.endsWith('/review') && r.body.entityType==='Individual'))throw new Error('Review lost the explicit entity type.');
  await page.setViewportSize({width:390,height:844});

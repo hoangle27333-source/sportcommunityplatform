@@ -1,27 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({ tables: {} as Record<string, any[]>, failTable: '', owner: '00000000-0000-0000-0000-000000000001' }));
+const state = vi.hoisted(() => ({ tables: {} as Record<string, any[]>, failTable: '', owner: '00000000-0000-0000-0000-000000000001', beforeClaim:null as null|(()=>void) }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from(table: string) {
   let filters: [string, any][] = [];let leaseFilter:((r:any)=>boolean)|null=null; let op = 'select'; let value: any;
   const result = () => {
     if (state.failTable === table && op !== 'select') return { data: null, error: new Error('Database write failed') };
-    const rows = state.tables[table] ||= []; const matching = rows.filter(r => filters.every(([k,v]) => (k==='params' && typeof v==='string' ? JSON.stringify(r[k])===v : r[k] === v)) && (!leaseFilter || leaseFilter(r)));
+    if(table==='scout_sessions' && op==='update' && value?.import_token && state.beforeClaim){const fn=state.beforeClaim;state.beforeClaim=null;fn();}
+    const rows = state.tables[table] ||= []; const matching = rows.filter(r => filters.every(([k,v]) => (k==='params' && typeof v==='string' ? JSON.stringify(r[k])===v : (k==='progress->>reviewRevision' ? (r.progress?.reviewRevision ?? null)===v : r[k]===v))) && (!leaseFilter || leaseFilter(r)));
     if (op === 'insert' || op === 'upsert') { const entry = { id: 'saved-' + rows.length, ...value }; rows.push(entry); return { data: entry, error: null }; }
     if (op === 'update') matching.forEach(r => Object.assign(r, value));
     return { data: matching, error: null };
   };
-  const query: any = {or:(condition:string)=>{const field=condition.split('.')[0];leaseFilter=r=>!r[field] || Date.parse(r[field])<Date.now();return query;}, select: () => query, eq: (k: string,v: any) => { filters.push([k,v]); return query; }, limit: () => query, order: () => query,
-    single: async () => { const r = result(); return { ...r, data: Array.isArray(r.data) ? r.data[0] : r.data }; }, maybeSingle: async () => { const r = result(); return { ...r, data: Array.isArray(r.data) ? r.data[0] : r.data }; },
-    insert: (v: any) => { op = 'insert'; value = v; return query; }, upsert: (v: any) => { op = 'upsert'; value = v; return query; }, update: (v: any) => { op = 'update'; value = v; return query; },
+  const query: any = {or:(condition:string)=>{const field=condition.split('.')[0];leaseFilter=r=>!r[field] || Date.parse(r[field])<Date.now();return query;}, select: () => query, is:(k:string,v:any)=>{filters.push([k,v]);return query;}, eq: (k: string,v: any) => { if(table==='scout_sessions' && k==='updated_at')throw new Error('column scout_sessions.updated_at does not exist'); filters.push([k,v]); return query; }, limit: () => query, order: () => query,
+    single: async () => { const r = result(); return { ...r, data: structuredClone(Array.isArray(r.data) ? r.data[0] : r.data) }; }, maybeSingle: async () => { const r = result(); return { ...r, data: Array.isArray(r.data) ? r.data[0] : r.data }; },
+    insert: (v: any) => { op = 'insert'; value = v; return query; }, upsert: (v: any) => { op = 'upsert'; value = v; return query; }, update: (v: any) => { if(table==='scout_sessions' && 'updated_at' in v)throw new Error('column scout_sessions.updated_at does not exist'); op = 'update'; value = v; return query; },
     then: (resolve: any, reject: any) => Promise.resolve(result()).then(resolve,reject) };
   return query;
 },rpc:async()=>({data:null,error:null}) }) }));
 vi.mock('./providers', async () => { const actual = await vi.importActual<any>('./providers'); return { ...actual, scrape: vi.fn() }; });
 import { compareDiscoveryMetrics, ingestSelectedCandidates, previewDiscoveryCandidates, scoutMarketTrends, scoutSingleKolPosts, scoutLatestCommunityPosts } from './scout';
-import { scrape } from './providers';
+import { scrape,parseProfile } from './providers';
+import { NextRequest } from 'next/server';
+import { POST as saveAttributes } from '@/app/api/sport-hub/scout/attributes/route';
+import { POST as saveReview } from '@/app/api/sport-hub/scout/review/route';
+import { contextKey } from './discovery-quality';
+vi.mock('@/lib/apify/sessions',()=>({scoutAccess:async()=>state.owner,scoutFailure:(e:any)=>Response.json({success:false,error:e.message,code:e.code},{status:e.status || 400})}));
 import badmintonSearch from './fixtures/facebook-badminton-search.json';
 import { canonicalUrl } from './discovery-quality';
 const candidate = { candidateId: 'c1', accountKey: 'Instagram:https://instagram.com/alex', platform: 'Instagram', username: 'alex', name: 'Alex', bio: 'Running coach Vietnam', url: 'https://instagram.com/alex', classification: 'Individual', relevant: true, locationMatch: true, verifiedGeography: 'Nationwide', reviewState: 'Matched', followers: 0, avgViews: null, er: null, avatarUrl: '', isExisting: false };
 beforeEach(() => {
+  state.beforeClaim=null;
   state.tables = { scout_sessions: [{ id: 's', created_at:'2026-10-05T00:00:00Z', owner_id: state.owner, kind: 'preview', status: 'complete', params: { keyword: 'run', platform: 'Instagram', targetType: 'Individual KOLs', geography: 'Nationwide' }, candidates: [{ ...candidate }] }], kols: [], communities: [], scout_feedback: [], scouted_posts: [] }; state.failTable = ''; vi.mocked(scrape).mockReset();
 });
 describe('Server-owned preview and import', () => {
@@ -276,4 +283,62 @@ it('imports group followers and members into separate CRM fields',async()=>{
  session.review_decisions={c1:{decision:'approved',classification:'Community',relevant:true,locationConfirmed:true}};
  const result=await ingestSelectedCandidates({sessionId:'s',actorId:state.owner,selected:[{candidateId:'c1'}]});
  expect(result.insertedCommunities).toBe(1);expect(state.tables.communities[0]).toMatchObject({members_count:100,account_followers:25});
+});
+
+
+describe('Experimental saved review through real API handlers and CRM persistence',()=>{
+ const sid='00000000-0000-4000-8000-000000000010',cid='00000000-0000-4000-8000-000000000011';
+ function setup(){
+  const session=state.tables.scout_sessions[0];
+  Object.assign(session,{id:sid,params:{keyword:'badminton',geography:'Ho Chi Minh City',targetType:'Individual KOLs',assessmentRevision:7,minFollowers:1000},candidates:[{...parseProfile({profileUrl:'https://instagram.com/alex',followers:1200},'Instagram')!,candidateId:cid,accountKey:'Instagram:https://instagram.com/alex',assessmentVersion:7,provenance:{platform:'Instagram'},entityAssessment:{suggestedType:'Individual',reviewedType:'Individual',status:'supported',source:'review',evidence:[],missingInformation:[]}}],review_decisions:{},progress:{}});
+  return session;
+ }
+ const req=(path:string,body:any)=>new NextRequest(`http://localhost/api/sport-hub/scout/${path}`,{method:'POST',body:JSON.stringify({sessionId:sid,candidateId:cid,...body})});
+ async function confirm(){
+  const saved=await saveAttributes(req('attributes',{topic:'passed',geography:'passed'}));expect(saved.status).toBe(200);
+  const approved=await saveReview(req('review',{decision:'approved',entityType:'Individual',typeConfirmed:true,relevant:true,locationConfirmed:true}));expect(approved.status).toBe(200);
+ }
+ it('manual correction supersedes older negative feedback for both approval and import and is persisted in CRM',async()=>{
+  const session=setup();
+  state.tables.scout_feedback=[{account_key:session.candidates[0].accountKey,context_key:contextKey('badminton','Ho Chi Minh City'),reason:'Not Relevant',created_at:'2026-10-12T10:00:00Z'}];
+  await confirm();
+  expect((await ingestSelectedCandidates({sessionId:sid,actorId:state.owner,selected:[{candidateId:cid}]})).insertedKols).toBe(1);
+  expect(state.tables.kols[0].scout_provenance.manualAttributeReview).toMatchObject({actorId:state.owner,topic:'passed',geography:'passed'});
+  expect(scrape).not.toHaveBeenCalled();
+ });
+ it('new negative feedback after approval blocks import without CRM writes',async()=>{
+  const session=setup();await confirm();
+  state.tables.scout_feedback=[{account_key:session.candidates[0].accountKey,context_key:contextKey('badminton','Ho Chi Minh City'),reason:'Wrong Location',created_at:'2099-01-01T00:00:00Z'}];
+  await expect(ingestSelectedCandidates({sessionId:sid,actorId:state.owner,selected:[{candidateId:cid}]})).rejects.toMatchObject({code:'PREVIEW_STALE'});
+  expect(state.tables.kols).toHaveLength(0);
+ });
+ it('uses audience evidence changed before the import lease claim',async()=>{
+  const session=setup();await confirm();
+  state.beforeClaim=()=>{session.candidates[0]={...session.candidates[0],followers:999};};
+  await expect(ingestSelectedCandidates({sessionId:sid,actorId:state.owner,selected:[{candidateId:cid}]})).rejects.toMatchObject({code:'FOLLOWER_THRESHOLD_REQUIRED'});
+  expect(state.tables.kols).toHaveLength(0);
+ });
+ it('does not approve unsaved topic/location checkbox values',async()=>{
+  setup();
+  const response=await saveReview(req('review',{decision:'approved',entityType:'Individual',typeConfirmed:true,relevant:true,locationConfirmed:true}));
+  expect(response.status).toBe(400);expect(state.tables.scout_sessions[0].review_decisions).toEqual({});
+ });
+ it('approves a qualified batch and rejects an invalid batch without partially saving approvals',async()=>{
+  const session=setup();await confirm();
+  const secondId='00000000-0000-4000-8000-000000000012';
+  session.candidates.push({...session.candidates[0],candidateId:secondId,url:'https://instagram.com/second',accountKey:'Instagram:https://instagram.com/second'});
+  const body={sessionId:sid,reviews:[cid,secondId].map(candidateId=>({candidateId,decision:'approved',entityType:'Individual',typeConfirmed:true,relevant:true,locationConfirmed:true}))};
+  const response=await saveReview(new NextRequest('http://localhost/api/sport-hub/scout/review',{method:'POST',body:JSON.stringify(body)}));
+  expect(response.status).toBe(200);expect((await response.json()).count).toBe(2);
+  session.review_decisions={};session.candidates[1].followers=null;
+  const blocked=await saveReview(new NextRequest('http://localhost/api/sport-hub/scout/review',{method:'POST',body:JSON.stringify(body)}));
+  expect(blocked.status).toBe(400);expect(session.review_decisions).toEqual({});
+ });
+ it('persists reject, pending and a later explicit approval independently of qualification',async()=>{
+  const session=setup();await confirm();
+  for(const decision of ['rejected','pending','approved']){
+   const response=await saveReview(req('review',{decision,entityType:'Individual',typeConfirmed:true,relevant:true,locationConfirmed:true}));expect(response.status).toBe(200);
+   expect(session.review_decisions[cid].decision).toBe(decision);
+  }
+ });
 });

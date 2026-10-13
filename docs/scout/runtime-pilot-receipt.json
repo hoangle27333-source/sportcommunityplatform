@@ -1,0 +1,48 @@
+{
+  "sessionId": "497f84b1-27a9-4dee-8d98-3bdebea53b03",
+  "startedAt": "2026-10-12T08:30:17.263Z",
+  "scope": "Real database/provider/model with bounded local executor; not a hosted Vercel Workflow run",
+  "approvedCapUsd": 0.3,
+  "status": "complete",
+  "runs": [],
+  "externalRuns": [
+    {
+      "id": "4fef7597-77cd-4ac8-8985-f201237f5602",
+      "state": "reserved",
+      "actual_usd": null,
+      "reserved_usd": 0.05,
+      "capability_id": "c79bd896-eff6-4d4a-adae-49574078257c"
+    },
+    {
+      "id": "2e2eb3f9-49fc-4499-af45-78d1595d1fb0",
+      "state": "reserved",
+      "actual_usd": null,
+      "reserved_usd": 0.05,
+      "capability_id": "c79bd896-eff6-4d4a-adae-49574078257c"
+    }
+  ],
+  "finishedAt": "2026-10-12T08:30:28.574Z",
+  "completedReplayProviderStarts": 0,
+  "crmWrites": 0,
+  "counts": {
+    "found": 0,
+    "excluded": 0,
+    "existing": 0,
+    "qualified": 0,
+    "shortfall": 5,
+    "unverified": 0,
+    "qualifiedNew": 0
+  },
+  "warnings": [
+    "Bad Request",
+    "Bad Request",
+    "Found 0/5 qualified new accounts; 5 still needed. Search stopped: no-new-accounts. Missing evidence remains available for review."
+  ],
+  "searchCost": {
+    "actualUsd": null,
+    "reservedUsd": 0.1,
+    "approvedCapUsd": 0.3,
+    "costPerQualifiedNew": null,
+    "trialCreditValueUsd": 0.1
+  }
+}

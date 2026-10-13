@@ -1,0 +1,29 @@
+{
+  "sessionId": "f03b1eb1-0a93-52dc-a3da-8fcd1f684c1e",
+  "sourceCandidates": 28,
+  "retainedCandidates": 16,
+  "discardedDiscoveryHits": 12,
+  "reviewNeedsVerification": 11,
+  "reviewExcluded": 5,
+  "qualifiedNew": 0,
+  "browserProfile": "Chrome Hoang",
+  "browserVerified": [
+    "reported unrelated accounts in discovery audit",
+    "Chú Lợn Cầu Lông, Hành Trình Cầu Lông and Một Tạ Cầu Lông display Needs Topic Verification",
+    "unknown is not marked off-topic",
+    "default assessment Qualified",
+    "import remains disabled"
+  ],
+  "tests": 481,
+  "testFiles": 59,
+  "typecheck": "passed",
+  "localBuild": "passed",
+  "fixtureBrowser": "passed",
+  "providerStarts": 0,
+  "modelStarts": 0,
+  "previewDeployment": "dpl_CyqzAP8GnjP4888wkFDuwgEUrNoL",
+  "previewAuthenticatedBrowser": "not verified; preview URL requires sign-in",
+  "productionDeployment": "dpl_HrajKah7sEajWwXLrJrN313B5kH6",
+  "qualityAcceptance": "No new collection; no claim of improved live discovery yield",
+  "productionState": "READY"
+}

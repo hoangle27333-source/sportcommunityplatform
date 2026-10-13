@@ -1,0 +1,24 @@
+{
+  "changes": [
+    "single type editor per profile",
+    "approval uses saved type",
+    "unknown type no longer defaults to requested type",
+    "unsaved type blocks approval",
+    "unknown geography preserved as Needs Location Verification"
+  ],
+  "tests": 488,
+  "testFiles": 61,
+  "typecheck": "passed",
+  "localBuild": "passed",
+  "browserCurrentStrategy": "passed (intercepted fixtures)",
+  "browserExperimentalStrategy": "passed (intercepted fixtures)",
+  "authenticatedProductionBrowser": "not verified: requested Chrome Hoang window is unavailable",
+  "productionDeployment": "dpl_DX8Kxz335mMKDAMQiMsmC1wKE9ED",
+  "productionState": "READY",
+  "providerStarts": 0,
+  "liveReviewChanges": 0,
+  "productionHttp": {
+    "status": 200,
+    "finalUrl": "https://sportcommunityplatform.vercel.app/login"
+  }
+}

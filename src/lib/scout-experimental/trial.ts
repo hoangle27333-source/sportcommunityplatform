@@ -17,7 +17,7 @@ export async function trialRequest<T>(sessionId:string,c:TrialCapability,input:u
  if(existing?.state==='failed')throw new ScoutError(existing.error || 'The saved provider request failed.','PROVIDER_FAILED',502);
  if(!existing || existing.state==='reserved')assertTrial(c);takeProviderOperation();
  let run=existing;
- if(!run){const {data,error}=await db.rpc('reserve_scout_external',{p_session:sessionId,p_key:key,p_capability:c.id,p_revision:c.revision,p_input:input});if(error)throw new ScoutError(error.message,/BUDGET|TRIAL/.test(error.message)?'BUDGET_EXHAUSTED':'TRIAL_UNAVAILABLE',409);run=data.run;if(!data.claimed)throw new PendingScout();}
+ if(!run){const {data,error}=await db.rpc('reserve_scout_external',{p_session:sessionId,p_key:key,p_capability:c.id,p_revision:c.revision,p_input:input});if(error)throw new ScoutError(error.message,error.message.includes('QUOTA')?'QUOTA_EXHAUSTED':/BUDGET|TRIAL/.test(error.message)?'BUDGET_EXHAUSTED':'TRIAL_UNAVAILABLE',409);run=data.run;if(!data.claimed)throw new PendingScout();}
  if(run.state==='reserved'){
   const {data,error}=await db.from('scout_external_runs').update({state:'starting'}).eq('id',run.id).eq('state','reserved').select('id').maybeSingle();if(error)throw error;if(!data)throw new PendingScout();
  }

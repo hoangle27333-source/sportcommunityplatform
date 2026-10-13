@@ -1,0 +1,14 @@
+{
+  "observedAt": "2026-10-12T09:00:23.242Z",
+  "anonSnapshotRpcDenied": true,
+  "cost": {
+    "actualUsd": 0.10086289999999999,
+    "reservedUsd": 0,
+    "trialCreditValueUsd": 0.10020000000000001
+  },
+  "wallet": {
+    "total_value_usd": 0.8,
+    "reserved_value_usd": 0.10020000000000001
+  },
+  "originalSessionsPreserved": true
+}

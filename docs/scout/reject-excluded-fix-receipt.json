@@ -1,0 +1,20 @@
+{
+  "rootCause": "Excluded assessment blocked rejection and pending decisions as well as approval",
+  "fix": "Restrict exclusion guard to approved decisions",
+  "tests": 488,
+  "testFiles": 61,
+  "apiRegression": [
+    "single excluded rejection persisted",
+    "mixed excluded/unverified batch rejection persisted",
+    "existing review decisions preserved",
+    "approval with failed size blocked",
+    "review after import blocked"
+  ],
+  "typecheck": "passed",
+  "build": "passed",
+  "productionDeployment": "dpl_GpPRpYq5kncWhQUtWrziE5KFhW4R",
+  "productionState": "READY",
+  "productionUrl": "https://sportcommunityplatform.vercel.app",
+  "liveUserReviewModified": false,
+  "providerStarts": 0
+}

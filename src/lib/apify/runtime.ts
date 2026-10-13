@@ -52,7 +52,7 @@ export function knownCharge(state: any): number | null {
   if(typeof amount==='number' && Number.isFinite(amount) && amount>=0) return amount;
   return null;
 }
-export async function executePlan(sessionId: string, platform: string, task: string, plan: ProviderPlan): Promise<any[]> {
+export async function executePlan(sessionId: string, platform: string, task: string, plan: ProviderPlan, externalRunId?:string): Promise<any[]> {
   forbidPaidReplay();
   checkStepDeadline();
   task = providerContractTask(platform, task);
@@ -101,7 +101,7 @@ export async function executePlan(sessionId: string, platform: string, task: str
     const {data: unresolved,error: unresolvedError} = await db.from('scout_provider_runs').select('id').eq('actor',plan.actor).eq('input',JSON.stringify(plan.input)).eq('state','start-unknown').is('provider_run_id',null).limit(1).maybeSingle();
     if(unresolvedError)throw unresolvedError;
     if(unresolved)throw new ScoutError('An earlier task with these provider criteria is awaiting start confirmation. Reconcile that task before trying again.', 'START_UNKNOWN',409);
-    const { data: reservation, error } = await db.rpc('reserve_scout_run', { p_session:sessionId,p_key:hash,p_cache:hash,p_actor:plan.actor,p_platform:platform,p_task:task,p_build:build,p_input:plan.input });
+    const { data: reservation, error } = await db.rpc(externalRunId?'reserve_scout_apify_trial_run':'reserve_scout_run', { p_session:sessionId,p_key:hash,p_cache:hash,p_actor:plan.actor,p_platform:platform,p_task:task,p_build:build,p_input:plan.input,...(externalRunId?{p_external:externalRunId}:{}) });
     if (error) throw new ScoutError(error.message.includes('BUDGET_EXHAUSTED') ? 'Scout budget exhausted.' : error.message, error.message.includes('BUDGET_EXHAUSTED') ? 'BUDGET_EXHAUSTED' : 'RESERVATION_FAILED', 409);
     run = reservation.run;
     if(run.normalized_rows)return run.normalized_rows.map((row:any)=>({...row,_provenance:{...row._provenance,cached:true}}));

@@ -1,4 +1,5 @@
-import { assessAccountEntity, assessAccountGeography, legacyClassification, selectedEntityTypes, type EntityAssessment, type EntityType } from './account-evidence';
+import { applyManualAttributes } from './manual-attributes';
+import { accountEvidence, latestOwnedPosts, assessAccountEntity, assessAccountGeography, legacyClassification, selectedEntityTypes, type EntityAssessment, type EntityType } from './account-evidence';
 import { sizeRange, topicQueries, type AccountSizeCriteria } from './account-criteria';
 import { contextKey } from './discovery-quality';
 import { assessProfile } from './discovery-quality';
@@ -8,6 +9,7 @@ import type { SocialPost, SocialProfile } from './providers';
 import { contentInputHash } from '../scout-experimental/evidence';
 export type ResultGroup='Qualified'|'Needs Verification'|'Below Target'|'Excluded';
 export type Dimension={state:'passed'|'failed'|'unknown';reason:string;evidence:string[]};
+export const EXPERIMENTAL_TOPIC_POLICY_REVISION='owned-text-1';
 export function assessAccountSize(profile:Pick<SocialProfile,'followers'|'members'>,criteria:AccountSizeCriteria):Dimension | undefined {
  const {metric,minimum,maximum}=sizeRange(criteria);
  if(minimum===undefined && maximum===undefined)return undefined;
@@ -65,23 +67,33 @@ function assessExperimentalProfile(profile:SocialProfile,keyword:string,geograph
  const base=assessLegacyProfile(profile,keyword,geography,target,{...options,version:6});
  const e=profile.contentEvidence;
  const valid=e?.revision==='seed-content-1' && e.inputHash===contentInputHash(profile,keyword);
- const owned=profile.posts.filter(p=>p.authorUrl===profile.url&&!p.isRepost);
- const cited=new Set(valid?e.posts.filter(p=>p.topic&&owned.some(o=>o.url===p.url)).map(p=>p.url):[]);
+ const owned=latestOwnedPosts(profile);
+ // Explicit collected captions/hashtags do not require model availability.
+ const textual=owned.filter(p=>topicQueries(keyword).some(query=>hasTopicEvidence([p.caption,...p.hashtags].join(' '),query)));
+ const cited=new Set([...textual.map(p=>p.url),...(valid?e.posts.filter(p=>p.topic&&owned.some(o=>o.url===p.url)).map(p=>p.url):[])]);
  const selfRole=valid && ['Athlete','Coach'].includes(e.role || '') && e.roleEvidence.includes(profile.url) && /athlete|coach|huấn luyện viên|vận động viên|\bvdv\b/i.test(`${profile.bio} ${profile.category}`);
- const roleSupported=!!selfRole&&cited.size>=1;
- const topic:Dimension={state:cited.size>=3||roleSupported?'passed':'unknown',reason:cited.size>=3?'Multiple owned posts support the sport.':roleSupported?'Declared athlete or coach role and owned content support the sport.':'More owned content or verified sport-role evidence is needed.',evidence:[...cited]};
+ const trustedRole=valid && e.roleSources?.some(source=>source.accountUrl===profile.url);
+ const roleSupported=!!selfRole&&cited.size>=1 || !!trustedRole;
+ const profileHint=topicQueries(keyword).some(query=>hasTopicEvidence(`${profile.name} ${profile.bio} ${profile.category}`,query));
+ const missingAnalysis=!valid?' Media analysis is unavailable for the current evidence.':'';
+ const topic:Dimension={state:cited.size>=3||roleSupported?'passed':'unknown',reason:cited.size>=3?'Multiple owned posts support the sport.':trustedRole?'A collected trusted publisher explicitly links this account to the sport role.':roleSupported?'Declared athlete or coach role and owned content support the sport.':cited.size?`${cited.size.toLocaleString('en-US')} distinct owned post${cited.size===1?' supports':'s support'} the sport; 3 or a verified sport role are required.${missingAnalysis}`:profileHint?`Profile text contains a topic hint, but no owned sport posts or verified sport role are confirmed.${missingAnalysis}`:`No owned sport posts or verified sport role are confirmed.${missingAnalysis}`,evidence:[...cited,...(trustedRole?e!.roleSources.map(source=>source.url):[])]};
  // A media sample has no authority to identify faces. Only explicit profile/post evidence is used.
  const reviewed=options.entityAssessment?.source==='review'?options.entityAssessment:undefined;
  const type=reviewed?.suggestedType || (valid?e.entityType:'Unknown');
- const entityAssessment:EntityAssessment=reviewed || {suggestedType:type,status:type==='Unknown'?'uncertain':'supported',source:'model',modelVersion:valid?e.model:'unavailable',evidence:valid?e.identityEvidence:[],missingInformation:type==='Unknown'?['Account identity is unverified.']:[]};
+ const entityAssessment:EntityAssessment=reviewed || {suggestedType:type,status:type==='Unknown'?'uncertain':'supported',source:'model',modelVersion:valid?e.model:'unavailable',evidenceHash:valid?e.inputHash:contentInputHash(profile,keyword),evidence:valid?e.identityEvidence:[],missingInformation:type==='Unknown'?['Account identity is unverified.']:[]};
  const entityType:Dimension={state:type==='Unknown'?'unknown':selectedEntityTypes(target,options.entityTypes).includes(type)?'passed':'failed',reason:`Entity type: ${type}`,evidence:entityAssessment.evidence};
  const sportProfile={...profile,posts:owned.filter(p=>cited.has(p.url))};
- const geo=assessAccountGeography(sportProfile,geography,'profile-or-recent-posts');
+ const geo={...assessAccountGeography(sportProfile,geography,'profile-or-recent-posts'),coverage:accountEvidence(profile).coverage};
  const geographyDimension:Dimension={state:geo.state,reason:geo.state==='passed'&&geo.observations.some(o=>o.source==='geotag')?`Content observed in ${geography}.`:geo.reason,evidence:geo.observations.filter(o=>o.source!=='mention').map(o=>o.postUrl || o.raw)};
  const assessment={...base.assessment,topic,entityType,geography:geographyDimension};
  const dimensions=Object.values(assessment) as Dimension[];
  const reviewState=dimensions.some(d=>d.state==='failed')?'Excluded':dimensions.every(d=>d.state==='passed')?'Matched':'Needs Review';
  return {...base,relevant:topic.state==='passed',classification:legacyClassification(type),entityAssessment,geographyAssessment:{...geo,reason:geographyDimension.reason},assessmentVersion:7,assessment,evidence:topic.evidence,locationMatch:geo.state==='passed',verifiedGeography:geo.verifiedGeography,reasons:[topic.reason,entityType.reason,geographyDimension.reason,...Object.entries(assessment).filter(([k])=>['followers','members'].includes(k)).map(([,d])=>d!.reason),...(valid&&e.commercialActivity?['Commercial activity']:[])],reviewState,resultGroup:reviewState==='Matched'?'Qualified':reviewState==='Excluded'?'Excluded':'Needs Verification'} as typeof base;
+}
+/** Negative feedback remains active unless a newer, scoped manual review replaces it. */
+export function activeNegativeFeedback(profile:Pick<SocialProfile,'platform'|'url'|'manualAttributeReview'>,keyword:string,geography:string,feedback:any[]) {
+ const review=profile.manualAttributeReview;
+ return feedback.find(f=>f.account_key===`${profile.platform}:${profile.url}` && f.context_key===contextKey(keyword,geography) && ['Not Relevant','Wrong Location'].includes(f.reason) && (!review || review.contextKey!==contextKey(keyword,geography) || !f.created_at || f.created_at>review.confirmedAt));
 }
 /** Shared review feedback is applied before counting, previewing or importing an account. */
 export function assessReviewedProfile(profile:SocialProfile,keyword:string,geography:string,target:string,options:AccountAssessmentOptions | undefined,feedback:any[]=[]) {
@@ -90,9 +102,10 @@ export function assessReviewedProfile(profile:SocialProfile,keyword:string,geogr
  const correction=applicable.find(f=>f.classification && ['Correct Classification','Wrong Entity Type'].includes(f.reason));
  const entityAssessment=options?.entityAssessment || assessAccountEntity(profile);
  const correctedType=correction?(correction.entity_type || (correction.classification==='Individual'?'Individual':correction.classification==='Community'?'Community':correction.classification==='Brand/Business'?'Brand/Business':'Unknown')):undefined;
- const assessment=assessSearchProfile(profile,keyword,geography,target,correctedType && options?{...options,entityAssessment:{...entityAssessment,suggestedType:correctedType,reviewedType:correctedType,status:correctedType==='Unknown'?'uncertain':'supported',source:'review'}}:options);
+ const automatic=assessSearchProfile(profile,keyword,geography,target,correctedType && options?{...options,entityAssessment:{...entityAssessment,suggestedType:correctedType,reviewedType:correctedType,status:correctedType==='Unknown'?'uncertain':'supported',source:'review'}}:options);
+ const assessment=applyManualAttributes(automatic,profile.manualAttributeReview,keyword,geography);
  if(correction)assessment.reasons.push('Entity type confirmed by team review');
- const rejected=applicable.find(f=>f.context_key===contextKey(keyword,geography) && ['Not Relevant','Wrong Location'].includes(f.reason));
+ const rejected=activeNegativeFeedback(profile,keyword,geography,applicable);
  if(rejected){assessment.reviewState='Excluded';assessment.resultGroup='Excluded';assessment.reasons.push(`Team feedback: ${rejected.reason}`);}
  return assessment;
 }

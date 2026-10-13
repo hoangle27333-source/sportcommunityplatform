@@ -1,0 +1,23 @@
+{
+  "verifiedAt": "2026-10-12T13:18:16.222589+00:00",
+  "deploymentId": "dpl_EBKi8piN73mvo8FMWuEwwcjwoXoe",
+  "productionUrl": "https://sportcommunityplatform.vercel.app",
+  "readyState": "READY",
+  "snapshot": "/var/folders/31/d3zqfyh149xg864rqr_rdy8w0000gn/T/sport-production-7zweZm",
+  "tests": {
+    "files": 64,
+    "passed": 503,
+    "scoutTypecheck": "passed",
+    "localProductionBuild": "passed",
+    "vercelBuild": "passed",
+    "browserFixtures": [
+      "current strategy passed",
+      "experimental strategy: edit/save/reload/approve/import passed"
+    ]
+  },
+  "proofBoundary": "Browser API calls intercepted; authenticated production persistence/import not exercised.",
+  "providerCalls": 0,
+  "modelCalls": 0,
+  "liveCrmWrites": 0,
+  "migrationRequired": false
+}

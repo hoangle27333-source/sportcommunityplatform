@@ -1,0 +1,82 @@
+{
+  "recordedAt": "2026-10-12T09:17:23.800Z",
+  "production": "https://sportcommunityplatform.vercel.app",
+  "deploymentId": "dpl_8s14s7UzanwbN9mk9VbfYp3gHdhH",
+  "sourceSessionId": "4624d972-bc75-4747-a475-1a42fe7ff548",
+  "workflow": "wrun_41M4QNNFKA0GTFE5NA16KW0BT8",
+  "status": "complete",
+  "counts": {
+    "found": 28,
+    "excluded": 8,
+    "existing": 0,
+    "qualified": 0,
+    "shortfall": 5,
+    "unverified": 20,
+    "qualifiedNew": 0
+  },
+  "cost": {
+    "actualUsd": 0.0006629000000000001,
+    "reservedUsd": 0,
+    "approvedCapUsd": 0.5,
+    "costPerQualifiedNew": null,
+    "trialCreditValueUsd": 0
+  },
+  "providerRunRows": 0,
+  "dimensions": {
+    "topic": {
+      "passed": 1,
+      "unknown": 27,
+      "failed": 0
+    },
+    "geography": {
+      "passed": 0,
+      "unknown": 28,
+      "failed": 0
+    },
+    "entityType": {
+      "passed": 1,
+      "unknown": 27,
+      "failed": 0
+    },
+    "followers": {
+      "passed": 20,
+      "unknown": 0,
+      "failed": 8
+    }
+  },
+  "reviewDecisions": {},
+  "children": [
+    {
+      "id": "f03b1eb1-0a93-52dc-a3da-8fcd1f684c1e",
+      "status": "complete",
+      "providerStarts": 0,
+      "providerLedgerRows": 0,
+      "externalLedgerRows": 0,
+      "counts": {
+        "found": 28,
+        "excluded": 8,
+        "existing": 0,
+        "qualified": 0,
+        "shortfall": 5,
+        "unverified": 20,
+        "qualifiedNew": 0
+      }
+    }
+  ],
+  "qualityAcceptance": false,
+  "crmWrites": 0,
+  "contentBasedTopicMatch": {
+    "name": "Công Cầu 🏸",
+    "url": "https://tiktok.com/@minhcong.ha",
+    "ownedSportPosts": 9,
+    "profileKeywordMatch": false,
+    "observedFollowers": 1208,
+    "entityType": "Individual",
+    "geography": "Needs Verification",
+    "countsAsQualified": false
+  },
+  "browserReloadVerified": true,
+  "unapprovedImportDisabled": true,
+  "defaultStrategy": "Current Search (Apify)",
+  "finalCostLabel": "Provider charges + model estimate"
+}

@@ -9,7 +9,7 @@ export { ScoutError, PendingScout } from './errors';
 export type ScoutTask = 'profiles' | 'communities' | 'hashtag' | 'keyword' | 'profile-posts' | 'profile-details' | 'comments';
 export type Metric = number | null;
 export interface SocialPost { videoUrl?:string; videoDuration?:number; publicLinks?:string[]; id: string; caption: string; url: string; authorUrl: string; author: string; username: string; views: Metric; likes: Metric; comments: Metric; hashtags: string[]; contentType: string; thumbnailUrl: string; publishedAt?: string; location?: string; isRepost?: boolean; provenance?: Provenance; }
-export interface SocialProfile { providerAccountIds?:string[]; identityAliases?:string[]; contentEvidence?:import('../scout-experimental/types').ContentEvidence; discoveryPaths?:import('../scout-experimental/types').DiscoveryPath[]; knownSeed?:boolean; username: string; name: string; bio: string; url: string; platform: string; followers: Metric; members?: Metric; latestPostsVerified?: boolean; accountEntityAssessment?: import('./account-evidence').EntityAssessment; avgViews: Metric; likes: Metric; comments: Metric; er: Metric; avatarUrl: string; category: string; entityType: string; location: string; posts: SocialPost[]; provenance?: Provenance; derivedMetrics?: { viewsSample: number; erSample: number; formula: string }; }
+export interface SocialProfile { manualAttributeReview?:import('./manual-attributes').ManualAttributeReview; trustedRoleSources?:import('../scout-experimental/types').ContentEvidence['roleSources']; providerAccountIds?:string[]; identityAliases?:string[]; contentEvidence?:import('../scout-experimental/types').ContentEvidence; discoveryPaths?:import('../scout-experimental/types').DiscoveryPath[]; knownSeed?:boolean; username: string; name: string; bio: string; url: string; platform: string; followers: Metric; members?: Metric; latestPostsVerified?: boolean; accountEntityAssessment?: import('./account-evidence').EntityAssessment; avgViews: Metric; likes: Metric; comments: Metric; er: Metric; avatarUrl: string; category: string; entityType: string; location: string; posts: SocialPost[]; provenance?: Provenance; derivedMetrics?: { viewsSample: number; erSample: number; formula: string }; }
 export function metric(...values: any[]): Metric { for (const v of values) { if (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0) return Number(v); } return null; }
 export function providerPlans(platform: string, task: ScoutTask, query: string, limit: number, geography = '') {
   if (!['Instagram', 'Facebook', 'TikTok'].includes(platform)) throw new ScoutError('This platform is unavailable for scouting', 'UNSUPPORTED', 400);
@@ -74,7 +74,7 @@ export function parsePost(it: any, platform: string): SocialPost | null {
     hashtags: [...new Set<string>([...tags, ...(caption.match(/#[\p{L}\p{N}_]+/gu) || []).map(t => t.slice(1))])],
     contentType: platform === 'TikTok' ? 'Video' : /\/reels?\//.test(url) || it.productType === 'clips' || it.type === 'Reel' ? 'Reels' : 'Post', thumbnailUrl: it.displayUrl || it.thumbnailUrl || it.videoMeta?.coverUrl || '' };
 }
-export async function scrape(sessionId: string, platform: string, task: ScoutTask, query: string, limit: number, geography = '', options: { newerThan?: string; urls?: string[]; queryVariants?: string[]; searchPlan?: { keys:string[]; builds:Record<string,string>; options:Record<string,VerifiedSearchOptions> }; qualityMode?:string; recentDays?:number; boundedSearch?:boolean; latestSample?:boolean } = {}): Promise<any[]> {
+export async function scrape(sessionId: string, platform: string, task: ScoutTask, query: string, limit: number, geography = '', options: { externalRunId?:string; newerThan?: string; urls?: string[]; queryVariants?: string[]; searchPlan?: { keys:string[]; builds:Record<string,string>; options:Record<string,VerifiedSearchOptions> }; qualityMode?:string; recentDays?:number; boundedSearch?:boolean; latestSample?:boolean } = {}): Promise<any[]> {
   const saved = savedProviderRows(platform, task, options.urls || (task==='profile-details' ? [query] : undefined));
   if (saved !== undefined) return saved;
   if (!process.env.APIFY_TOKEN) throw new ScoutError('Apify is not configured.', 'NOT_CONFIGURED',503);
@@ -117,7 +117,7 @@ export async function scrape(sessionId: string, platform: string, task: ScoutTas
       const {data:cap,error}=await createAdminClient().from('scout_provider_capabilities').select('receipt,verified').eq('capability_key',capabilityKey(plan,task)).maybeSingle();if(error)throw error;
       if(cap?.verified && cap.receipt?.supportsDateFilter)plan.input[ACTOR_CONTRACTS[plan.actor].dateFilter!]=options.newerThan;
     }
-    try { rows.push(...await executePlan(sessionId,platform,task,plan)); } catch(e) {
+    try { rows.push(...await executePlan(sessionId,platform,task,plan,options.externalRunId)); } catch(e) {
       if(e instanceof PendingScout) pending=true;
       else if(platform==='Facebook' && task==='communities' && e instanceof ScoutError && !['START_UNKNOWN','RESERVATION_FAILED'].includes(e.code)) failures.push(e as Error);
       else throw e;

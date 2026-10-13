@@ -1,0 +1,30 @@
+{
+  "migration": "20261012010000_scout_experimental",
+  "sha256": "64d353a04b63b00f1346bbbae5dd412a7518e5a047d4b683f64f8d26d182d59f",
+  "projectRef": "xfqwxehetbjofoaygeqj",
+  "branch": "main",
+  "environment": "production",
+  "appliedAt": "2026-10-12T07:15:38.068098+00:00",
+  "method": "Chrome Supabase SQL Editor; BEGIN/COMMIT transaction",
+  "userAuthorized": true,
+  "tablesCreated": 5,
+  "tablesPrivateRls": true,
+  "externalRpcServerOnly": true,
+  "existingReservationReplay": "passed; all fixture writes rolled back",
+  "trialCapabilities": 0,
+  "trialAccounts": 0,
+  "externalRuns": 0,
+  "providerStarts": 0,
+  "experimentalEnabled": false,
+  "applicationDeploy": false,
+  "budgetUnchanged": {
+    "session_usd": 1,
+    "daily_usd": 10,
+    "verification_usd": 5,
+    "run_usd": 0.25,
+    "tiktok_run_usd": 0.5,
+    "enabled": true
+  },
+  "migrationHistoryTableExists": false,
+  "verificationUrl": "https://supabase.com/dashboard/project/xfqwxehetbjofoaygeqj/sql/049728af-f9b3-4aed-834e-1da3bfbda287"
+}

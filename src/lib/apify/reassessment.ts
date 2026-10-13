@@ -1,5 +1,6 @@
 import { currentAccountModelPolicy, accountModelPolicyKey } from './account-model-policy';
 import { createHash } from 'node:crypto';
+import { EXPERIMENTAL_TOPIC_POLICY_REVISION } from './search-assessment';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { stableJson } from './runtime';
 import { ScoutError } from './errors';
@@ -14,7 +15,7 @@ export async function reassessSession(sessionId:string) {
  if(error || !parent)throw new ScoutError('Scout session not found.','NOT_FOUND',404);
  if(parent.status!=='complete' || parent.result?.success===false || !['preview','trends'].includes(parent.kind) || parent.params?.executionMode==='stored-evidence') throw new ScoutError('Reassessment requires a completed search task.','INVALID_REASSESSMENT',409);
  const experimental=parent.params.searchPlan?.version===6 || parent.params.assessmentRevision===7;const accountV5=parent.kind==='preview';const strict=parent.params.assessmentRevision===6 || parent.params.searchPlan?.version===5;const assessmentVersion=accountV5?(experimental?7:strict?6:5):4;
- const criteriaHash=createHash('sha256').update(stableJson(requestSchema.parse(parent.params))).digest('hex');
+ const criteriaHash=createHash('sha256').update(stableJson(experimental?{criteria:requestSchema.parse(parent.params),sourcePlanHash:parent.params.searchPlan?.hash,assessmentRevision:7,topicPolicyRevision:EXPERIMENTAL_TOPIC_POLICY_REVISION}:requestSchema.parse(parent.params))).digest('hex');
  const modelPolicy=accountV5?(experimental?{version:5 as const,mode:'off' as const,revision:'rules-5'}:currentAccountModelPolicy()):undefined;
  const modelPolicyKey=modelPolicy?accountModelPolicyKey(modelPolicy):undefined;
  let lookupQuery=db.from('scout_sessions').select('id').eq('owner_id',owner).eq('params->>parentSessionId',sessionId).eq('params->>executionMode','stored-evidence').eq('params->>assessmentVersion',String(assessmentVersion));
